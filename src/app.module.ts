@@ -17,6 +17,7 @@ import { EvidenceDocumentModule } from './modules/evidence-document/evidence-doc
 import { WalletModule } from './modules/wallet/wallet.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { AIAssistantModule } from './modules/ai-assistant/ai-assistant.module';
+import { SurveyModule } from './modules/survey/survey.module';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -39,6 +40,7 @@ import { AppService } from './app.service';
     MembershipModule,
     ContextEngineModule,
     RuleEngineModule,
+    SurveyModule,
     TaskModule,
     EvidenceDocumentModule,
     WalletModule,
