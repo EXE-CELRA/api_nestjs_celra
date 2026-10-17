@@ -22,7 +22,6 @@ export class TaskService {
     return this.prisma.task.create({
       data: {
         organizationId: orgId,
-        checklistId: dto.checklistId,
         code: dto.code,
         title: dto.title,
         category: dto.category,
@@ -74,7 +73,6 @@ export class TaskService {
         timeline: {
           orderBy: { timestamp: 'desc' },
         },
-        expertCase: true,
       },
       orderBy: [{ priority: 'desc' }, { dueDate: 'asc' }],
     });
@@ -91,7 +89,6 @@ export class TaskService {
         timeline: {
           orderBy: { timestamp: 'asc' },
         },
-        expertCase: true,
       },
     });
 

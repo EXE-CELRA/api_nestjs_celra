@@ -13,6 +13,7 @@ import {
   LoginDto,
   VerifyOtpDto,
   ChangePasswordDto,
+  UpdateProfileDto,
 } from './dto/auth.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -43,6 +44,16 @@ export class AuthController {
   @ApiOperation({ summary: 'Lấy thông tin cá nhân của người dùng hiện tại' })
   async getProfile(@CurrentUser('sub') userId: string) {
     return this.authService.getProfile(userId);
+  }
+
+  @Patch('profile')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Cập nhật thông tin cá nhân của người dùng' })
+  async updateProfile(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: UpdateProfileDto,
+  ) {
+    return this.authService.updateProfile(userId, dto);
   }
 
   @Post('2fa/generate')

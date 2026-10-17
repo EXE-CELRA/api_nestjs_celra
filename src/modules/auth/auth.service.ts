@@ -14,6 +14,7 @@ import {
   LoginDto,
   VerifyOtpDto,
   ChangePasswordDto,
+  UpdateProfileDto,
 } from './dto/auth.dto';
 import { UserRole } from '@prisma/client';
 
@@ -263,6 +264,48 @@ export class AuthService {
     }
 
     return user;
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('Không tìm thấy người dùng');
+    }
+
+    if (dto.email && dto.email.toLowerCase() !== user.email.toLowerCase()) {
+      const existingEmail = await this.prisma.user.findUnique({
+        where: { email: dto.email.toLowerCase() },
+      });
+      if (existingEmail) {
+        throw new BadRequestException('Email này đã được sử dụng bởi tài khoản khác');
+      }
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name.trim() }),
+        ...(dto.phone !== undefined && { phone: dto.phone.trim() }),
+        ...(dto.email !== undefined && { email: dto.email.trim().toLowerCase() }),
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        roleTitle: true,
+        avatar: true,
+        phone: true,
+        isTwoFactorEnabled: true,
+        createdAt: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Cập nhật thông tin cá nhân thành công',
+      user: updatedUser,
+    };
   }
 
   private async generateToken(user: { id: string; email: string; role: UserRole; name: string }) {

@@ -78,11 +78,6 @@ export class CreateTaskDto {
   @IsOptional()
   @IsString()
   legalBasis?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  checklistId?: string;
 }
 
 export class UpdateTaskStatusDto {

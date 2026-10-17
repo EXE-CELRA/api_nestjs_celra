@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateRuleDto } from './dto/rule.dto';
-import { UserRole, WaitingOnRole, TaskStatus, ChecklistStatus, Prisma } from '@prisma/client';
+import { UserRole, WaitingOnRole, TaskStatus, Prisma } from '@prisma/client';
 
 @Injectable()
 export class RuleEngineService {
@@ -58,15 +58,15 @@ export class RuleEngineService {
     const generatedTasks: unknown[] = [];
 
     for (const rule of rules) {
-      // Kiểm tra xem Checklist cho rule này trong Organization đã tồn tại chưa
-      const existingChecklist = await this.prisma.checklist.findFirst({
+      // Kiểm tra xem Task cho rule này trong Organization đã tồn tại chưa
+      const existingTask = await this.prisma.task.findFirst({
         where: {
           organizationId: orgId,
           ruleCode: rule.code,
         },
       });
 
-      if (existingChecklist) {
+      if (existingTask) {
         continue;
       }
 
@@ -91,38 +91,7 @@ export class RuleEngineService {
       }
 
       if (isMatched) {
-        // 1. Tạo Checklist
-        const checklist = await this.prisma.checklist.create({
-          data: {
-            organizationId: orgId,
-            generatedFromRuleId: rule.id,
-            code: `CHK-${rule.code}`,
-            title: `Checklist: ${rule.title}`,
-            category: rule.category,
-            priority: rule.priority,
-            status: ChecklistStatus.in_progress,
-            ruleCode: rule.code,
-            contextReason: rule.conditionSummary,
-            legalBasis: rule.legalReference,
-            assigneeRole: UserRole.owner,
-            items: {
-              create: [
-                {
-                  title: 'Cung cấp hồ sơ / tài liệu bằng chứng liên quan',
-                  isRequired: true,
-                  evidenceRequired: true,
-                },
-                {
-                  title: 'Đối chiếu và thẩm định tính hợp lệ',
-                  isRequired: true,
-                  evidenceRequired: false,
-                },
-              ],
-            },
-          },
-        });
-
-        // 2. Tìm department tương ứng
+        // 1. Tìm department tương ứng
         let targetDept = org.departments.find((d) => d.code === 'ACC');
         let assigneeRole: UserRole = UserRole.internal_accountant;
         let waitingOnRole: WaitingOnRole = WaitingOnRole.service_accountant;
@@ -141,11 +110,10 @@ export class RuleEngineService {
         const dueDate = new Date();
         dueDate.setDate(dueDate.getDate() + 7); // Hạn chót sau 7 ngày
 
-        // 3. Tạo Task thật
+        // 2. Tạo Task thật
         const task = await this.prisma.task.create({
           data: {
             organizationId: orgId,
-            checklistId: checklist.id,
             code: taskCode,
             title: rule.title,
             category: rule.category,

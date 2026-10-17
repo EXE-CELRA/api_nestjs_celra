@@ -1,4 +1,4 @@
-// Prisma Schema for CELRA Compliance Platform (PostgreSQL)
+// Prisma Schema for CELRA Compliance Platform (PostgreSQL) - Lean Tax Focus Edition
 
 datasource db {
   provider = "postgresql"
@@ -43,12 +43,6 @@ enum MembershipStatus {
   expired
 }
 
-enum EngagementStatus {
-  active
-  pending
-  paused
-}
-
 enum ContextGroup {
   legal
   operations
@@ -67,14 +61,6 @@ enum ContextStatus {
   confirmed
   conflict
   expired
-}
-
-enum ChecklistStatus {
-  not_started
-  in_progress
-  under_review
-  need_expert
-  completed
 }
 
 enum TaskStatus {
@@ -103,25 +89,6 @@ enum EvidenceStatus {
   expired
 }
 
-enum FindingStatus {
-  new
-  assigned
-  remediating
-  waiting_recheck
-  remediated
-  closed
-}
-
-enum ExpertCaseStatus {
-  pending_owner_approval
-  pending_expert_quote
-  quoted
-  in_consultation
-  waiting_client_supplement
-  completed
-  rejected
-}
-
 enum TransactionType {
   deposit
   hold
@@ -146,12 +113,6 @@ enum TimelineEventType {
   payment
 }
 
-enum LegalSourceStatus {
-  valid
-  needs_review
-  superseded
-}
-
 // ===================== MODELS =====================
 
 model User {
@@ -172,7 +133,6 @@ model User {
   createdOrganizations Organization[] @relation("CreatedByUser")
   taskComments         TaskComment[]
   timelineEvents       TaskTimelineEvent[]
-  auditEvents          AuditEvent[]
 
   @@map("users")
 }
@@ -198,16 +158,10 @@ model Organization {
   createdBy          User?        @relation("CreatedByUser", fields: [createdById], references: [id])
   departments        Department[]
   memberships        Membership[]
-  serviceEngagements ServiceEngagement[]
   contextFacts       ContextFact[]
-  surveyAnswers      SurveyAnswer[]
-  checklists         Checklist[]
   tasks              Task[]
   evidenceDocuments  EvidenceDocument[]
-  findings           Finding[]
-  expertCases        ExpertCase[]
   wallet             Wallet?
-  auditEvents        AuditEvent[]
 
   @@map("organizations")
 }
@@ -226,7 +180,6 @@ model Department {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   memberships    Membership[]
   tasks          Task[]
-  findings       Finding[]
 
   @@map("departments")
 }
@@ -250,25 +203,6 @@ model Membership {
 
   @@unique([organizationId, userId])
   @@map("memberships")
-}
-
-model ServiceEngagement {
-  id             String           @id @default(uuid())
-  organizationId String
-  firmName       String
-  leadName       String
-  email          String
-  phone          String
-  scope          Json             @default("[]")
-  outOfScope     Json             @default("[]")
-  startDate      DateTime         @default(now())
-  status         EngagementStatus @default(active)
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-
-  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  @@map("service_engagements")
 }
 
 model ContextFact {
@@ -322,76 +256,7 @@ model Rule {
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
 
-  checklists           Checklist[]
-
   @@map("rules")
-}
-
-model SurveyQuestion {
-  id                 Int            @id @default(autoincrement())
-  question           String
-  whyCelraAsks       String
-  affectedChecklists Json?          @default("[]")
-  options            Json           @default("[]")
-  createdAt          DateTime       @default(now())
-
-  answers            SurveyAnswer[]
-
-  @@map("survey_questions")
-}
-
-model SurveyAnswer {
-  id             String         @id @default(uuid())
-  organizationId String
-  questionId     Int
-  selectedOption String
-  note           String?
-  answeredBy     String
-  answeredAt     DateTime       @default(now())
-
-  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  question       SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
-
-  @@unique([organizationId, questionId])
-  @@map("survey_answers")
-}
-
-model Checklist {
-  id                  String          @id @default(uuid())
-  organizationId      String
-  generatedFromRuleId String?
-  code                String
-  title               String
-  category            String
-  priority            Priority        @default(medium)
-  status              ChecklistStatus @default(not_started)
-  ruleCode            String
-  contextReason       String?
-  legalBasis          String?
-  assigneeRole        UserRole        @default(owner)
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
-
-  organization        Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  rule                Rule?           @relation(fields: [generatedFromRuleId], references: [id])
-  items               ChecklistItem[]
-  tasks               Task[]
-
-  @@map("checklists")
-}
-
-model ChecklistItem {
-  id               String    @id @default(uuid())
-  checklistId      String
-  title            String
-  isRequired       Boolean   @default(true)
-  isChecked        Boolean   @default(false)
-  evidenceRequired Boolean   @default(false)
-  note             String?
-
-  checklist        Checklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
-
-  @@map("checklist_items")
 }
 
 model Task {
@@ -428,12 +293,10 @@ model Task {
   updatedAt               DateTime            @updatedAt
 
   organization            Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  checklist               Checklist?          @relation(fields: [checklistId], references: [id])
   department              Department?         @relation(fields: [departmentId], references: [id])
   documents               EvidenceDocument[]
   comments                TaskComment[]
   timeline                TaskTimelineEvent[]
-  expertCase              ExpertCase?
 
   @@map("tasks")
 }
@@ -500,59 +363,6 @@ model EvidenceDocument {
   @@map("evidence_documents")
 }
 
-model Finding {
-  id                      String        @id @default(uuid())
-  organizationId          String
-  relatedTaskId           String?
-  relatedTaskCode         String?
-  relatedEvidenceId       String?
-  code                    String
-  title                   String
-  description             String
-  severity                Priority      @default(medium)
-  detectedBy              String
-  detectedAt              DateTime      @default(now())
-  responsibleDepartmentId String?
-  dueDate                 DateTime
-  proposedAction          String
-  status                  FindingStatus @default(new)
-  remediationTaskId       String?
-  createdAt               DateTime      @default(now())
-  updatedAt               DateTime      @updatedAt
-
-  organization            Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  responsibleDepartment   Department?   @relation(fields: [responsibleDepartmentId], references: [id])
-
-  @@map("findings")
-}
-
-model ExpertCase {
-  id                 String           @id @default(uuid())
-  organizationId     String
-  taskId             String           @unique
-  code               String
-  taskTitle          String
-  reason             String
-  specialtyCategory  String
-  sharedDataSummary  Json?            @default("[]")
-  sharedDocIds       Json?            @default("[]")
-  status             ExpertCaseStatus @default(pending_owner_approval)
-  quoteAmount        Float?           @default(0)
-  quoteNotes         String?
-  expertId           String?
-  expertName         String?
-  expertFeedback     String?
-  clientApproved     Boolean          @default(false)
-  paidAmount         Float?           @default(0)
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-
-  organization       Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  task               Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
-
-  @@map("expert_cases")
-}
-
 model Wallet {
   id             String              @id @default(uuid())
   organizationId String              @unique
@@ -583,44 +393,4 @@ model WalletTransaction {
   wallet      Wallet            @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
   @@map("wallet_transactions")
-}
-
-model LegalSource {
-  id              String            @id @default(uuid())
-  title           String
-  documentNumber  String            @unique
-  authority       String
-  issuedDate      DateTime
-  effectiveDate   DateTime
-  version         String            @default("1.0")
-  relevantSection String
-  summary         String
-  url             String?
-  status          LegalSourceStatus @default(valid)
-  lastReviewedAt  DateTime          @default(now())
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-
-  @@map("legal_sources")
-}
-
-model AuditEvent {
-  id             String       @id @default(uuid())
-  organizationId String?
-  actorId        String?
-  actorName      String
-  actorRole      UserRole     @default(owner)
-  action         String
-  entityType     String
-  entityId       String
-  previousValue  String?
-  newValue       String?
-  simulatedIp    String?
-  details        String?
-  timestamp      DateTime     @default(now())
-
-  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  actor          User?         @relation(fields: [actorId], references: [id])
-
-  @@map("audit_events")
 }
