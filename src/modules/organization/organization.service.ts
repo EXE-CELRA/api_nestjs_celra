@@ -226,7 +226,6 @@ export class OrganizationService {
       include: {
         departments: true,
         wallet: true,
-        serviceEngagements: true,
         memberships: {
           include: {
             user: {

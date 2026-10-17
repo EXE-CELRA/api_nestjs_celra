@@ -90,3 +90,20 @@ export class ChangePasswordDto {
   @MinLength(6, { message: 'Mật khẩu mới tối thiểu 6 ký tự' })
   newPassword!: string;
 }
+
+export class UpdateProfileDto {
+  @ApiPropertyOptional({ example: 'Nguyễn Trung Hậu', description: 'Họ và tên' })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional({ example: '0901234567', description: 'Số điện thoại' })
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @ApiPropertyOptional({ example: 'hauntce190069@gmail.com', description: 'Email' })
+  @IsOptional()
+  @IsEmail({}, { message: 'Email không đúng định dạng' })
+  email?: string;
+}

@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { WalletService } from '../wallet/wallet.service';
 import { CreateContextFactDto, UpdateContextFactDto, GenerateChecklistFromFactDto } from './dto/context-fact.dto';
-import { ContextStatus, ChecklistStatus, TaskStatus, Priority, UserRole, WaitingOnRole } from '@prisma/client';
+import { ContextStatus, TaskStatus, Priority, UserRole, WaitingOnRole } from '@prisma/client';
 import { CORE_LEGAL_DOC_LINKS } from '../../common/constants/legal-docs.constant';
 
 @Injectable()
@@ -306,38 +306,6 @@ export class ContextEngineService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const userName = user ? user.name : 'Chủ doanh nghiệp';
 
-    const checklistTitle = dto.title || `Checklist tuân thủ: ${fact.label}`;
-
-    // Tạo Checklist
-    const checklist = await this.prisma.checklist.create({
-      data: {
-        organizationId: targetOrgId,
-        code: `CHK-${Date.now().toString().slice(-6)}`,
-        title: checklistTitle,
-        category: fact.group,
-        priority: Priority.high,
-        status: ChecklistStatus.in_progress,
-        ruleCode: fact.key,
-        contextReason: `Khởi tạo từ phiên Rà soát tuân thủ thẻ: ${fact.label}`,
-        legalBasis: `Quy chuẩn pháp lý CELRA SME`,
-        assigneeRole: UserRole.owner,
-        items: {
-          create: [
-            {
-              title: 'Cung cấp hồ sơ / tài liệu bằng chứng liên quan',
-              isRequired: true,
-              evidenceRequired: true,
-            },
-            {
-              title: 'Đối chiếu và thẩm định tính hợp lệ',
-              isRequired: true,
-              evidenceRequired: false,
-            },
-          ],
-        },
-      },
-    });
-
     const createdTasks = [];
     const tasksToCreate = dto.tasks && dto.tasks.length > 0 ? dto.tasks : [
       {
@@ -361,7 +329,6 @@ export class ContextEngineService {
       const task = await this.prisma.task.create({
         data: {
           organizationId: targetOrgId,
-          checklistId: checklist.id,
           code: `TASK-${Date.now().toString().slice(-4)}-0${i + 1}`,
           title: t.title,
           category: fact.group,
@@ -380,7 +347,7 @@ export class ContextEngineService {
           timeline: {
             create: {
               title: 'Tác vụ được khởi tạo thành công từ Bối cảnh',
-              description: `Chủ doanh nghiệp đã rà soát thẻ ${fact.label} và tạo checklist`,
+              description: `Chủ doanh nghiệp đã rà soát thẻ ${fact.label} và tạo tác vụ`,
               actorName: userName,
               actorRole: UserRole.owner,
             },
@@ -393,8 +360,7 @@ export class ContextEngineService {
 
     return {
       success: true,
-      message: `Đã khởi tạo thành công Checklist và ${createdTasks.length} nhiệm vụ kiểm tra mới!`,
-      checklist,
+      message: `Đã khởi tạo thành công ${createdTasks.length} nhiệm vụ kiểm tra mới!`,
       tasks: createdTasks,
     };
   }

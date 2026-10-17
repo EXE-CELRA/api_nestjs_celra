@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/com
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { AIChatMessageDto, AcceptProposalDto, UpdateLegalRuleDto } from './dto/ai-chat.dto';
-import { ChecklistStatus, TaskStatus, UserRole, WaitingOnRole, TimelineEventType, Priority } from '@prisma/client';
+import { TaskStatus, UserRole, WaitingOnRole, TimelineEventType, Priority } from '@prisma/client';
 
 import {
   CORE_LEGAL_DOC_LINKS,
@@ -350,44 +350,13 @@ export class AIAssistantService implements OnModuleInit {
     const actorName = user ? user.name : 'Người dùng';
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Tạo Checklist
-      const checklist = await tx.checklist.create({
-        data: {
-          organizationId: targetOrgId,
-          code: `CHK-${dto.code}`,
-          title: `Checklist: ${dto.title}`,
-          category: dto.category,
-          priority: dto.priority,
-          status: ChecklistStatus.in_progress,
-          ruleCode: dto.code,
-          contextReason: dto.reason,
-          legalBasis: dto.legalBasis,
-          assigneeRole: dto.assigneeRole || UserRole.hr_staff,
-          items: {
-            create: [
-              {
-                title: 'Rà soát hồ sơ chứng từ thực tế',
-                isRequired: true,
-                evidenceRequired: true,
-              },
-              {
-                title: 'Đối chiếu quy chuẩn pháp luật và hoàn tất thủ tục',
-                isRequired: true,
-                evidenceRequired: true,
-              },
-            ],
-          },
-        },
-      });
-
-      // 2. Tạo Task thật vào DB
+      // 1. Tạo Task thật vào DB
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + 7);
 
       const task = await tx.task.create({
         data: {
           organizationId: targetOrgId,
-          checklistId: checklist.id,
           code: dto.code,
           title: dto.title,
           category: dto.category,
@@ -404,7 +373,7 @@ export class AIAssistantService implements OnModuleInit {
           timeline: {
             create: {
               title: 'Tạo tác vụ từ Đề xuất của Trợ lý AI',
-              description: `Người dùng chấp nhận đề xuất checklist tuân thủ từ CELRA Copilot`,
+              description: `Người dùng chấp nhận đề xuất tác vụ tuân thủ từ CELRA Copilot`,
               actorId: userId,
               actorName,
               actorRole: user?.role || UserRole.owner,
@@ -416,8 +385,7 @@ export class AIAssistantService implements OnModuleInit {
 
       return {
         success: true,
-        message: 'Đã tạo thành công Checklist và Tác vụ từ đề xuất của AI',
-        checklist,
+        message: 'Đã tạo thành công Tác vụ từ đề xuất của AI',
         task,
       };
     });
