@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { SurveyController } from './survey.controller';
 import { SurveyService } from './survey.service';
 
 @Module({
+  imports: [AuthModule],
   controllers: [SurveyController],
   providers: [SurveyService],
   exports: [SurveyService],
