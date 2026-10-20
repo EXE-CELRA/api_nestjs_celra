@@ -4,6 +4,7 @@ import { WalletService } from '../wallet/wallet.service';
 import { CreateContextFactDto, UpdateContextFactDto, GenerateChecklistFromFactDto } from './dto/context-fact.dto';
 import { ContextStatus, TaskStatus, Priority, UserRole, WaitingOnRole } from '@prisma/client';
 import { CORE_LEGAL_DOC_LINKS } from '../../common/constants/legal-docs.constant';
+import { calculateTaxDeadline } from '../../common/utils/tax-deadline.util';
 
 @Injectable()
 export class ContextEngineService {
@@ -147,7 +148,7 @@ export class ContextEngineService {
 
   /**
    * Rà soát tuân thủ thẻ bối cảnh (Thu phí 50.000 VNĐ qua Ví CELRA)
-   * Tích hợp AI Semantic Analyzer đánh giá rủi ro và trích xuất căn cứ luật chính xác có Anchor Tag
+   * Tích hợp Rule-based Risk Analyzer đánh giá rủi ro và trích xuất căn cứ luật từ Database
    */
   async auditCompliance(orgId: string, factId: string, userId: string) {
     let targetOrgId = orgId;
@@ -195,7 +196,7 @@ export class ContextEngineService {
       dbRule = await this.prisma.rule.findFirst();
     }
 
-    const citation = (dbRule?.conditionsJson as any)?.citations?.[0];
+    const citation = (dbRule?.conditionsJson as { citations?: Array<{ sourceUrl?: string; docNumber?: string; articleNumber?: string }> } | null)?.citations?.[0];
     const dlplUrl = citation?.sourceUrl || CORE_LEGAL_DOC_LINKS['38/2019'] || 'https://dulieuphapluat.vn';
 
     const matchedLegal = {
@@ -211,7 +212,7 @@ export class ContextEngineService {
 
     const lowerVal = (fact.currentValue || '').toLowerCase();
 
-    // 3. Phân tích rủi ro ngữ nghĩa (AI Semantic Risk Analyzer)
+    // 3. Phân tích rủi ro theo quy tắc (Rule-based Risk Analyzer)
     const isUnanswered = !fact.currentValue || fact.currentValue.trim() === '' || lowerVal.includes('chưa trả lời');
     const isNonCompliant = lowerVal.includes('chưa') || lowerVal.includes('không có') || lowerVal.includes('chưa có') || lowerVal.includes('chưa đăng ký');
     const isPreparing = lowerVal.includes('đang') || lowerVal.includes('chuẩn bị') || lowerVal.includes('một phần');
@@ -319,8 +320,8 @@ export class ContextEngineService {
 
     for (let i = 0; i < tasksToCreate.length; i++) {
       const t = tasksToCreate[i];
-      const dueDate = new Date();
-      dueDate.setDate(dueDate.getDate() + (t.dueDateDays || 7));
+      // Áp dụng Động cơ tính hạn chót thuế pháp định (30/01 môn bài, 30/10 TNDN 80%, cuối tháng quý sau GTGT/TNCN)
+      const dueDate = calculateTaxDeadline(fact.key);
 
       let priorityEnum: Priority = Priority.medium;
       if (t.priority === 'urgent' || t.priority === 'CRITICAL') priorityEnum = Priority.urgent;
@@ -339,6 +340,7 @@ export class ContextEngineService {
           assigneeRole: UserRole.owner,
           waitingOnRole: WaitingOnRole.none,
           dueDate,
+          isAuditPaid: true,
           status: TaskStatus.need_info,
           description: t.description || `Nhiệm vụ kiểm tra tuân thủ cho ${fact.label}`,
           contextTrigger: `Khởi tạo từ phiên rà soát thẻ [${fact.label}]`,

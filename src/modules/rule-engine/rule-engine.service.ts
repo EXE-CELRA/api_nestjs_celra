@@ -1,11 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateRuleDto } from './dto/rule.dto';
+
 import { UserRole, WaitingOnRole, TaskStatus, Prisma, Priority } from '@prisma/client';
 import { calculateLegalDueDate, StatutoryCycleType } from '../../common/utils/tax-calendar.util';
 import { CORE_LEGAL_DOC_LINKS } from '../../common/constants/legal-docs.constant';
 
-@Injectable()
 export class RuleEngineService {
   constructor(private readonly prisma: PrismaService) {}
 
@@ -337,7 +337,10 @@ export class RuleEngineService {
         }
 
         const taskCode = `TASK-${rule.code.replace('RULE-', '')}`;
+
         const dueDate = calculateLegalDueDate(cycleType, now);
+
+
 
         // 4. Tạo Task thật vào PostgreSQL Database
         const task = await this.prisma.task.create({
