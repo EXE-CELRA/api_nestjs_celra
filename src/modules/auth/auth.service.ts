@@ -76,6 +76,37 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
+    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@gmail.com').toLowerCase();
+    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123!@#';
+    const rawPassword = dto.password || dto.passwordHash;
+
+    // Kiểm tra tài khoản ảo Super Admin (In-Memory, không chạm vào DB)
+    if (dto.email.toLowerCase() === adminEmail) {
+      if (rawPassword !== adminPassword) {
+        throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
+      }
+
+      const virtualAdmin = {
+        id: 'admin-virtual-system-id',
+        email: adminEmail,
+        name: process.env.ADMIN_DEFAULT_NAME || 'Quản Trị Viên Hệ Thống CELRA',
+        role: UserRole.admin,
+        roleTitle: 'Super Administrator',
+        avatar: null,
+        phone: '0987654321',
+        isTwoFactorEnabled: false,
+        createdAt: new Date(),
+        isSuperAdmin: true,
+      };
+
+      const token = await this.generateToken(virtualAdmin);
+
+      return {
+        user: virtualAdmin,
+        accessToken: token,
+      };
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
       include: {
@@ -91,7 +122,6 @@ export class AuthService {
       throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
     }
 
-    const rawPassword = dto.password || dto.passwordHash;
     if (!rawPassword) {
       throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
     }
@@ -238,6 +268,22 @@ export class AuthService {
   }
 
   async getProfile(userId: string) {
+    if (userId === 'admin-virtual-system-id') {
+      return {
+        id: 'admin-virtual-system-id',
+        email: process.env.ADMIN_EMAIL || 'admin@gmail.com',
+        name: process.env.ADMIN_DEFAULT_NAME || 'Quản Trị Viên Hệ Thống CELRA',
+        role: UserRole.admin,
+        roleTitle: 'Super Administrator',
+        avatar: null,
+        phone: '0987654321',
+        isTwoFactorEnabled: false,
+        createdAt: new Date(),
+        memberships: [],
+        isSuperAdmin: true,
+      };
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {

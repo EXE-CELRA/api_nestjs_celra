@@ -5,14 +5,16 @@ import {
   Body,
   UseGuards,
   Headers,
+  Param,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
 import { WalletService } from './wallet.service';
-import { DepositDto, BuyPackageDto } from './dto/wallet.dto';
+import { DepositDto, BuyPackageDto, SandboxPaymentDto } from './dto/wallet.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { UserRole } from '@prisma/client';
 
 @ApiTags('Wallet & Escrow (Ví Doanh nghiệp & Ký quỹ)')
@@ -57,6 +59,29 @@ export class WalletController {
     @Body() dto: DepositDto,
   ) {
     return this.walletService.deposit(orgId, dto.amount, dto.note || 'Nạp tiền ví', userName || 'Chủ doanh nghiệp');
+  }
+
+  @Public()
+  @Post('sandbox-payment')
+  @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp (tùy chọn)', required: false })
+  @ApiOperation({ summary: 'Cổng thanh toán Sandbox mô phỏng giao dịch ngân hàng thực tế (Thành công / Thất bại)' })
+  async sandboxPayment(
+    @Headers('x-organization-id') orgId: string,
+    @CurrentUser('name') userName: string,
+    @Body() dto: SandboxPaymentDto,
+  ) {
+    return this.walletService.processSandboxPayment(
+      orgId || dto.orgId || '',
+      dto,
+      userName || 'Khách hàng Mobile Sandbox',
+    );
+  }
+
+  @Public()
+  @Get('sandbox-status/:code')
+  @ApiOperation({ summary: 'Kiểm tra trạng thái giao dịch Sandbox theo mã đơn hàng' })
+  async getSandboxStatus(@Param('code') code: string) {
+    return this.walletService.getSandboxStatus(code);
   }
 
   @Get('transactions')

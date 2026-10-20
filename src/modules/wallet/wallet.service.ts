@@ -141,6 +141,132 @@ export class WalletService {
     });
   }
 
+  /**
+   * Cổng thanh toán Sandbox mô phỏng giao dịch thực tế (Thành công / Thất bại)
+   */
+  async processSandboxPayment(
+    orgId: string,
+    dto: {
+      orgId?: string;
+      orderCode?: string;
+      packageId?: string;
+      amount?: number;
+      outcome: 'SUCCESS' | 'FAILED';
+      failureReason?: string;
+      bankName?: string;
+    },
+    requestedBy: string,
+  ) {
+    const targetOrgId = orgId || dto.orgId || '';
+    const wallet = await this.getWallet(targetOrgId);
+    let credits = 50;
+    let priceVnd = 100000;
+    let packageName = 'Gói Khởi Động';
+
+    if (dto.packageId) {
+      const pkg = CREDIT_PACKAGES.find((p) => p.id === dto.packageId);
+      if (pkg) {
+        credits = pkg.credits;
+        priceVnd = pkg.priceVnd;
+        packageName = pkg.name;
+      }
+    } else if (dto.amount) {
+      priceVnd = dto.amount;
+      if (priceVnd === 100000) credits = 50;
+      else if (priceVnd === 200000) credits = 120;
+      else if (priceVnd === 500000) credits = 450;
+      else credits = Math.max(1, Math.round(priceVnd / 2000));
+      packageName = `Nạp ${credits} Credit`;
+    }
+
+    const transactionCode = dto.orderCode || `SBX-${Date.now()}`;
+    const bankDisplay = dto.bankName || 'MBBank (Tài khoản ảo)';
+
+    if (dto.outcome === 'SUCCESS') {
+      return this.prisma.$transaction(async (tx) => {
+        const updatedWallet = await tx.wallet.update({
+          where: { id: wallet.id },
+          data: {
+            balance: { increment: credits },
+          },
+        });
+
+        const transaction = await tx.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            code: transactionCode,
+            taskName: `Thanh toán Sandbox: ${packageName}`,
+            requestedBy,
+            amount: credits,
+            type: TransactionType.deposit,
+            status: TransactionStatus.success,
+            note: `Thành công qua Cổng Sandbox (${bankDisplay}) - Số tiền: ${priceVnd.toLocaleString('vi-VN')}đ`,
+          },
+        });
+
+        return {
+          success: true,
+          status: 'success',
+          code: transactionCode,
+          creditsAdded: credits,
+          amountVnd: priceVnd,
+          packageName,
+          wallet: updatedWallet,
+          transaction,
+          message: `Thanh toán thành công qua Sandbox! Đã cộng +${credits} Credit.`,
+        };
+      });
+    } else {
+      // OUTCOME === 'FAILED'
+      const reason = dto.failureReason || 'Số dư tài khoản nguồn không đủ hoặc người dùng hủy giao dịch';
+      return this.prisma.$transaction(async (tx) => {
+        const transaction = await tx.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            code: transactionCode,
+            taskName: `Giao dịch Sandbox thất bại: ${packageName}`,
+            requestedBy,
+            amount: 0,
+            type: TransactionType.deposit,
+            status: TransactionStatus.failed,
+            note: `Lỗi: ${reason}. Đã hoàn tiền về tài khoản ngân hàng ảo.`,
+          },
+        });
+
+        return {
+          success: false,
+          status: 'failed',
+          code: transactionCode,
+          creditsAdded: 0,
+          amountVnd: priceVnd,
+          packageName,
+          wallet,
+          transaction,
+          failureReason: reason,
+          message: `Giao dịch thất bại: ${reason}. Đã kích hoạt hoàn trả về tài khoản nguồn.`,
+        };
+      });
+    }
+  }
+
+  async getSandboxStatus(code: string) {
+    const tx = await this.prisma.walletTransaction.findFirst({
+      where: { code },
+    });
+    if (!tx) {
+      return { found: false, status: 'pending' };
+    }
+    return {
+      found: true,
+      status: tx.status,
+      code: tx.code,
+      amount: tx.amount,
+      taskName: tx.taskName,
+      note: tx.note,
+      transaction: tx,
+    };
+  }
+
   async deposit(orgId: string, amount: number, note: string, requestedBy: string) {
     const wallet = await this.getWallet(orgId);
 
