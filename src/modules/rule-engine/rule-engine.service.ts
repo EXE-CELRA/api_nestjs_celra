@@ -2,8 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateRuleDto } from './dto/rule.dto';
 import { UserRole, WaitingOnRole, TaskStatus, Prisma } from '@prisma/client';
+import { calculateTaxDeadline } from '../../common/utils/tax-deadline.util';
 
-@Injectable()
 export class RuleEngineService {
   constructor(private readonly prisma: PrismaService) {}
 
@@ -107,8 +107,8 @@ export class RuleEngineService {
         }
 
         const taskCode = `TASK-${rule.code.replace('RULE-', '')}`;
-        const dueDate = new Date();
-        dueDate.setDate(dueDate.getDate() + 7); // Hạn chót sau 7 ngày
+        // Tính hạn chót thuế pháp định chuẩn xác theo quy định pháp luật (30/01, 30/10, hoặc cuối quý)
+        const dueDate = calculateTaxDeadline(rule.code);
 
         // 2. Tạo Task thật
         const task = await this.prisma.task.create({
