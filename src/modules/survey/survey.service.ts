@@ -18,18 +18,28 @@ export class SurveyService {
       }
     }
     if (!targetOrgId) {
-      const firstOrg = await this.prisma.organization.findFirst();
-      if (firstOrg) {
-        targetOrgId = firstOrg.id;
-      }
+      throw new Error('Không xác định được tổ chức hợp lệ để lưu khảo sát bối cảnh');
     }
 
     const user = userId ? await this.prisma.user.findUnique({ where: { id: userId } }) : null;
     const answeredBy = user ? user.name : 'Chủ doanh nghiệp';
 
-    // 1. Đồng bộ các thông tin nền tảng (Base Profile) vào ContextFact
+    // 1. Đồng bộ các thông tin nền tảng (Base Profile) vào ContextFact & Organization
     if (dto.baseProfile && targetOrgId) {
       const p = dto.baseProfile;
+      const isQuarterly = p.isNewlyEstablished || (p.annualRevenue || 0) <= 50000000000;
+
+      // Cập nhật thông tin thực thể Organization
+      await this.prisma.organization.update({
+        where: { id: targetOrgId },
+        data: {
+          name: p.companyName || undefined,
+          taxCode: p.taxCode || undefined,
+          employeeCount: Number(p.employeeCount) || (p.employeeScale === 'under_10' ? 8 : p.employeeScale === '10_to_50' ? 25 : 60),
+          revenueStatus: p.isNewlyEstablished ? 'newly_established' : (p.annualRevenue || 0) <= 50000000000 ? 'under_50b' : 'over_50b',
+        },
+      });
+
       const baseFacts = [
         {
           key: 'tax_code',
@@ -64,6 +74,38 @@ export class SurveyService {
             : 'Trên 50 nhân viên (Cần NQLĐ & Ban ATVSLĐ)',
           source: 'Khảo sát nền tảng Bước 1',
           affectedRules: p.requiresLaborRuleBook ? ['RULE_LABOR_MANDATORY_REGISTRATION'] : ['RULE_LABOR_GENERAL'],
+        },
+        {
+          key: 'employee_count',
+          label: 'Số lượng nhân sự thực tế',
+          group: 'hr_labor',
+          currentValue: String(p.employeeCount || (p.employeeScale === 'under_10' ? 8 : p.employeeScale === '10_to_50' ? 25 : 60)),
+          source: 'Khảo sát nền tảng Bước 1',
+          affectedRules: ['RULE_LABOR_GENERAL'],
+        },
+        {
+          key: 'annual_revenue',
+          label: 'Doanh thu năm trước liền kề',
+          group: 'tax_accounting',
+          currentValue: p.isNewlyEstablished ? '0 (Mới thành lập)' : String(p.annualRevenue || 0),
+          source: 'Khảo sát nền tảng Bước 1',
+          affectedRules: ['RULE-TAX-GTGT', 'RULE-TAX-TNDN-80'],
+        },
+        {
+          key: 'charter_capital',
+          label: 'Vốn điều lệ đăng ký',
+          group: 'legal',
+          currentValue: String(p.charterCapital || 0),
+          source: 'Khảo sát nền tảng Bước 1',
+          affectedRules: ['RULE-TAX-MONBAI'],
+        },
+        {
+          key: 'tax_filing_cycle',
+          label: 'Kỳ kê khai thuế GTGT & TNCN',
+          group: 'tax_accounting',
+          currentValue: isQuarterly ? 'THEO_QUY' : 'THEO_THANG',
+          source: 'Khảo sát nền tảng Bước 1 (Tự động xác định theo NĐ 126/2020)',
+          affectedRules: ['RULE-TAX-GTGT'],
         },
         {
           key: 'industry_tags',
