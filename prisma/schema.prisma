@@ -284,6 +284,7 @@ model Task {
   ruleCode                String
   legalBasis              String
   isPaidTask              Boolean             @default(false)
+  isAuditPaid            Boolean             @default(false)
   paidTaskCost            Float?              @default(0)
   paymentStatus           PaymentStatus       @default(none)
   findingId               String?
