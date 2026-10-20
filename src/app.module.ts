@@ -19,6 +19,7 @@ import { PaymentModule } from './modules/payment/payment.module';
 import { AIAssistantModule } from './modules/ai-assistant/ai-assistant.module';
 import { SurveyModule } from './modules/survey/survey.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { TaxLookupModule } from './modules/tax-lookup/tax-lookup.module';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -48,6 +49,7 @@ import { AppService } from './app.service';
     PaymentModule,
     AIAssistantModule,
     AdminModule,
+    TaxLookupModule,
   ],
   controllers: [AppController],
   providers: [
