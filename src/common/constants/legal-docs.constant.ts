@@ -9,10 +9,10 @@ export const CORE_LEGAL_DOC_LINKS: Record<string, string> = {
   '38/2019': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/luat-quan-ly-thue-2019-54279.html',
   '126/2020': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/nghi-dinh-1262020nd-cp-ve-huong-dan-luat-quan-ly-thue-24636.html',
   '91/2022': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/nghi-dinh-912022nd-cp-cua-chinh-phu-ve-viec-sua-doi-bo-sung-mot-so-dieu-cua-nghi-dinh-1262020nd-cp-ngay-19102020-cua-chinh-phu-quy-dinh-chi-tiet-mot-so-dieu-cua-luat-quan-ly-thue-1098434.html',
-  '252/2026': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/quyet-dinh-2551qd-btc-nam-2026-dinh-chinh-thong-tu-892026tt-btc-huong-dan-luat-quan-ly-thue-va-nghi-dinh-2522026nd-cp-huong-dan-luat-quan-ly-thue-do-bo-truong-bo-tai-chinh-ban-hanh-1840894.html',
+  '48/2024': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/luat-thue-gia-tri-gia-tang-2024-482024qh15-12345.html',
+  '181/2025': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/nghi-dinh-1812025nd-cp-12345.html',
   '80/2021': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/thong-tu-802021tt-btc-huong-dan-luat-quan-ly-thue-va-nghi-dinh-1262020nd-cp-huong-dan-luat-quan-ly-thue-do-bo-truong-bo-tai-chinh-ban-hanh-962.html',
   '72/2024': 'https://dulieuphapluat.vn/van-ban/van-ban-moi/nghi-dinh-72-2024-nd-cp-ve-chinh-sach-giam-thue-gia-tri-gia-tang-theo-nghi-quyet-142-2024-qh15-1185272.html',
-
   // --------------------------------------------------------------------------
   // NHÓM 2: LỆ PHÍ MÔN BÀI & HÓA ĐƠN CHỨNG TỪ ĐIỆN TỬ
   // --------------------------------------------------------------------------
