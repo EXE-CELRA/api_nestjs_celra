@@ -3,6 +3,7 @@ import {
   OrganizationEvaluationInput,
 } from '../../common/utils/compliance-evaluation.util';
 import { calculateTaxDeadline } from '../../common/utils/tax-deadline.util';
+import { extractLegalCitationsFromText } from '../../common/constants/legal-docs.constant';
 
 describe('CELRA Compliance & Statutory Tax Evaluation Engine (10 Mandatory Test Cases)', () => {
   const baseOrg: OrganizationEvaluationInput = {
@@ -132,7 +133,8 @@ describe('CELRA Compliance & Statutory Tax Evaluation Engine (10 Mandatory Test 
     // TNDN quý 2 hạn 31/07/2026 (không phải 30/10)
     expect(tndnQuarterlyDue.getMonth()).toBe(6); // Tháng 7
     expect(tndnQuarterlyDue.getDate()).toBe(31);
-
+    expect(vatQuarterlyDue.getMonth()).toBe(6);
+    expect(vatQuarterlyDue.getDate()).toBe(31);
     // Đánh giá TNDN 80% theo luật: Hạn chót đạt tỷ lệ 80% cả năm là 31/01 năm sau
     const report = evaluateEnterpriseCompliance(baseOrg, refDate);
     const tndn = report.obligations.find((o) => o.key === 'q_tax_corp_2');
@@ -222,5 +224,22 @@ describe('CELRA Compliance & Statutory Tax Evaluation Engine (10 Mandatory Test 
       expect(obligation.legalDoc).not.toContain('252/2026');
       expect(obligation.sourceUrl).not.toContain('2522026');
     }
+  });
+
+  // ==========================================================================
+  // Test 11: Căn cứ pháp lý không fix cứng & extractLegalCitationsFromText chuẩn mực
+  // ==========================================================================
+  it('11. Căn cứ pháp lý không fix cứng: extractLegalCitationsFromText không bị cụt và không bắt chữ luật v', () => {
+    const rawAiText = `Theo quy định của pháp luật về thuế, doanh nghiệp cần tạm nộp thuế theo Nghị định 91/2022/NĐ-CP và Luật Quản lý thuế số 38/2019/QH14. Ngoài ra luật và các văn bản hướng dẫn khác cũng quy định tương tự.`;
+    const citations = extractLegalCitationsFromText(rawAiText);
+
+    expect(citations.length).toBe(2);
+    // Không bao giờ dính "luật v"
+    expect(citations.some((c) => c.title.toLowerCase().includes('luật v'))).toBe(false);
+    // Không bao giờ bị cụt "Nghị định 91/2022/N"
+    const decree91 = citations.find((c) => c.docNumber.includes('91/2022'));
+    expect(decree91).toBeDefined();
+    expect(decree91?.docNumber).toBe('91/2022/NĐ-CP');
+    expect(decree91?.title).toContain('Nghị định 91/2022/NĐ-CP');
   });
 });

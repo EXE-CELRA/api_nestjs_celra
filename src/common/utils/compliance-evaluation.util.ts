@@ -80,6 +80,22 @@ export function formatComplianceStatus(status: string): string {
 export function formatComplianceStatusShort(status: string): string {
   return COMPLIANCE_STATUS_SHORT_LABELS[status] || status;
 }
+export interface VerificationOption {
+  label: string;
+  value: string;
+  isCompliant?: boolean;
+}
+
+export interface VerificationChecklistItem {
+  id: string;
+  factKey: string;
+  obligationCode: string;
+  obligationName: string;
+  question: string;
+  description: string;
+  options: VerificationOption[];
+}
+
 export interface ComplianceAuditReport {
   evaluatedAt: string;
   organizationId: string;
@@ -88,8 +104,8 @@ export interface ComplianceAuditReport {
   summary: ComplianceSummary;
   obligations: EvaluatedObligation[];
   pendingQuestions: string[];
+  verificationChecklist: VerificationChecklistItem[];
 }
-
 export interface EvaluationFactInput {
   key: string;
   label?: string;
@@ -141,11 +157,20 @@ export function evaluateEnterpriseCompliance(
   const facts = org.contextFacts || [];
   const evidences = org.evidenceDocuments || [];
 
+  const getFact = (key: string): EvaluationFactInput | undefined => {
+    return facts.find((item) => item.key === key);
+  };
+
   const getFactValue = (key: string): string => {
-    const f = facts.find((item) => item.key === key);
+    const f = getFact(key);
     return f?.currentValue?.trim() || '';
   };
 
+  const isFactConfirmed = (key: string): boolean => {
+    const f = getFact(key);
+    if (!f) return false;
+    return f.status === 'confirmed';
+  };
   const hasAcceptedEvidence = (keyword: string): boolean => {
     return evidences.some(
       (e) =>
@@ -172,7 +197,8 @@ export function evaluateEnterpriseCompliance(
     const factVal = getFactValue('q_tax_corp_monbai') || getFactValue('tax.license_fee');
     const hasEvidence = hasAcceptedEvidence('mon_bai') || hasAcceptedEvidence('môn bài') || hasAcceptedEvidence('lpmb');
 
-    if (isNewInCurrentYear) {
+    const isMonBaiConfirmed = isFactConfirmed('q_tax_corp_monbai') || isFactConfirmed('tax.license_fee');
+    if (isNewInCurrentYear || factVal.toLowerCase().includes('miễn') || factVal.toLowerCase().includes('moi thanh lap')) {
       statusReason = 'Doanh nghiệp mới thành lập trong năm được miễn lệ phí môn bài năm đầu tiên theo Nghị định 22/2020/NĐ-CP.';
       execStatus = 'COMPLETED';
     } else if (hasEvidence) {
@@ -181,9 +207,11 @@ export function evaluateEnterpriseCompliance(
       statusReason = 'Đã có chứng từ nộp NSNN hợp lệ xác nhận hoàn thành lệ phí môn bài.';
     } else if (factVal.toLowerCase().includes('da nop') || factVal.toLowerCase().includes('đã nộp')) {
       appStatus = 'APPLICABLE';
-      execStatus = 'IN_PROGRESS';
-      statusReason = 'Hệ thống ghi nhận thông tin đã nộp từ khảo sát ban đầu; cần đối chiếu Giấy nộp tiền NSNN để xác nhận chính thức.';
-      pendingQuestions.push('Doanh nghiệp vui lòng tải lên Giấy nộp tiền vào NSNN hoặc giấy báo Nợ đối với Lệ phí môn bài năm nay.');
+      execStatus = isMonBaiConfirmed ? 'COMPLETED' : 'IN_PROGRESS';
+      statusReason = isMonBaiConfirmed
+        ? 'Chủ doanh nghiệp đã xác nhận hoàn thành nộp lệ phí môn bài vào Ngân sách Nhà nước; duy trì lưu trữ chứng từ nộp thuế để phục vụ đối soát.'
+        : 'Hệ thống ghi nhận thông tin đã nộp từ khảo sát ban đầu; cần đối chiếu Giấy nộp tiền NSNN để xác nhận chính thức.';
+      if (!isMonBaiConfirmed) pendingQuestions.push('Doanh nghiệp vui lòng tải lên Giấy nộp tiền vào NSNN hoặc giấy báo Nợ đối với Lệ phí môn bài năm nay.');
     } else if (refDate.getTime() > monBaiDueDate.getTime()) {
       if (factVal.toLowerCase().includes('chua nop') || factVal.toLowerCase().includes('chưa nộp')) {
         appStatus = 'APPLICABLE';
@@ -193,7 +221,7 @@ export function evaluateEnterpriseCompliance(
         appStatus = 'APPLICABLE';
         execStatus = 'NEEDS_VERIFICATION';
         statusReason = `Đã qua ngày 30/01/${currentYear} nhưng chưa đủ dữ liệu chứng từ nộp thuế để khẳng định tình trạng tuân thủ.`;
-        pendingQuestions.push('Doanh nghiệp đã nộp lệ phí môn bài năm nay chưa? Vui lòng cung cấp chứng từ nộp tiền vào NSNN.');
+        if (!isMonBaiConfirmed) pendingQuestions.push('Doanh nghiệp đã nộp lệ phí môn bài năm nay chưa? Vui lòng cung cấp chứng từ nộp tiền vào NSNN.');
       }
     } else {
       appStatus = 'APPLICABLE';
@@ -246,23 +274,29 @@ export function evaluateEnterpriseCompliance(
     let execStatus: ExecutionStatus = 'IN_PROGRESS';
     let statusReason = '';
 
+    const isTndnConfirmed = isFactConfirmed('q_tax_corp_2') || isFactConfirmed('tax.cit_interim_payment');
     if (hasEvidence) {
       execStatus = 'COMPLETED';
       statusReason = 'Đã có chứng từ nộp thuế TNDN tạm nộp vào NSNN xác nhận tuân thủ.';
+    } else if (factVal.toLowerCase().includes('dat tren 80') || factVal.toLowerCase().includes('đạt trên 80')) {
+      execStatus = 'COMPLETED';
+      statusReason = 'Chủ doanh nghiệp đã xác nhận thực hiện tạm nộp thuế TNDN các quý đạt trên ngưỡng 80% số thuế phải nộp cả năm theo Nghị định 91/2022/NĐ-CP; doanh nghiệp lưu trữ chứng từ nộp NSNN để đối chiếu quyết toán cuối năm.';
+    } else if (factVal.toLowerCase().includes('chua co lai') || factVal.toLowerCase().includes('chưa có lãi') || factVal.toLowerCase().includes('khong phat sinh') || factVal.toLowerCase().includes('không phát sinh')) {
+      execStatus = 'COMPLETED';
+      statusReason = 'Chủ doanh nghiệp đã xác nhận năm nay hoạt động kinh doanh chưa có lãi, không phát sinh số thuế TNDN tạm nộp; doanh nghiệp theo dõi báo cáo tài chính để làm thủ tục quyết toán năm theo quy định.';
+    } else if (factVal.toLowerCase().includes('dang chuan bi') || factVal.toLowerCase().includes('đang chuẩn bị')) {
+      execStatus = 'IN_PROGRESS';
+      statusReason = `Doanh nghiệp đang chuẩn bị số liệu kế toán và nộp tạm tính các quý; lưu ý hoàn tất tạm nộp tối thiểu 80% trước hạn chốt 31/01/${currentYear + 1}.`;
+    } else if (factVal.toLowerCase().includes('chua thuc hien') || factVal.toLowerCase().includes('chưa thực hiện') || factVal.toLowerCase().includes('chua nop') || factVal.toLowerCase().includes('chưa nộp')) {
+      execStatus = refDate.getTime() > tndnThresholdDueDate.getTime() ? 'OVERDUE' : 'NEEDS_VERIFICATION';
+      statusReason = `Doanh nghiệp xác nhận chưa thực hiện tạm nộp thuế TNDN; cần khẩn trương ước tính lợi nhuận và nộp tạm tính trước ngày 31/01 năm sau để đảm bảo ngưỡng 80%, tránh phát sinh tiền chậm nộp 0.03%/ngày tính từ 01/02.`;
     } else if (refDate.getTime() <= tndnThresholdDueDate.getTime()) {
-      // Trong năm tài chính chưa hết hạn quý 4: Đang trong tiến độ tạm nộp từng quý, KHÔNG ĐƯỢC đánh giá OVERDUE
       execStatus = 'IN_PROGRESS';
       statusReason = `Doanh nghiệp đang trong tiến trình tạm nộp 4 quý (Hạn chót đạt tỷ lệ tối thiểu 80% là ngày 31/01/${currentYear + 1}). Tuyệt đối không tính tiền chậm nộp trước ngày này.`;
     } else {
-      // Đã qua 31/01 năm tiếp theo: cần đối chiếu số thuế đã nộp với 80% quyết toán năm
-      if (factVal.toLowerCase().includes('chua nop') || factVal.toLowerCase().includes('chưa nộp')) {
-        execStatus = 'OVERDUE';
-        statusReason = `Đã qua ngày 31/01/${currentYear + 1} và ghi nhận chưa thực hiện tạm nộp đủ 80% thuế TNDN cả năm.`;
-      } else {
-        execStatus = 'NEEDS_VERIFICATION';
-        statusReason = 'Chưa đủ dữ liệu báo cáo tài chính và số thuế đã nộp để tính toán tỷ lệ 80%; không tự sinh số tiền chậm nộp khi thiếu dữ liệu đầu vào.';
-        pendingQuestions.push('Doanh nghiệp vui lòng cung cấp ước tính thuế TNDN phải nộp cả năm và tổng số thuế TNDN đã tạm nộp vào NSNN.');
-      }
+      execStatus = 'NEEDS_VERIFICATION';
+      statusReason = 'Chưa đủ dữ liệu báo cáo tài chính và số thuế đã nộp để tính toán tỷ lệ 80%; không tự sinh số tiền chậm nộp khi thiếu dữ liệu đầu vào.';
+      if (!isTndnConfirmed) pendingQuestions.push('Doanh nghiệp vui lòng cung cấp ước tính thuế TNDN phải nộp cả năm và tổng số thuế TNDN đã tạm nộp vào NSNN.');
     }
 
     obligations.push({
@@ -305,20 +339,21 @@ export function evaluateEnterpriseCompliance(
     let execStatus: ExecutionStatus = 'IN_PROGRESS';
     let statusReason = '';
 
-    if (hasEvidence) {
+    const isNonCashConfirmed = isFactConfirmed('q_tax_corp_3') || isFactConfirmed('tax.non_cash_payment');
+    if (hasEvidence || factVal.toLowerCase().includes('100%') || factVal.toLowerCase().includes('chuyen khoan') || factVal.toLowerCase().includes('chuyển khoản')) {
       execStatus = 'COMPLETED';
-      statusReason = 'Đã có ủy nhiệm chi và sao kê ngân hàng khớp đúng tài khoản bên bán theo quy định.';
+      statusReason = 'Chủ doanh nghiệp đã xác nhận 100% hóa đơn mua vào từ ngưỡng luật định (>20 triệu) đều thanh toán qua tài khoản ngân hàng và lưu trữ Ủy nhiệm chi; đảm bảo điều kiện khấu trừ thuế GTGT và chi phí được trừ TNDN theo Thông tư 96/2015/TT-BTC.';
     } else if (factVal.toLowerCase().includes('tien mat') || factVal.toLowerCase().includes('tiền mặt')) {
       execStatus = 'NEEDS_VERIFICATION';
       statusReason = 'Phát hiện có hóa đơn thanh toán bằng tiền mặt. Lưu ý pháp lý quan trọng: Việc chuyển khoản sau đó không mặc định khắc phục được điều kiện khấu trừ thuế GTGT và tính chi phí TNDN nếu không có thủ tục điều chỉnh/hủy hợp pháp.';
-      pendingQuestions.push('Doanh nghiệp có hóa đơn mua hàng từ ngưỡng luật định thanh toán bằng tiền mặt không? Cần rà soát hồ sơ với bên bán.');
-    } else if (factVal.toLowerCase().includes('chuyen khoan') || factVal.toLowerCase().includes('chuyển khoản')) {
+      if (!isNonCashConfirmed) pendingQuestions.push('Doanh nghiệp có hóa đơn mua hàng từ ngưỡng luật định thanh toán bằng tiền mặt không? Cần rà soát hồ sơ với bên bán.');
+    } else if (factVal.toLowerCase().includes('dang doi chieu') || factVal.toLowerCase().includes('đang đối chiếu')) {
       execStatus = 'IN_PROGRESS';
-      statusReason = 'Hệ thống ghi nhận tuân thủ thanh toán ngân hàng; cần tập hợp và lưu trữ đầy đủ Ủy nhiệm chi cho từng hóa đơn.';
+      statusReason = 'Doanh nghiệp đang đối chiếu sao kê và ủy nhiệm chi ngân hàng.';
     } else {
       execStatus = 'NEEDS_VERIFICATION';
       statusReason = 'Chưa đủ dữ liệu về các giao dịch mua hàng; cần kiểm tra phương thức thanh toán đối với các hóa đơn đầu vào.';
-      pendingQuestions.push('Doanh nghiệp có lưu trữ đầy đủ ủy nhiệm chi ngân hàng cho các hóa đơn mua vào từ ngưỡng luật định không?');
+      if (!isNonCashConfirmed) pendingQuestions.push('Doanh nghiệp có lưu trữ đầy đủ ủy nhiệm chi ngân hàng cho các hóa đơn mua vào từ ngưỡng luật định không?');
     }
 
     obligations.push({
@@ -413,10 +448,25 @@ export function evaluateEnterpriseCompliance(
     const factVal = getFactValue('q_tax_salary_1') || getFactValue('tax.pit_filing');
     const hasEvidence = hasAcceptedEvidence('tncn') || hasAcceptedEvidence('lương') || hasAcceptedEvidence('bảng lương');
 
+    const isSalaryConfirmed = isFactConfirmed('q_tax_salary_1') || isFactConfirmed('tax.pit_filing');
+    let appStatus: ApplicabilityStatus = (org.employeeCount || 0) > 0 ? 'APPLICABLE' : 'POSSIBLE';
     let execStatus: ExecutionStatus = hasEvidence ? 'COMPLETED' : 'IN_PROGRESS';
-    const statusReason = hasEvidence
-      ? 'Đã có bảng lương, hợp đồng lao động và chứng từ khấu trừ thuế TNCN hợp lệ.'
-      : 'Cần phân biệt rõ: Đăng ký MST cá nhân là bắt buộc cho 100% người lao động; đăng ký người phụ thuộc chỉ áp dụng khi có người phụ thuộc đủ điều kiện; kê khai TNCN chỉ phát sinh khi có khấu trừ thuế trong kỳ.';
+    let statusReason = '';
+
+    if (hasEvidence || isSalaryConfirmed || factVal.toLowerCase().includes('da co mst') || factVal.toLowerCase().includes('đã có mst') || factVal.toLowerCase().includes('đã hoàn thiện') || factVal.toLowerCase().includes('da hoan thien')) {
+      execStatus = 'COMPLETED';
+      statusReason = 'Chủ doanh nghiệp đã xác nhận hoàn thiện đăng ký MST cá nhân cho 100% người lao động và lưu trữ đầy đủ hồ sơ chi phí tiền lương hợp lệ.';
+    } else if (factVal.toLowerCase().includes('chua phat sinh') || factVal.toLowerCase().includes('chưa phát sinh')) {
+      appStatus = 'NOT_APPLICABLE';
+      execStatus = 'COMPLETED';
+      statusReason = 'Chủ doanh nghiệp đã xác nhận chưa phát sinh lao động ký hợp đồng từ 3 tháng trở lên; chưa phát sinh nghĩa vụ kê khai thuế TNCN định kỳ.';
+    } else if (factVal.toLowerCase().includes('dang lam') || factVal.toLowerCase().includes('đang hoàn thiện')) {
+      execStatus = 'IN_PROGRESS';
+      statusReason = 'Doanh nghiệp đang hoàn thiện thủ tục cấp MST cá nhân cho nhân sự mới.';
+    } else {
+      execStatus = 'IN_PROGRESS';
+      statusReason = 'Cần phân biệt rõ: Đăng ký MST cá nhân là bắt buộc cho 100% người lao động; đăng ký người phụ thuộc chỉ áp dụng khi có người phụ thuộc đủ điều kiện; kê khai TNCN chỉ phát sinh khi có khấu trừ thuế trong kỳ.';
+    }
 
     obligations.push({
       key: 'q_tax_salary_1',
@@ -426,8 +476,8 @@ export function evaluateEnterpriseCompliance(
       taxPeriod: `Kỳ tính thuế năm ${currentYear}`,
       statutoryDueDate: `Theo kỳ kê khai GTGT & Quyết toán 31/03/${currentYear + 1}`,
       statutoryDueDateObj: new Date(currentYear + 1, 2, 31, 23, 59, 59),
-      applicabilityStatus: (org.employeeCount || 0) > 0 ? 'APPLICABLE' : 'POSSIBLE',
-      applicabilityLabel: formatComplianceStatus((org.employeeCount || 0) > 0 ? 'APPLICABLE' : 'POSSIBLE'),
+      applicabilityStatus: appStatus,
+      applicabilityLabel: formatComplianceStatus(appStatus),
       executionStatus: execStatus,
       executionLabel: formatComplianceStatus(execStatus),
       status: execStatus,
@@ -531,6 +581,152 @@ export function evaluateEnterpriseCompliance(
     summaryText: `Tổng hợp ${obligations.length} nghĩa vụ: ${completedCount} có đủ bằng chứng xác nhận hoàn thành, ${inProgressCount} đang thực hiện và có dữ liệu xác nhận, ${needsVerificationCount} cần xác minh thông tin hoặc căn cứ, ${overdueCount} quá hạn chưa hoàn thành, ${notApplicableCount} đã có căn cứ xác định không áp dụng.`,
   };
 
+  // ==========================================================================
+  // XÂY DỰNG BỘ CHECKLIST THU THẬP THÔNG TIN ĐỘNG KHI CÒN THIẾU DỮ LIỆU
+  // ==========================================================================
+  const verificationChecklist: VerificationChecklistItem[] = [];
+
+  // 1. Môn bài: chỉ sinh khi chưa có xác nhận và chưa có bằng chứng
+  const monBaiOb = obligations.find((o) => o.key === 'q_tax_corp_monbai');
+  const monBaiVal = getFactValue('q_tax_corp_monbai') || getFactValue('tax.license_fee');
+  const isMonBaiDone =
+    isFactConfirmed('q_tax_corp_monbai') ||
+    isFactConfirmed('tax.license_fee') ||
+    hasAcceptedEvidence('mon_bai') ||
+    hasAcceptedEvidence('môn bài') ||
+    hasAcceptedEvidence('lpmb') ||
+    monBaiVal.toLowerCase().includes('đã nộp') ||
+    monBaiVal.toLowerCase().includes('da nop') ||
+    monBaiVal.toLowerCase().includes('miễn') ||
+    monBaiVal.toLowerCase().includes('chưa nộp');
+  if (monBaiOb && monBaiOb.status === 'NEEDS_VERIFICATION' && !isMonBaiDone) {
+    verificationChecklist.push({
+      id: 'chk-monbai',
+      factKey: 'q_tax_corp_monbai',
+      obligationCode: 'TAX-OBL-01',
+      obligationName: 'Lệ phí môn bài',
+      question: 'Doanh nghiệp đã nộp lệ phí môn bài năm nay vào Ngân sách Nhà nước chưa?',
+      description: 'Hạn nộp chậm nhất là 30/01 hàng năm (trừ DN mới thành lập được miễn năm đầu).',
+      options: [
+        { label: 'Đã nộp đầy đủ vào Kho bạc Nhà nước', value: 'Đã nộp đầy đủ vào NSNN', isCompliant: true },
+        { label: 'Chưa nộp tiền môn bài', value: 'Chưa nộp tiền vào ngân sách', isCompliant: false },
+        { label: 'Mới thành lập trong năm (thuộc diện miễn)', value: 'Mới thành lập (miễn lệ phí môn bài năm đầu)', isCompliant: true },
+      ],
+    });
+  }
+
+  // 2. TNDN 80%: chỉ sinh khi chưa có xác nhận
+  const tndnOb = obligations.find((o) => o.key === 'q_tax_corp_2');
+  const tndnVal = getFactValue('q_tax_corp_2') || getFactValue('tax.cit_interim_payment');
+  const isTndnDone =
+    isFactConfirmed('q_tax_corp_2') ||
+    isFactConfirmed('tax.cit_interim_payment') ||
+    hasAcceptedEvidence('tndn') ||
+    hasAcceptedEvidence('thu nhập doanh nghiệp') ||
+    tndnVal.toLowerCase().includes('đạt trên 80') ||
+    tndnVal.toLowerCase().includes('chưa có lãi') ||
+    tndnVal.toLowerCase().includes('không phát sinh') ||
+    tndnVal.toLowerCase().includes('đang chuẩn bị') ||
+    tndnVal.toLowerCase().includes('chưa thực hiện');
+  if (tndnOb && !isTndnDone && (tndnOb.status === 'NEEDS_VERIFICATION' || tndnVal === '')) {
+    verificationChecklist.push({
+      id: 'chk-tndn-80',
+      factKey: 'q_tax_corp_2',
+      obligationCode: 'TAX-OBL-02',
+      obligationName: 'Tạm nộp thuế TNDN (80%)',
+      question: 'Tình hình tạm nộp thuế TNDN 4 quý của doanh nghiệp hiện tại như thế nào?',
+      description: 'Tổng 4 quý tạm nộp không được thấp hơn 80% số thuế TNDN quyết toán cả năm (hạn chốt 31/01 năm sau).',
+      options: [
+        { label: 'Đã tạm nộp các quý đạt tối thiểu 80% số thuế dự kiến', value: 'Đã tạm nộp đạt trên 80% số thuế TNDN cả năm', isCompliant: true },
+        { label: 'Đang chuẩn bị số liệu và nộp tạm tính các quý', value: 'Đang chuẩn bị số liệu kế toán và nộp tạm tính', isCompliant: true },
+        { label: 'Năm nay doanh nghiệp chưa có lãi (không phát sinh thuế TNDN)', value: 'Chưa có lãi (không phát sinh thuế TNDN phải nộp)', isCompliant: true },
+        { label: 'Chưa thực hiện tạm nộp thuế TNDN', value: 'Chưa thực hiện tạm nộp thuế TNDN', isCompliant: false },
+      ],
+    });
+  }
+
+  // 3. Chứng từ thanh toán không dùng tiền mặt: chỉ sinh khi chưa có xác nhận
+  const nonCashOb = obligations.find((o) => o.key === 'q_tax_corp_3');
+  const nonCashVal = getFactValue('q_tax_corp_3') || getFactValue('tax.non_cash_payment');
+  const isNonCashDone =
+    isFactConfirmed('q_tax_corp_3') ||
+    isFactConfirmed('tax.non_cash_payment') ||
+    hasAcceptedEvidence('thanh toán không dùng tiền mặt') ||
+    nonCashVal.toLowerCase().includes('100%') ||
+    nonCashVal.toLowerCase().includes('tiền mặt') ||
+    nonCashVal.toLowerCase().includes('đang đối chiếu') ||
+    nonCashVal.toLowerCase().includes('chuyển khoản');
+  if (nonCashOb && !isNonCashDone && (nonCashOb.status === 'NEEDS_VERIFICATION' || nonCashVal === '')) {
+    verificationChecklist.push({
+      id: 'chk-non-cash',
+      factKey: 'q_tax_corp_3',
+      obligationCode: 'TAX-OBL-03',
+      obligationName: 'Chứng từ thanh toán không dùng tiền mặt',
+      question: 'Các hóa đơn mua hàng từ ngưỡng luật định (>20 triệu) của doanh nghiệp có thanh toán qua ngân hàng không?',
+      description: 'Bắt buộc thanh toán qua ngân hàng để khấu trừ thuế GTGT và bảo vệ chi phí được trừ TNDN.',
+      options: [
+        { label: '100% thanh toán qua ngân hàng, có lưu Ủy nhiệm chi', value: '100% chuyển khoản ngân hàng có đầy đủ Ủy nhiệm chi', isCompliant: true },
+        { label: 'Có một số hóa đơn đã thanh toán bằng tiền mặt', value: 'Có hóa đơn trên 20 triệu đã thanh toán bằng tiền mặt', isCompliant: false },
+        { label: 'Chưa đối chiếu xong sao kê và ủy nhiệm chi', value: 'Đang đối chiếu sao kê và ủy nhiệm chi ngân hàng', isCompliant: false },
+      ],
+    });
+  }
+
+  // 4. HĐĐT máy tính tiền: chỉ sinh khi chưa có xác nhận
+  const posOb = obligations.find((o) => o.key === 'q_fnb_tax_1');
+  const posVal = getFactValue('q_fnb_tax_1') || getFactValue('invoice.pos_cash_register');
+  const isPosDone =
+    isFactConfirmed('q_fnb_tax_1') ||
+    isFactConfirmed('invoice.pos_cash_register') ||
+    hasAcceptedEvidence('pos') ||
+    posVal.toLowerCase().includes('có bán hàng') ||
+    posVal.toLowerCase().includes('không bán hàng') ||
+    posOb?.applicabilityStatus === 'NOT_APPLICABLE';
+  if (posOb && posOb.applicabilityStatus === 'APPLICABLE' && posOb.status === 'NEEDS_VERIFICATION' && !isPosDone) {
+    verificationChecklist.push({
+      id: 'chk-pos-invoice',
+      factKey: 'q_fnb_tax_1',
+      obligationCode: 'TAX-OBL-06',
+      obligationName: 'Hóa đơn điện tử máy tính tiền',
+      question: 'Cơ sở có điểm bán hàng hóa / dịch vụ ăn uống trực tiếp đến người tiêu dùng không?',
+      description: 'Bắt buộc áp dụng đối với cơ sở bán lẻ, F&B, ăn uống trực tiếp theo Điều 11 Nghị định 123/2020/NĐ-CP.',
+      options: [
+        { label: 'Có bán hàng trực tiếp (Bắt buộc HĐĐT máy tính tiền)', value: 'Có bán hàng trực tiếp (Bắt buộc HĐĐT máy tính tiền)', isCompliant: true },
+        { label: 'Không bán lẻ đến người tiêu dùng (mô hình B2B thuần túy)', value: 'Không bán hàng trực tiếp đến người tiêu dùng (Áp dụng HĐĐT thông thường)', isCompliant: true },
+        { label: 'Chưa xác định rõ hình thức bán hàng', value: 'Chưa xác định rõ hình thức bán hàng trực tiếp', isCompliant: false },
+      ],
+    });
+  }
+
+  // 5. Hồ sơ lao động & Thuế TNCN: chỉ sinh khi chưa có xác nhận
+  const salaryOb = obligations.find((o) => o.key === 'q_tax_salary_1');
+  const salaryVal = getFactValue('q_tax_salary_1') || getFactValue('tax.pit_filing');
+  const isSalaryDone =
+    isFactConfirmed('q_tax_salary_1') ||
+    isFactConfirmed('tax.pit_filing') ||
+    hasAcceptedEvidence('tncn') ||
+    hasAcceptedEvidence('lương') ||
+    hasAcceptedEvidence('bảng lương') ||
+    salaryVal.toLowerCase().includes('đã có mst') ||
+    salaryVal.toLowerCase().includes('đã hoàn thiện') ||
+    salaryVal.toLowerCase().includes('chưa phát sinh') ||
+    salaryVal.toLowerCase().includes('đang hoàn thiện');
+  if (salaryOb && !isSalaryDone && (salaryOb.status === 'NEEDS_VERIFICATION' || salaryVal === '')) {
+    verificationChecklist.push({
+      id: 'chk-salary-pit',
+      factKey: 'q_tax_salary_1',
+      obligationCode: 'TAX-OBL-05',
+      obligationName: 'Hồ sơ chi phí tiền lương & thuế TNCN',
+      question: 'Doanh nghiệp đã hoàn thiện đăng ký MST cá nhân cho nhân viên và hồ sơ tiền lương chưa?',
+      description: 'Bắt buộc đăng ký MST cá nhân cho 100% NLĐ có HĐLĐ; người phụ thuộc chỉ đăng ký khi có đủ hồ sơ chứng minh.',
+      options: [
+        { label: 'Đã có MST cho 100% nhân viên có HĐLĐ & lưu bảng lương đầy đủ', value: 'Đã hoàn thiện MST cá nhân và hồ sơ chi phí lương', isCompliant: true },
+        { label: 'Đang làm thủ tục cấp MST cá nhân cho nhân viên mới', value: 'Đang hoàn thiện đăng ký MST cá nhân cho nhân viên', isCompliant: true },
+        { label: 'Chưa phát sinh lao động ký hợp đồng từ 3 tháng trở lên', value: 'Chưa phát sinh lao động ký hợp đồng từ 3 tháng trở lên', isCompliant: true },
+      ],
+    });
+  }
+
   return {
     evaluatedAt: refDate.toISOString(),
     organizationId: org.id,
@@ -539,5 +735,6 @@ export function evaluateEnterpriseCompliance(
     summary,
     obligations,
     pendingQuestions,
+    verificationChecklist,
   };
 }

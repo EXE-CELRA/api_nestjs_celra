@@ -2,13 +2,14 @@ import { Injectable, Logger, NotFoundException, OnModuleInit, ForbiddenException
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { AIChatMessageDto, AcceptProposalDto, UpdateLegalRuleDto } from './dto/ai-chat.dto';
-import { TaskStatus, UserRole, WaitingOnRole, TimelineEventType, Priority, ContextStatus } from '@prisma/client';
+import { TaskStatus, UserRole, WaitingOnRole, TimelineEventType, ContextStatus, ContextGroup } from '@prisma/client';
 import * as crypto from 'crypto';
 
 import {
   CORE_LEGAL_DOC_LINKS,
   cleanDLPLUrl,
   matchCoreLegalDocUrl,
+  extractLegalCitationsFromText,
 } from '../../common/constants/legal-docs.constant';
 import { calculateTaxDeadline } from '../../common/utils/tax-deadline.util';
 import { evaluateEnterpriseCompliance } from '../../common/utils/compliance-evaluation.util';
@@ -20,6 +21,7 @@ interface CachedAnswer {
   proposedChecklists: unknown[];
   actionType: 'info' | 'open_compliance_audit' | 'task_proposal' | 'enterprise_audit';
   isEnterpriseQuery?: boolean;
+  verificationChecklist?: unknown[];
   ctaButton?: { text: string; action: string };
   timestamp: number;
 }
@@ -180,88 +182,205 @@ export class AIAssistantService implements OnModuleInit {
     }
 
     // ------------------------------------------------------------------------
-    // BƯỚC 1.1: XỬ LÝ SỰ KIỆN XÁC NHẬN THÔNG TIN TỪ CHAT VÀ TỰ ĐỘNG CẬP NHẬT DB
-    // Khi người dùng bấm "Gửi xác nhận thông tin vào hội thoại" (Ví dụ: Bán hàng trực tiếp CÓ/KHÔNG)
-    // Hệ thống tự động cập nhật ContextFact q_fnb_tax_1 và Organization.hasOnlineSales vào PostgreSQL
+    // BƯỚC 1.1: XỬ LÝ SỰ KIỆN XÁC NHẬN THÔNG TIN TÌNH HUỐNG TỪ CHAT (MÔ PHỎNG IN-MEMORY)
+    // Câu hỏi/xác nhận từ người dùng chỉ là TÌNH HUỐNG GIẢ SỬ để tư vấn rà soát
+    // TUYỆT ĐỐI KHÔNG tự ý lưu hay ghi đè vào contextFact / Organization trong Database
     // ------------------------------------------------------------------------
     const isVerificationConfirm = rawMessage.toLowerCase().startsWith('xac nhan thong tin:') || rawMessage.toLowerCase().startsWith('xác nhận thông tin:');
     if (isVerificationConfirm) {
       const confirmText = rawMessage.replace(/^(xac nhan thong tin:|xác nhận thông tin:)\s*/i, '').trim();
-      const isYes = /có|co bán hàng|có áp dụng/i.test(confirmText);
-      const isNo = /không|khong bán hàng|không áp dụng/i.test(confirmText);
-      const newStatusValue = isYes
-        ? 'Có bán hàng trực tiếp (Bắt buộc HĐĐT máy tính tiền)'
-        : isNo
-        ? 'Không bán hàng trực tiếp đến người tiêu dùng (Áp dụng HĐĐT thông thường)'
-        : 'Chưa xác định rõ hình thức bán hàng trực tiếp';
+      const updatedFactLabels: string[] = [];
 
-      // 1. Cập nhật thẻ bối cảnh q_fnb_tax_1 trong Database
-      const targetFact = (org.contextFacts || []).find((f) => f.key === 'q_fnb_tax_1');
-      if (targetFact) {
-        await this.prisma.contextFact.update({
-          where: { id: targetFact.id },
-          data: {
-            currentValue: newStatusValue,
+      // Tạo bản sao ngữ cảnh tạm thời (in-memory overlay) để mô phỏng phân tích cho tình huống giả sử, KHÔNG thay đổi DB thực tế
+      const simulatedFacts = (org.contextFacts || []).map((f) => ({ ...f }));
+      const simulatedOrg = { ...org, contextFacts: simulatedFacts };
+
+      // Helper cập nhật thẻ Fact chỉ tạm thời trong in-memory cho lượt phân tích giả sử này, TUYỆT ĐỐI KHÔNG LƯU VÀO DATABASE
+      const simulateFact = (key: string, label: string, group: ContextGroup, value: string) => {
+        const existing = simulatedFacts.find((f) => f.key === key);
+        if (existing) {
+          existing.currentValue = value;
+          existing.status = ContextStatus.confirmed;
+        } else {
+          simulatedFacts.push({
+            id: `sim-${Date.now()}-${key}`,
+            organizationId: orgId,
+            key,
+            label,
+            group,
+            currentValue: value,
+            source: 'chatbox_hypothetical',
+            providedBy: 'Chủ doanh nghiệp (Tình huống giả sử qua chat)',
+            providedAt: new Date(),
             status: ContextStatus.confirmed,
-            history: {
-              create: {
-                value: newStatusValue,
-                changedBy: 'Chủ doanh nghiệp (Xác nhận qua Chatbox CELRA)',
-                note: 'Cập nhật từ câu hỏi xác minh trong phiên hội thoại AI',
-              },
-            },
-          },
-        });
-        targetFact.currentValue = newStatusValue;
-        targetFact.status = ContextStatus.confirmed;
-        this.logger.log(`[DB UPDATED] Đã cập nhật thành công thẻ [${targetFact.key}] thành: "${newStatusValue}"`);
+            confirmedBy: null,
+            affectedRules: [],
+            conflictDetails: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+        }
+        updatedFactLabels.push(`${label}: "${value}"`);
+      };
+
+      // 1. Nhận diện Môn bài
+      if (/(mon bai|môn bài)/i.test(confirmText)) {
+        let monBaiVal = 'Đã nộp đầy đủ vào NSNN';
+        if (/(chua nop|chưa nộp)/i.test(confirmText)) {
+          monBaiVal = 'Chưa nộp tiền vào ngân sách';
+        } else if (/(moi thanh lap|mới thành lập|mien|miễn)/i.test(confirmText)) {
+          monBaiVal = 'Mới thành lập (miễn lệ phí môn bài năm đầu)';
+        }
+        simulateFact('q_tax_corp_monbai', 'Lệ phí môn bài', ContextGroup.tax_accounting, monBaiVal);
       }
 
-      // 2. Cập nhật trường hasOnlineSales của Organization nếu liên quan đến bán lẻ/website
-      if (isYes || isNo) {
-        await this.prisma.organization.update({
-          where: { id: orgId },
-          data: { hasOnlineSales: isYes },
-        });
-        org.hasOnlineSales = isYes;
+      // 2. Nhận diện TNDN 80%
+      if (/(tndn|tam nop|tạm nộp)/i.test(confirmText)) {
+        let tndnVal = 'Đã tạm nộp đạt trên 80% số thuế TNDN cả năm';
+        if (/(chua thuc hien|chưa thực hiện|chua nop|chưa nộp)/i.test(confirmText)) {
+          tndnVal = 'Chưa thực hiện tạm nộp thuế TNDN';
+        } else if (/(chua co lai|chưa có lãi|khong lai|không phát sinh)/i.test(confirmText)) {
+          tndnVal = 'Chưa có lãi (không phát sinh thuế TNDN phải nộp)';
+        } else if (/(dang chuan bi|đang chuẩn bị)/i.test(confirmText)) {
+          tndnVal = 'Đang chuẩn bị số liệu kế toán và nộp tạm tính';
+        }
+        simulateFact('q_tax_corp_2', 'Tạm nộp thuế TNDN (80%)', ContextGroup.tax_accounting, tndnVal);
       }
 
-      // 3. Phản hồi xác nhận thành công và đối chiếu ngay nghĩa vụ pháp lý tương ứng
-      const legalRef = isYes
-        ? 'Căn cứ Điều 11 Nghị định 123/2020/NĐ-CP và Điều 8 Thông tư 78/2021/TT-BTC: Doanh nghiệp của bạn thuộc diện bắt buộc áp dụng Hóa đơn điện tử khởi tạo từ máy tính tiền có kết nối dữ liệu trực tiếp với cơ quan thuế. Mức phạt nếu không xuất HĐĐT máy tính tiền từ 10.000.000đ đến 20.000.000đ.'
-        : 'Căn cứ Nghị định 123/2020/NĐ-CP: Doanh nghiệp không bán lẻ trực tiếp đến người tiêu dùng nên tiếp tục sử dụng Hóa đơn điện tử có mã hoặc không có mã của cơ quan thuế theo quy trình thông thường.';
+      // 3. Nhận diện Thanh toán không dùng tiền mặt
+      if (/(tien mat|tiền mặt|chuyen khoan|chuyển khoản|ngan hang|ngân hàng|20 trieu|20 triệu|uy nhiem chi|ủy nhiệm chi)/i.test(confirmText)) {
+        let nonCashVal = '100% chuyển khoản ngân hàng có đầy đủ Ủy nhiệm chi';
+        if (/(tien mat|tiền mặt)/i.test(confirmText) && /(co|có|da tra|đã trả)/i.test(confirmText)) {
+          nonCashVal = 'Có hóa đơn trên 20 triệu đã thanh toán bằng tiền mặt';
+        } else if (/(chua doi chieu|đang đối chiếu)/i.test(confirmText)) {
+          nonCashVal = 'Đang đối chiếu sao kê và ủy nhiệm chi ngân hàng';
+        }
+        simulateFact('q_tax_corp_3', 'Thanh toán không dùng tiền mặt', ContextGroup.tax_accounting, nonCashVal);
+      }
 
-      const replyAck = `**HỆ THỐNG ĐÃ CẬP NHẬT THÀNH CÔNG VÀO CƠ SỞ DỮ LIỆU CÔNG TY:**\n\n` +
-        `- **Dữ kiện cập nhật**: Hóa đơn điện tử máy tính tiền\n` +
-        `- **Trạng thái mới**: "${newStatusValue}"\n` +
-        `- **Thời điểm ghi nhận**: ${new Date().toLocaleString('vi-VN')}\n` +
-        `- **Người xác nhận**: Chủ doanh nghiệp (qua Chatbox)\n\n` +
-        `**Đối chiếu nghĩa vụ pháp lý tương ứng:**\n` +
-        `${legalRef}\n\n` +
-        `*Hồ sơ bối cảnh tuân thủ của doanh nghiệp đã được lưu vết minh bạch vào lịch sử đối soát của hệ thống.*`;
+      // 4. Nhận diện HĐĐT máy tính tiền / Bán lẻ trực tiếp
+      if (/(may tinh tien|máy tính tiền|ban hang truc tiep|bán hàng trực tiếp|pos|ban le|bán lẻ|nguoi tieu dung|người tiêu dùng)/i.test(confirmText)) {
+        const isYes = /có|co bán hàng|có áp dụng/i.test(confirmText);
+        const isNo = /không|khong bán hàng|không áp dụng|b2b/i.test(confirmText);
+        const posVal = isYes
+          ? 'Có bán hàng trực tiếp (Bắt buộc HĐĐT máy tính tiền)'
+          : isNo
+          ? 'Không bán hàng trực tiếp đến người tiêu dùng (Áp dụng HĐĐT thông thường)'
+          : 'Chưa xác định rõ hình thức bán hàng trực tiếp';
+        simulateFact('q_fnb_tax_1', 'Hóa đơn điện tử máy tính tiền', ContextGroup.revenue_invoices, posVal);
+        if (isYes || isNo) {
+          simulatedOrg.hasOnlineSales = isYes;
+        }
+      }
+
+      // 5. Nhận diện Thuế GTGT định kỳ
+      if (/(gtgt|vat|ky ke khai|kỳ kê khai)/i.test(confirmText)) {
+        const isMonth = /(thang|tháng)/i.test(confirmText);
+        const gtgtVal = isMonth
+          ? 'Kê khai thuế GTGT định kỳ theo tháng'
+          : 'Kê khai thuế GTGT định kỳ theo quý';
+        simulateFact('q_tax_corp_1', 'Kê khai thuế GTGT định kỳ', ContextGroup.tax_accounting, gtgtVal);
+      }
+
+      // 6. Nhận diện Hồ sơ tiền lương & thuế TNCN
+      if (/(luong|lương|nhan su|nhân sự|tncn|mst ca nhan|mst cá nhân)/i.test(confirmText)) {
+        let salaryVal = 'Đã hoàn thiện MST cá nhân và hồ sơ chi phí lương';
+        if (/(chua ky|chưa ký|chua co mst|chưa có mst)/i.test(confirmText)) {
+          salaryVal = 'Chưa hoàn thiện MST cá nhân cho người lao động';
+        } else if (/(dang lam|đang hoàn thiện)/i.test(confirmText)) {
+          salaryVal = 'Đang hoàn thiện đăng ký MST cá nhân cho nhân viên';
+        }
+        simulateFact('q_tax_salary_1', 'Hồ sơ chi phí tiền lương & thuế TNCN', ContextGroup.hr_labor, salaryVal);
+      }
+
+      // KẾT HỢP DỮ LIỆU MỚI VÀO BỐI CẢNH VÀ PHÂN TÍCH LẠI (RE-ANALYZE)
+      this.logger.log(`[VERIFICATION SIMULATED] Đã mô phỏng ${updatedFactLabels.length} dữ kiện mới cho tình huống giả sử. Bắt đầu phân tích lại...`);
+
+      // Đánh giá lại tuân thủ toàn diện với dữ liệu facts mô phỏng (database không đổi)
+      const updatedAudit = evaluateEnterpriseCompliance(simulatedOrg, new Date());
+      const reSummary = updatedAudit.summary;
+
+      const reanalyzedReply =
+        `**BÁO CÁO PHÂN TÍCH LẠI TUÂN THỦ THUẾ THEO TÌNH HUỐNG GIẢ SỬ:**\n\n` +
+        `1. **Tổng quan**: Đã cập nhật phân tích theo tình huống giả định; tổng hợp ${reSummary.total} nghĩa vụ: ${reSummary.completed} hoàn thành có minh chứng, ${reSummary.inProgress} đang thực hiện, ${reSummary.needsVerification} cần xác minh thêm, ${reSummary.overdue} quá hạn.\n\n` +
+        `2. **Kết luận**: Đã tiếp nhận và đối chiếu thành công các thông tin xác minh mới (${updatedFactLabels.length > 0 ? updatedFactLabels.join(', ') : confirmText}). Tình trạng tuân thủ của doanh nghiệp đã được phân tích lại tương ứng.\n\n` +
+        `3. **Nghĩa vụ áp dụng**:\n` +
+        updatedAudit.obligations.map((o) => `- **${o.name}**: ${o.statusLabel} (Phạm vi: ${o.applicabilityLabel}).`).join('\n') + `\n\n` +
+        `4. **Căn cứ pháp lý**: Luật Quản lý thuế số 38/2019/QH14, Nghị định 126/2020/NĐ-CP, Nghị định 91/2022/NĐ-CP, Nghị định 123/2020/NĐ-CP và các văn bản liên quan.\n\n` +
+        `5. **Dữ liệu đầu vào**: Tình huống giả sử được đưa ra trong hội thoại để tham khảo tư vấn tuân thủ (hệ thống không tự ý ghi đè vào hồ sơ chính thức của doanh nghiệp).\n\n` +
+        `6. **Kỳ và thời hạn**: Các nghĩa vụ tiếp tục được theo dõi theo đúng hạn pháp định (Môn bài 30/01, TNDN 80% chốt 31/01 năm sau, GTGT theo quý/tháng).\n\n` +
+        `7. **Bằng chứng còn thiếu**: Để chuyển các nghĩa vụ từ đang thực hiện sang hoàn thành (COMPLETED), doanh nghiệp cần tải lên các chứng từ gốc: Giấy nộp tiền NSNN, thông báo chấp nhận mẫu 01/ĐKTĐ-HĐĐT, Ủy nhiệm chi ngân hàng.\n\n` +
+        `8. **Rủi ro**: Các nghĩa vụ đã được xác minh rõ ràng giúp loại bỏ rủi ro xử phạt do thiếu thông tin. Cần lưu ý duy trì chứng từ thanh toán ngân hàng và nộp thuế đúng hạn.\n\n` +
+        `9. **Hành động tiếp theo**:\n` +
+        `- 1. Lưu trữ và phân loại các chứng từ nộp NSNN theo từng quý.\n` +
+        `- 2. Kiểm tra lại kỳ kê khai tiếp theo trước ngày 25 của tháng đến hạn.\n\n` +
+        (updatedAudit.pendingQuestions.length > 0
+          ? `10. **Câu hỏi xác minh**: ${updatedAudit.pendingQuestions[0]}`
+          : `10. **Câu hỏi xác minh**: Doanh nghiệp đã giải quyết toàn bộ các điểm chưa rõ trọng yếu. Bạn có cần hướng dẫn chi tiết về thủ tục nộp thuế nào khác không?`);
 
       return {
         messageId: `msg-${Date.now()}`,
         sender: 'assistant',
-        content: replyAck,
-        answer: replyAck,
-        actionType: 'info',
+        content: reanalyzedReply,
+        answer: reanalyzedReply,
+        actionType: 'enterprise_audit',
+        isEnterpriseQuery: true,
+        verificationChecklist: updatedAudit.verificationChecklist,
         citations: [
           {
-            title: 'Nghị định 123/2020/NĐ-CP về hóa đơn, chứng từ',
-            docNumber: '123/2020/NĐ-CP',
-            articleNumber: 'Điều 11',
-            sourceUrl: CORE_LEGAL_DOC_LINKS['123/2020'],
+            title: 'Luật Quản lý thuế số 38/2019/QH14',
+            docNumber: '38/2019/QH14',
+            articleNumber: 'Điều 44, Điều 59',
+            sourceUrl: CORE_LEGAL_DOC_LINKS['38/2019'],
+          },
+          {
+            title: 'Nghị định 126/2020/NĐ-CP hướng dẫn Luật Quản lý thuế',
+            docNumber: '126/2020/NĐ-CP',
+            articleNumber: 'Điều 8, Điều 18',
+            sourceUrl: CORE_LEGAL_DOC_LINKS['126/2020'],
           },
         ],
         confidenceLevel: 'high',
-        confidenceReason: 'Dữ liệu đã được lưu trữ và cập nhật thành công vào PostgreSQL Database',
+        confidenceReason: 'Mô phỏng phân tích tuân thủ theo tình huống giả định của người dùng (không thay đổi cơ sở dữ liệu doanh nghiệp)',
         proposedChecklists: [],
         createdAt: new Date().toISOString(),
       };
     }
 
     const normalized = this.normalizeText(rawMessage);
+
+    // ------------------------------------------------------------------------
+    // BƯỚC 1.2: PHÂN LOẠI PHẠM VI CÂU HỎI (DOMAIN SCOPE GUARD)
+    // Chỉ giải đáp câu hỏi liên quan đến DOANH NGHIỆP và LUẬT THUẾ, HÓA ĐƠN CHỨNG TỪ
+    // Mọi câu hỏi ngoài phạm vi (thời tiết, lập trình, y tế, ẩm thực, giải trí...): TỪ CHỐI TRẢ LỜI NGAY (0 API)
+    // ------------------------------------------------------------------------
+    if (!this.isTaxOrEnterpriseDomain(rawMessage)) {
+      this.logger.log(`[OUT OF SCOPE] xin lỗi hiện tại câu hỏi ngoài phạm vi thuế & doanh nghiệp: "${rawMessage}"`);
+      const rejectionReply =
+        `**XIN LỖI CÂU HỎI NGOÀI PHẠM VI CHUYÊN MÔN:**\n\n` +
+        `Rất tiếc, tôi là **CELRA AI — Trợ lý Rà soát Tuân thủ Thuế Doanh nghiệp** tại Việt Nam. Tôi chỉ hỗ trợ giải đáp các câu hỏi chuyên sâu về **Doanh nghiệp và Pháp luật Thuế**.\n\n` +
+        `Câu hỏi của bạn hiện nằm ngoài phạm vi hỗ trợ của hệ thống. Bạn vui lòng đặt câu hỏi liên quan đến:\n` +
+        `- **Nghĩa vụ thuế doanh nghiệp**: Lệ phí môn bài, Thuế TNDN tạm nộp 80%, Thuế GTGT, Thuế TNCN.\n` +
+        `- **Hóa đơn & Chứng từ**: Hóa đơn điện tử máy tính tiền, điều kiện thanh toán không dùng tiền mặt, chi phí hợp lý được trừ.\n` +
+        `- **Kỳ kê khai & Thời hạn tuân thủ**: Lịch nộp tờ khai và tiền thuế định kỳ theo tháng/quý/năm của doanh nghiệp.\n` +
+        `- **Rà soát & Đánh giá rủi ro tuân thủ**: Rà soát nghĩa vụ và kiểm tra hồ sơ thuế thực tế của công ty bạn.`;
+
+      return {
+        messageId: `msg-${Date.now()}`,
+        sender: 'assistant',
+        content: rejectionReply,
+        answer: rejectionReply,
+        actionType: 'info',
+        isEnterpriseQuery: false,
+        citations: [],
+        proposedChecklists: [],
+        verificationChecklist: [],
+        confidenceLevel: 'high',
+        confidenceReason: 'Từ chối câu hỏi ngoài phạm vi nghiệp vụ thuế và doanh nghiệp',
+        createdAt: new Date().toISOString(),
+      };
+    }
+
     const cacheKey = crypto.createHash('sha256').update(`${orgId}::${normalized}`).digest('hex');
     const factScores = (org.contextFacts || []).map((f) => {
       let score = 0;
@@ -378,25 +497,26 @@ export class AIAssistantService implements OnModuleInit {
     // 1. Trường hợp có chủ ngữ: "doanh nghiệp tôi tên gì", "mst của tôi", "công ty bao nhiêu người"...
     // 2. Trường hợp KHÔNG có chủ ngữ (ngắn gọn): "mã số thuế", "mst", "tên công ty", "tên doanh nghiệp", "địa chỉ", "quy mô nhân sự"...
     const isSelfOrgSubject = /(toi|minh|chung toi|cua toi|cong ty|doanh nghiep|dn)/i.test(normalized);
+    const isComplianceOrTaxAsk = /(thue|tuan thu|can lam gi|lam gi|ra soat|nghia vu|chung tu|phat sinh|huong dan|can nop)/i.test(normalized);
 
-    const isNameQuery = (isSelfOrgSubject && /(ten gi|la gi|ten la gi|ten cong ty|ten doanh nghiep|ten dn)/i.test(normalized)) ||
-      /^(ten|ten gi|ten cong ty|ten doanh nghiep|ten phap ly)$/i.test(normalized);
+    const isNameQuery = !isComplianceOrTaxAsk && ((isSelfOrgSubject && /(ten gi|la gi|ten la gi|ten cong ty|ten doanh nghiep|ten dn)/i.test(normalized)) ||
+      /^(ten|ten gi|ten cong ty|ten doanh nghiep|ten phap ly)$/i.test(normalized));
 
-    const isTaxCodeQuery = (isSelfOrgSubject && /(mst|ma so thue|tax code)/i.test(normalized)) ||
+    const isTaxCodeQuery = !isComplianceOrTaxAsk && ((isSelfOrgSubject && /(mst|ma so thue|tax code)/i.test(normalized)) ||
       /^(mst|ma so thue|tax code|so thue)$/i.test(normalized) ||
-      /^(tra cuu mst|xin mst|cho xin mst|cho toi mst|xem mst|xem ma so thue)$/i.test(normalized);
+      /^(tra cuu mst|xin mst|cho xin mst|cho toi mst|xem mst|xem ma so thue)$/i.test(normalized));
 
-    const isStaffQuery = (isSelfOrgSubject && /(nhan su|nhan vien|quy mo|bao nhieu nguoi|may nguoi)/i.test(normalized)) ||
-      /^(nhan su|nhan vien|quy mo|quy mo nhan su|so luong nhan vien)$/i.test(normalized);
+    const isStaffQuery = !isComplianceOrTaxAsk && ((isSelfOrgSubject && /(bao nhieu|may|co bao nhieu|so luong|quy mo nhan su|nhan su cua toi|nhan vien cua toi)/i.test(normalized) && /(nhan su|nhan vien|nguoi)/i.test(normalized)) ||
+      /^(nhan su|nhan vien|quy mo|quy mo nhan su|so luong nhan vien|bao nhieu nguoi)$/i.test(normalized));
 
-    const isAddressQuery = (isSelfOrgSubject && /(dia chi|o dau|tru so|o cho nao)/i.test(normalized)) ||
-      /^(dia chi|tru so|dia chi tru so|o dau)$/i.test(normalized);
+    const isAddressQuery = !isComplianceOrTaxAsk && ((isSelfOrgSubject && /(dia chi|o dau|tru so|o cho nao)/i.test(normalized)) ||
+      /^(dia chi|tru so|dia chi tru so|o dau)$/i.test(normalized));
 
-    const isIndustryQuery = (isSelfOrgSubject && /(nganh nghe|linh vuc|kinh doanh gi|mo hinh)/i.test(normalized)) ||
-      /^(nganh nghe|linh vuc|kinh doanh gi|mo hinh kinh doanh)$/i.test(normalized);
+    const isIndustryQuery = !isComplianceOrTaxAsk && ((isSelfOrgSubject && /(nganh nghe|linh vuc|kinh doanh gi|mo hinh)/i.test(normalized)) ||
+      /^(nganh nghe|linh vuc|kinh doanh gi|mo hinh kinh doanh)$/i.test(normalized));
 
-    const isGeneralProfileQuery = (isSelfOrgSubject && /(thong tin|ho so)/i.test(normalized)) ||
-      /^(thong tin|ho so|thong tin dn|ho so dn|thong tin cong ty|thong tin doanh nghiep)$/i.test(normalized);
+    const isGeneralProfileQuery = !isComplianceOrTaxAsk && ((isSelfOrgSubject && /(thong tin|ho so)/i.test(normalized)) ||
+      /^(thong tin|ho so|thong tin dn|ho so dn|thong tin cong ty|thong tin doanh nghiep)$/i.test(normalized));
 
     if (isNameQuery || isTaxCodeQuery || isStaffQuery || isAddressQuery || isIndustryQuery || isGeneralProfileQuery) {
       let directAnswer = '';
@@ -540,17 +660,6 @@ export class AIAssistantService implements OnModuleInit {
       }
     });
 
-    // Thêm các văn bản thuế nền tảng mặc định nếu kho ngữ cảnh còn ít
-    if (citedSources.length === 0) {
-      citedSources.push(
-        { title: 'Luật Quản lý thuế số 38/2019/QH14', docNumber: '38/2019/QH14', articleNumber: 'Điều 44', sourceUrl: CORE_LEGAL_DOC_LINKS['38/2019'] },
-        { title: 'Nghị định 126/2020/NĐ-CP quy định chi tiết Luật Quản lý thuế', docNumber: '126/2020/NĐ-CP', articleNumber: 'Điều 8', sourceUrl: CORE_LEGAL_DOC_LINKS['126/2020'] },
-        { title: 'Nghị định 125/2020/NĐ-CP xử phạt vi phạm hành chính về thuế, hóa đơn', docNumber: '125/2020/NĐ-CP', articleNumber: 'Điều 13', sourceUrl: CORE_LEGAL_DOC_LINKS['125/2020'] }
-      );
-      dlplGroundingContext += `- Luật Quản lý thuế số 38/2019/QH14 (Điều 44 - Thời hạn nộp hồ sơ khai thuế)\n` +
-        `- Nghị định 126/2020/NĐ-CP (Điều 8 - Các loại thuế khai theo tháng, quý, năm)\n` +
-        `- Nghị định 125/2020/NĐ-CP (Xử phạt vi phạm hành chính về thuế và hóa đơn)\n`;
-    }
 
     let dlplDocs: unknown[] = [];
     let dlplPenalties: unknown[] = [];
@@ -620,17 +729,52 @@ export class AIAssistantService implements OnModuleInit {
                 {
                   role: 'system',
                   content: (() => {
-                    let prompt = `# SYSTEM PROMPT — CELRA LEGAL & TAX CHATBOT\n\n` +
-                      `## 1. VAI TRÒ VÀ MỤC TIÊU\n` +
-                      `Bạn là trợ lý pháp luật và thuế doanh nghiệp CELRA, hỗ trợ người dùng hiểu đúng quy định pháp luật, nghĩa vụ tuân thủ và công việc cần thực hiện.\n` +
-                      `- Trả lời chính xác, rõ ràng, trung thực, có căn cứ pháp lý truy xuất được.\n` +
-                      `- Tuyệt đối không bịa đặt số liệu, văn bản pháp luật, điều khoản, đường dẫn hoặc tình trạng tuân thủ.\n` +
-                      `- Không thay thế cơ quan nhà nước hoặc chuyên gia pháp lý, thuế.\n\n` +
-                      `## 2. NGUYÊN TẮC CƠ BẢN\n` +
-                      `1. Trả lời trực tiếp câu hỏi trước, sau đó mới giải thích chi tiết.\n` +
-                      `2. Mọi kết luận pháp lý quan trọng phải có trích dẫn văn bản quy phạm pháp luật (Tên văn bản, số hiệu, điều/khoản/điểm).\n` +
-                      `3. Không suy luận vi phạm chỉ vì dữ liệu chưa hoàn thiện hoặc checklist chưa hoàn thành.\n` +
-                      `4. Không dùng từ ngữ gây hoang mang, báo động như "xử lý ngay", "chắc chắn bị phạt", "vi phạm nghiêm trọng" khi chưa đủ căn cứ.\n\n`;
+                    let prompt = `# CELRA AI — SYSTEM PROMPT\n` +
+                      `## Trợ lý rà soát tuân thủ thuế dành cho doanh nghiệp Việt Nam\n\n` +
+                      `### 1. VAI TRÒ VÀ MỤC TIÊU\n` +
+                      `Bạn là CELRA AI, trợ lý AI hỗ trợ chủ doanh nghiệp tại Việt Nam rà soát, theo dõi và hiểu các nghĩa vụ thuế của doanh nghiệp.\n` +
+                      `Nhiệm vụ của bạn là:\n` +
+                      `- Phân tích dữ liệu doanh nghiệp và dữ liệu nghĩa vụ thuế được cung cấp từ hệ thống.\n` +
+                      `- Xác định những nghĩa vụ cần thực hiện, những thông tin còn thiếu và những nội dung cần xác minh.\n` +
+                      `- Giải thích căn cứ pháp lý liên quan bằng ngôn ngữ tiếng Việt dễ hiểu.\n` +
+                      `- Chỉ ra khoảng trống về hồ sơ, chứng từ và bằng chứng thực hiện nghĩa vụ.\n` +
+                      `- Đề xuất hành động tiếp theo theo mức độ ưu tiên.\n` +
+                      `- Giúp chủ doanh nghiệp biết doanh nghiệp cần làm gì, còn thiếu gì và cần kiểm tra điều gì.\n` +
+                      `Bạn là công cụ hỗ trợ rà soát và điều phối tuân thủ thuế, không phải cơ quan thuế, luật sư hoặc đơn vị kiểm toán. Không được tuyên bố rằng báo cáo của bạn là kết luận pháp lý chính thức.\n\n` +
+                      `### 2. PHẠM VI MVP\n` +
+                      `Chỉ xử lý: đối tượng doanh nghiệp tại Việt Nam; phạm vi nghĩa vụ tuân thủ thuế; người dùng chính là chủ doanh nghiệp. Không tự mở rộng sang hộ kinh doanh hay các lĩnh vực pháp lý khác ngoài phạm vi thuế.\n\n` +
+                      `### QUY TẮC BẮT BUỘC VỀ PHẠM VI HỖ TRỢ:\n` +
+                      `- Bạn là CELRA AI, CHỈ ĐƯỢC PHÉP trả lời các câu hỏi liên quan trực tiếp đến DOANH NGHIỆP và PHÁP LUẬT THUẾ, HÓA ĐƠN CHỨNG TỪ tại Việt Nam.\n` +
+                      `- Đối với bất kỳ câu hỏi nào ngoài phạm vi này (ví dụ: thời tiết, lập trình, thể thao, y tế, ẩm thực, giải trí, chính trị, kiến thức đời sống phổ thông): Bạn BẮT BUỘC PHẢI TỪ CHỐI TRẢ LỜI một cách lịch sự, giải thích rõ bạn là Trợ lý Tuân thủ Thuế Doanh nghiệp CELRA và mời người dùng đặt câu hỏi về nghĩa vụ thuế doanh nghiệp.\n` +
+                      `- TUYỆT ĐỐI KHÔNG trả lời các câu hỏi ngoài phạm vi.\n\n` +
+                      `- 3.1. Không bịa dữ liệu: Không tự tạo tên doanh nghiệp, MST, số lượng nghĩa vụ, kỳ thuế, thời hạn, số tiền phạt, tiền chậm nộp hoặc điều khoản pháp lý giả. Nếu không có dữ liệu, ghi rõ: "Chưa có dữ liệu để xác định".\n` +
+                      `- 3.2. Phân biệt dữ liệu và kết luận: Luôn phân biệt rõ thông tin hệ thống ghi nhận, bằng chứng đã kiểm tra, nhận định của AI, nội dung chưa xác minh và kết luận có căn cứ.\n` +
+                      `- 3.3. Không đồng nhất việc thiếu dữ liệu với vi phạm: Chưa có tài liệu không đồng nghĩa với vi phạm. Ví dụ: Viết "Hệ thống hiện chưa ghi nhận giấy nộp tiền... Cần đối chiếu với dữ liệu thuế và chứng từ thanh toán trước khi xác định trạng thái", KHÔNG viết "Doanh nghiệp chưa nộp thuế".\n` +
+                      `- 3.4. NGUYÊN TẮC CÂU HỎI TÌNH HUỐNG GIẢ SỬ (HYPOTHETICAL INQUIRIES):\n` +
+                      `  + Mọi chi tiết, số liệu hay tình huống người dùng nêu trong câu hỏi (ví dụ: "công ty em F&B có 5 người...", "nếu doanh nghiệp mở bán lẻ trực tiếp...", "giả sử có phát sinh hóa đơn tiền mặt...", "nếu mở thêm chi nhánh...") ĐỀU LÀ TÌNH HUỐNG GIẢ SỬ / THAM KHẢO để hỏi tư vấn.\n` +
+                      `  + TUYỆT ĐỐI KHÔNG tự ý coi đây là dữ liệu thực tế đã thay đổi của doanh nghiệp trong hệ thống.\n` +
+                      `  + TUYỆT ĐỐI KHÔNG tự ý thêm hoặc ghi đè các tình huống trong câu hỏi vào ngữ cảnh hồ sơ thực tế của doanh nghiệp.\n` +
+                      `  + Luôn phân biệt rạch ròi giữa: (A) Dữ liệu ngữ cảnh thực tế của doanh nghiệp trong hệ thống (được cung cấp tại mục DỮ KIỆN NGỮ CẢNH DOANH NGHIỆP - không bị thay đổi bởi câu hỏi) và (B) Tình huống giả định trong câu hỏi của người dùng (chỉ dùng làm tiền đề để phân tích, tư vấn nghĩa vụ và giải thích quy định pháp luật cho người dùng tham khảo).\n\n` +
+                      `### 4. QUY TẮC XÁC ĐỊNH NGHĨA VỤ ÁP DỤNG\n` +
+                      `Sử dụng các trạng thái diễn đạt bằng tiếng Việt tự nhiên:\n` +
+                      `- "Đã xác định nghĩa vụ áp dụng": có đủ thông tin và căn cứ để xác định nghĩa vụ thuộc doanh nghiệp.\n` +
+                      `- "Có khả năng áp dụng nhưng chưa đủ dữ liệu": có dấu hiệu liên quan nhưng cần bổ sung thông tin.\n` +
+                      `- "Cần xác minh thông tin hoặc căn cứ pháp lý": chưa đủ cơ sở để kết luận.\n` +
+                      `- "Đã có căn cứ xác định không áp dụng": có đủ thông tin và căn cứ để xác định nghĩa vụ không áp dụng.\n` +
+                      `TUYỆT ĐỐI KHÔNG xuất mã kỹ thuật backend như APPLICABLE, POSSIBLE, NEEDS_VERIFICATION, NOT_APPLICABLE.\n\n` +
+                      `### 5. QUY TẮC KIỂM TRA CĂN CỨ PHÁP LÝ\n` +
+                      `Ưu tiên văn bản pháp luật chính thức và cơ sở dữ liệu quốc gia. Kiểm tra số hiệu, điều/khoản/điểm, ngày hiệu lực và liên kết tra cứu chính thức. Không tạo trích dẫn giả.\n\n` +
+                      `### 6. QUY TẮC VỀ THỜI HẠN VÀ TIỀN THUẾ\n` +
+                      `- Không mặc định mọi doanh nghiệp có cùng kỳ kê khai hay hạn nộp.\n` +
+                      `- Thuế TNDN tạm nộp: Phân biệt tạm nộp 4 quý với quyết toán năm; tổng 4 quý tối thiểu 80% cả năm; hạn chốt 80% là ngày 31/01 năm sau (theo Khoản 3 Điều 1 NĐ 91/2022/NĐ-CP); tiền chậm nộp 0.03%/ngày tính từ 01/02 năm sau (sau hạn quý 4); KHÔNG mặc định hạn 30/10.\n` +
+                      `- Thanh toán không dùng tiền mặt: Hóa đơn từ ngưỡng luật định (từ 20 triệu trước 01/07/2025; theo Luật Thuế GTGT 48/2024 từ 01/07/2025). Tuyệt đối không hướng dẫn rằng chuyển khoản sau khi đã thanh toán tiền mặt chắc chắn khắc phục được điều kiện thuế.\n` +
+                      `- Thuế TNCN & Tiền lương: Tách riêng Đăng ký MST cá nhân (cho 100% NLĐ có HĐLĐ), Giảm trừ người phụ thuộc (chỉ người có người phụ thuộc hợp pháp và hồ sơ chứng minh; không mặc định mọi nhân viên đều có), Khấu trừ, Kê khai tháng/quý và Quyết toán năm.\n` +
+                      `- Không tự tính hoặc công bố số tiền phạt hay tiền chậm nộp nếu thiếu dữ liệu đầu vào cần thiết.\n\n` +
+                      `### 7. QUY TẮC KIỂM TRA BẰNG CHỨNG & 8. QUY TẮC TỔNG HỢP TRẠNG THÁI\n` +
+                      `Số liệu tổng quan phải được tính từ cùng một danh sách nghĩa vụ thực tế; không tự viết số lượng trạng thái bằng suy đoán. Tổng các trạng thái phải khớp 100% với số lượng nghĩa vụ.\n\n` +
+                      `### 11. PHONG CÁCH TRÌNH BÀY\n` +
+                      `- Tiếng Việt rõ ràng, chuyên nghiệp, dễ hiểu với chủ doanh nghiệp.\n` +
+                      `- TUYỆT ĐỐI KHÔNG hiển thị mã kỹ thuật backend (APPLICABLE, POSSIBLE, NEEDS_VERIFICATION, NOT_APPLICABLE, COMPLETED, IN_PROGRESS, OVERDUE).\n\n`;
 
                     if (dlplGroundingContext) {
                       prompt += `### CĂN CỨ VĂN BẢN PHÁP LUẬT THAM CHIẾU:\n${dlplGroundingContext}\n\n`;
@@ -639,40 +783,28 @@ export class AIAssistantService implements OnModuleInit {
                     if (isEnterpriseQuery) {
                       prompt +=
                         `### DỮ KIỆN NGỮ CẢNH CỦA DOANH NGHIỆP TRONG HỆ THỐNG:\n${denseContext}\n\n` +
-                        `## 3. CẤU TRÚC ĐẦU RA BẮT BUỘC KHI RÀ SOÁT / CÂU HỎI VỀ DOANH NGHIỆP (9 PHẦN CHUẨN MỰC):\n` +
-                        `1. **Kết luận trực tiếp**: Nhận định rõ ràng, súc tích (1-3 câu) về câu hỏi của chủ doanh nghiệp.\n` +
-                        `2. **Xác định nghĩa vụ áp dụng**: Nêu rõ bằng ngôn ngữ tiếng Việt tự nhiên:\n` +
-                        `   - "Đã xác định nghĩa vụ áp dụng" (khi đã có căn cứ rõ ràng)\n` +
-                        `   - "Có khả năng áp dụng nhưng chưa đủ dữ liệu" (khi có khả năng nhưng thiếu dữ kiện)\n` +
-                        `   - "Cần xác minh thông tin hoặc căn cứ" (khi cần làm rõ thêm)\n` +
-                        `   - "Đã có căn cứ xác định không áp dụng" (khi xác định không thuộc đối tượng áp dụng)\n` +
-                        `   (TUYỆT ĐỐI KHÔNG xuất mã kỹ thuật backend như APPLICABLE, POSSIBLE, NEEDS_VERIFICATION, NOT_APPLICABLE).\n` +
-                        `3. **Căn cứ pháp lý**: Trích dẫn chính xác tên văn bản, điều, khoản, điểm, ngày hiệu lực và liên kết tra cứu chính thức.\n` +
-                        `4. **Dữ liệu doanh nghiệp làm căn cứ**: Căn cứ trên dữ liệu hệ thống ghi nhận, phân biệt rõ với kết luận đã xác minh.\n` +
-                        `5. **Kỳ tính thuế và thời hạn tương ứng**: Nêu rõ kỳ kê khai và thời hạn theo luật (LƯU Ý: TNDN 80% áp dụng cho tổng 4 quý trước 31/01 năm sau; không mặc định hạn 30/10; TNCN theo tháng/quý tuỳ kỳ GTGT).\n` +
-                        `6. **Trạng thái hiện tại và lý do**: Nêu rõ bằng ngôn ngữ tiếng Việt tự nhiên:\n` +
-                        `   - "Có đủ bằng chứng xác nhận hoàn thành"\n` +
-                        `   - "Đang thực hiện và có dữ liệu xác nhận"\n` +
-                        `   - "Cần xác minh thông tin hoặc căn cứ" (chưa có dữ liệu KHÔNG đồng nghĩa với vi phạm)\n` +
-                        `   - "Đã xác định nghĩa vụ áp dụng, quá hạn và chưa hoàn thành theo dữ liệu đáng tin cậy"\n` +
-                        `   (TUYỆT ĐỐI KHÔNG hiển thị mã kỹ thuật backend như COMPLETED, IN_PROGRESS, OVERDUE, NEEDS_VERIFICATION).\n` +
-                        `7. **Rủi ro có thể phát sinh kèm điều kiện**: Chỉ nêu rủi ro có căn cứ pháp luật; KHÔNG tự tính số tiền phạt hay tiền chậm nộp khi thiếu dữ liệu đầu vào.\n` +
-                        `8. **Checklist hành động tiếp theo**: Các công việc cụ thể theo thứ tự ưu tiên (ưu tiên cao, cần làm trước).\n` +
-                        `9. **Hồ sơ còn thiếu và câu hỏi cần xác minh**: Nêu rõ chứng từ cần bổ sung và đặt câu hỏi cụ thể cho chủ doanh nghiệp.\n\n` +
-                        `QUY TẮC CẤM BẮT BUỘC:\n` +
-                        `- TUYỆT ĐỐI KHÔNG hiển thị trạng thái kiểu kỹ thuật Backend (APPLICABLE, POSSIBLE, NEEDS_VERIFICATION, NOT_APPLICABLE, COMPLETED, IN_PROGRESS, OVERDUE). Phải dùng 100% ngôn ngữ tiếng Việt tự nhiên cho chủ doanh nghiệp dễ hiểu.\n` +
-                        `- TUYỆT ĐỐI KHÔNG hướng dẫn rằng chuyển khoản sau khi đã thanh toán tiền mặt chắc chắn khắc phục được điều kiện thuế.\n` +
-                        `- KHÔNG mặc định mọi nhân viên đều có người phụ thuộc.\n` +
-                        `- KHÔNG tự tạo bằng chứng, ngày nộp hoặc điều khoản pháp luật giả.`;
+                        `## HƯỚNG DẪN BẮT BUỘC (MỤC 9 - CẤU TRÚC OUTPUT RÀ SOÁT TỔNG THỂ DOANH NGHIỆP - 10 PHẦN CHUẨN MỰC):\n` +
+                        `Trình bày câu trả lời đầy đủ và rõ ràng theo đúng 10 phần sau:\n` +
+                        `1. **Tổng quan**: Trình bày rõ số nghĩa vụ hoàn thành, chưa hoàn thành, cần xác minh (đồng bộ với dữ liệu hệ thống ghi nhận, không bịa số liệu).\n` +
+                        `2. **Kết luận**: Nêu rõ vấn đề đã xác nhận và vấn đề chưa đủ dữ liệu.\n` +
+                        `3. **Nghĩa vụ áp dụng**: Vì sao áp dụng, điều kiện áp dụng, mức độ chắc chắn. Nêu rõ bằng ngôn ngữ tiếng Việt tự nhiên: "Đã xác định nghĩa vụ áp dụng", "Có khả năng áp dụng nhưng chưa đủ dữ liệu", "Cần xác minh thông tin hoặc căn cứ", "Đã có căn cứ xác định không áp dụng".\n` +
+                        `4. **Căn cứ pháp lý**: Trích dẫn chính xác tên văn bản, điều khoản, hiệu lực, nguồn kiểm chứng tra cứu chính thức.\n` +
+                        `5. **Dữ liệu đầu vào**: Nêu rõ dữ liệu doanh nghiệp làm căn cứ, nguồn dữ liệu và ngày cập nhật (phân biệt rõ thông tin thực tế hệ thống đang ghi nhận với tình huống giả sử người dùng đưa ra tham khảo tư vấn; câu hỏi giả sử không tự ý biến thành dữ liệu doanh nghiệp).\n` +
+                        `6. **Kỳ và thời hạn**: Kỳ tính thuế, hạn nộp, căn cứ xác định hạn (LƯU Ý: TNDN 80% áp dụng cho tổng 4 quý trước ngày 31/01 năm sau; không mặc định hạn 30/10; TNCN theo tháng/quý tuỳ kỳ GTGT).\n` +
+                        `7. **Bằng chứng còn thiếu**: Tên hồ sơ, kỳ liên quan, bằng chứng đã có trong hệ thống (chưa có chứng từ KHÔNG đồng nghĩa với vi phạm).\n` +
+                        `8. **Rủi ro**: Điều kiện phát sinh, hậu quả có thể xảy ra theo quy định pháp luật (chỉ nêu rủi ro có căn cứ; KHÔNG tự tính số tiền phạt hay tiền chậm nộp khi thiếu dữ liệu đầu vào; thanh toán tiền mặt thì chuyển khoản sau không mặc định khắc phục).\n` +
+                        `9. **Hành động tiếp theo**: Thứ tự ưu tiên, người phụ trách, hạn xử lý, điều kiện hoàn tất.\n` +
+                        `10. **Câu hỏi xác minh**: Một câu hỏi cụ thể, trọng tâm nhất để giải quyết điểm chưa rõ nhất cho chủ doanh nghiệp.\n`;
                     } else {
                       prompt +=
-                        `## 3. QUY TẮC BẮT BUỘC KHI HỎI CHUNG VỀ LUẬT / QUY ĐỊNH PHÁP LUẬT:\n` +
-                        `Người dùng đang hỏi chung về quy định pháp luật, nguyên tắc, thời hạn hoặc giải thích điều khoản luật, KHÔNG yêu cầu rà soát tình hình doanh nghiệp cụ thể.\n` +
-                        `- Trả lời trực tiếp vào câu hỏi một cách rõ ràng, chính xác, dễ hiểu.\n` +
-                        `- Nêu rõ nội dung quy định hiện hành và căn cứ pháp lý cụ thể (Tên văn bản, số hiệu, điều/khoản/điểm áp dụng).\n` +
-                        `- Giải thích điều kiện áp dụng, trường hợp ngoại lệ hoặc chế tài xử phạt vi phạm hành chính (nếu có).\n` +
-                        `- **TUYỆT ĐỐI KHÔNG** đưa vào các phần: "D. Danh sách nghĩa vụ thuế", "E. Thông tin cần xác minh", "F. Việc nên làm tiếp theo", "G. Nguồn pháp lý" như một báo cáo rà soát doanh nghiệp.\n` +
-                        `- Trả lời bình thường theo văn phong tư vấn pháp luật chuyên nghiệp, tự nhiên, súc tích và kết thúc.`;
+                        `## HƯỚNG DẪN BẮT BUỘC (MỤC 10 - QUY TẮC KHI TRẢ LỜI CÂU HỎI NGẮN / LUẬT CHUNG):\n` +
+                        `Người dùng đang hỏi về một nghĩa vụ, quy định hoặc vấn đề pháp luật cụ thể, KHÔNG yêu cầu rà soát tổng thể doanh nghiệp.\n` +
+                        `- Trả lời trực tiếp vào câu hỏi trước một cách rõ ràng, chính xác, súc tích.\n` +
+                        `- Giải thích nội dung quy định và điều kiện áp dụng.\n` +
+                        `- Nêu rõ căn cứ pháp lý đã xác minh (Tên văn bản, số hiệu, điều/khoản/điểm áp dụng).\n` +
+                        `- Chỉ ra dữ liệu còn thiếu hoặc điểm cần lưu ý.\n` +
+                        `- Đề xuất hành động phù hợp và kết thúc.\n` +
+                        `- TUYỆT ĐỐI KHÔNG lặp lại toàn bộ báo cáo rà soát 10 phần nếu không cần thiết.`;
                     }
                     return prompt;
                   })(),
@@ -706,20 +838,13 @@ export class AIAssistantService implements OnModuleInit {
         const data = await successfulResponse.json();
         replyContent = data.choices?.[0]?.message?.content || data.content || '';
 
-        const extractedTaxLegalRegex = /(?:Nghị định|Thông tư|Luật|Quyết định)\s+[\d/A-Z\-a-z]+/gi;
-        const matchedLegalDocs = replyContent.match(extractedTaxLegalRegex) || [];
-
-        for (const doc of matchedLegalDocs.slice(0, 4)) {
-          const docClean = doc.trim();
+        const extractedCitations = extractLegalCitationsFromText(replyContent);
+        for (const c of extractedCitations) {
           const isAlreadyCited = citedSources.some(
-            (s) => s.title.toLowerCase().includes(docClean.toLowerCase()) || (s.docNumber && docClean.includes(s.docNumber))
+            (s) => s.docNumber.toLowerCase() === c.docNumber.toLowerCase() || s.title.toLowerCase() === c.title.toLowerCase()
           );
           if (!isAlreadyCited) {
-            citedSources.push({
-              title: docClean,
-              docNumber: docClean,
-              sourceUrl: matchCoreLegalDocUrl(docClean) || `https://dulieuphapluat.vn/van-ban/tim-kiem.html?q=${encodeURIComponent(docClean)}`,
-            });
+            citedSources.push(c);
           }
         }
       } else {
@@ -745,22 +870,17 @@ export class AIAssistantService implements OnModuleInit {
         const isSalaryTopic = !isFilingPeriodTopic && /(luong|lương|tncn|thu nhap ca nhan|nhan su|nhân sự|nguoi phu thuoc|người phụ thuộc)/i.test(normalized);
         if (isMonBaiTopic) {
           replyContent = isEnterpriseQuery
-            ? `**HƯỚNG DẪN THỦ TỤC & VIỆC CẦN LÀM VỀ LỆ PHÍ MÔN BÀI CHO: ${org.name}**\n\n` +
-              `Dựa trên bối cảnh doanh nghiệp (${org.legalType || 'Doanh nghiệp'}, quy mô ${org.employeeCount || 0} nhân sự):\n\n` +
-              `**A. Kết luận tổng quan:** Doanh nghiệp có nghĩa vụ nộp lệ phí môn bài hàng năm dựa trên mức vốn điều lệ đăng ký trên Giấy chứng nhận ĐKDN.\n\n` +
-              `**D. Danh sách nghĩa vụ thuế:**\n` +
-              `- Lệ phí môn bài: Hạn chót chậm nhất ngày **30/01 hàng năm** (theo Nghị định 139/2016/NĐ-CP và Nghị định 22/2020/NĐ-CP). Mức nộp: 2.000.000đ/năm (vốn từ 10 tỷ trở xuống) hoặc 3.000.000đ/năm (vốn trên 10 tỷ).\n\n` +
-              `**E. Thông tin cần xác minh:**\n` +
-              `- Kiểm tra Giấy nộp tiền vào NSNN xem đã hoàn tất nộp tiền môn bài năm hiện tại chưa.\n` +
-              `- Kiểm tra trong năm có thay đổi vốn điều lệ làm thay đổi bậc lệ phí không.\n\n` +
-              `**F. Việc nên làm tiếp theo:**\n` +
-              `- 1. Nộp Tờ khai 01/LPMB nếu có thay đổi vốn điều lệ trong năm.\n` +
-              `- 2. Trích nộp tiền lệ phí môn bài vào NSNN qua thuedientu.gdt.gov.vn trước ngày 30/01.\n` +
-              `- 3. Lưu trữ Giấy nộp tiền vào NSNN để làm minh chứng đối soát.\n\n` +
-              `**G. Nguồn pháp lý:**\n` +
-              `- Nghị định 139/2016/NĐ-CP (Điều 4, Điều 5)\n` +
-              `- Nghị định 22/2020/NĐ-CP (Khoản 1 Điều 1)\n` +
-              `- Nghị định 125/2020/NĐ-CP (Chế tài chậm nộp 0.03%/ngày).`
+            ? `**BÁO CÁO RÀ SOÁT LỆ PHÍ MÔN BÀI CHO: ${org.name}**\n\n` +
+              `1. **Tổng quan**: Doanh nghiệp có 1 nghĩa vụ pháp định hàng năm về lệ phí môn bài; trạng thái đang thực hiện chuẩn bị hoặc cần đối chiếu chứng từ nộp NSNN.\n` +
+              `2. **Kết luận**: Đã xác nhận doanh nghiệp thuộc đối tượng nộp lệ phí môn bài; cần đối chiếu Giấy nộp tiền NSNN để xác nhận hoàn tất.\n` +
+              `3. **Nghĩa vụ áp dụng**: Đã xác định nghĩa vụ áp dụng. Căn cứ theo Giấy chứng nhận ĐKDN và mức vốn điều lệ đăng ký.\n` +
+              `4. **Căn cứ pháp lý**: Nghị định 139/2016/NĐ-CP (Điều 4, Điều 5); Nghị định 22/2020/NĐ-CP (Khoản 1 Điều 1); Nghị định 125/2020/NĐ-CP (Điều 13).\n` +
+              `5. **Dữ liệu đầu vào**: Doanh nghiệp: ${org.name}, MST: ${org.taxCode}, Quy mô: ${org.employeeCount || 0} người. Nguồn: Khảo sát hệ thống ghi nhận.\n` +
+              `6. **Kỳ và thời hạn**: Kỳ tính thuế: Năm hiện tại. Hạn nộp: Chậm nhất ngày 30/01 hàng năm (nếu DN mới thành lập được miễn năm đầu, nộp chậm nhất 30/01 năm sau).\n` +
+              `7. **Bằng chứng còn thiếu**: Giấy nộp tiền vào NSNN hoặc giấy báo Nợ ngân hàng xác nhận giao dịch nộp tiền môn bài thành công.\n` +
+              `8. **Rủi ro**: Chậm nộp tờ khai hoặc tiền lệ phí môn bài phát sinh tiền chậm nộp 0.03%/ngày theo Luật Quản lý thuế số 38/2019/QH14 và xử phạt hành chính từ 2.000.000đ đến 25.000.000đ.\n` +
+              `9. **Hành động tiếp theo**: Kế toán lập tờ khai 01/LPMB nếu có thay đổi vốn, trích nộp tiền qua thuedientu.gdt.gov.vn trước 30/01 và lưu trữ chứng từ.\n` +
+              `10. **Câu hỏi xác minh**: Doanh nghiệp đã thực hiện nộp tiền lệ phí môn bài năm nay vào tài khoản Kho bạc Nhà nước chưa và đã có Giấy nộp tiền chưa?`
             : `**QUY ĐỊNH PHÁP LUẬT VỀ LỆ PHÍ MÔN BÀI:**\n\n` +
               `**1. Bản chất & Mức nộp:**\n` +
               `- Lệ phí môn bài là khoản thu hàng năm đối với tổ chức, cá nhân hoạt động sản xuất, kinh doanh hàng hóa, dịch vụ.\n` +
@@ -778,20 +898,17 @@ export class AIAssistantService implements OnModuleInit {
           );
         } else if (isTndnTopic) {
           replyContent = isEnterpriseQuery
-            ? `**HƯỚNG DẪN TẠM NỘP THUẾ THU NHẬP DOANH NGHIỆP (TNDN) 80% CHO: ${org.name}**\n\n` +
-              `**A. Kết luận trực tiếp:** Doanh nghiệp bắt buộc phải tạm nộp 4 quý đạt tối thiểu 80% số thuế TNDN phát sinh theo quyết toán năm.\n\n` +
-              `**D. Danh sách nghĩa vụ thuế:**\n` +
-              `- Tạm nộp thuế TNDN theo 4 quý: Quý 1 (30/04), Quý 2 (31/07), Quý 3 (31/10), Quý 4 (31/01 năm sau).\n` +
-              `- Hạn chót tạm nộp 4 quý tối thiểu 80% cả năm là ngày **31/01 năm sau** (Khoản 3 Điều 1 Nghị định 91/2022/NĐ-CP). Tuyệt đối không mặc định ngày 30/10.\n\n` +
-              `**E. Thông tin cần xác minh:**\n` +
-              `- Chưa đủ dữ liệu để tính toán; cần đối chiếu kết quả kinh doanh 4 quý và tổng số thuế TNDN đã tạm nộp vào NSNN từ đầu năm đến nay.\n` +
-              `- Tuyệt đối không tự tính hoặc công bố số tiền chậm nộp khi chưa có số liệu thuế quyết toán thực tế.\n\n` +
-              `**F. Việc nên làm tiếp theo:**\n` +
-              `- 1. Kế toán ước tính doanh thu và tạm nộp theo từng quý.\n` +
-              `- 2. Rà soát tổng số thuế đã nộp trước ngày 31/01 năm sau để đảm bảo không thấp hơn 80% số thuế TNDN dự kiến quyết toán.\n\n` +
-              `**G. Nguồn pháp lý:**\n` +
-              `- Nghị định 91/2022/NĐ-CP (Khoản 3 Điều 1)\n` +
-              `- Luật Quản lý thuế số 38/2019/QH14 (Điều 44, Điều 59).`
+            ? `**BÁO CÁO RÀ SOÁT TẠM NỘP THUẾ TNDN 80% CHO: ${org.name}**\n\n` +
+              `1. **Tổng quan**: Nghĩa vụ tạm nộp thuế TNDN 4 quý tối thiểu 80% cả năm; hệ thống ghi nhận đang trong tiến độ thực hiện các quý trong năm tài chính.\n` +
+              `2. **Kết luận**: Đã xác định nghĩa vụ áp dụng; hiện chưa đủ dữ liệu báo cáo tài chính cả năm để tính chính xác tỷ lệ 80% và không tự sinh số tiền chậm nộp khi thiếu dữ liệu đầu vào.\n` +
+              `3. **Nghĩa vụ áp dụng**: Đã xác định nghĩa vụ áp dụng đối với doanh nghiệp có hoạt động sản xuất kinh doanh có phát sinh thu nhập chịu thuế TNDN.\n` +
+              `4. **Căn cứ pháp lý**: Khoản 3 Điều 1 Nghị định 91/2022/NĐ-CP sửa đổi Điều 8 Nghị định 126/2020/NĐ-CP; Điều 44, Điều 59 Luật Quản lý thuế số 38/2019/QH14.\n` +
+              `5. **Dữ liệu đầu vào**: Doanh nghiệp: ${org.name}, Ngành nghề: ${org.industry || 'Chung'}. Nguồn: Khai báo hệ thống.\n` +
+              `6. **Kỳ và thời hạn**: Tạm nộp theo 4 quý: Q1 (30/04), Q2 (31/07), Q3 (31/10), Q4 (31/01 năm sau). Hạn chót tạm nộp 4 quý tối thiểu đạt 80% cả năm là ngày 31/01 năm sau (theo năm dương lịch).\n` +
+              `7. **Bằng chứng còn thiếu**: Giấy nộp tiền thuế TNDN tạm nộp các quý và Bảng ước tính kết quả kinh doanh 4 quý.\n` +
+              `8. **Rủi ro**: Nếu tổng số tạm nộp 4 quý thấp hơn 80% số thuế TNDN phải nộp theo quyết toán năm, tiền chậm nộp 0.03%/ngày tính từ ngày 01/02 của năm tiếp theo trên số tiền nộp thiếu (tuyệt đối không tính từ 30/10).\n` +
+              `9. **Hành động tiếp theo**: Kế toán ước tính doanh thu và tạm nộp theo từng quý; rà soát lũy kế 4 quý trước ngày 31/01 năm sau để đảm bảo tối thiểu 80% số thuế TNDN dự kiến quyết toán cả năm.\n` +
+              `10. **Câu hỏi xác minh**: Doanh nghiệp đã ước tính tổng số thuế TNDN phải nộp của năm nay và tổng số tiền đã tạm nộp vào NSNN qua các quý là bao nhiêu?`
             : `**QUY ĐỊNH PHÁP LUẬT VỀ TẠM NỘP THUẾ TNDN 80%:**\n\n` +
               `**1. Bản chất quy định:**\n` +
               `- Tổng số thuế TNDN đã tạm nộp của 04 quý không được thấp hơn 80% số thuế TNDN phải nộp theo quyết toán năm.\n\n` +
@@ -804,19 +921,17 @@ export class AIAssistantService implements OnModuleInit {
           citedSources.push({ title: 'Nghị định 91/2022/NĐ-CP về tạm nộp TNDN 80%', docNumber: '91/2022/NĐ-CP', articleNumber: 'Khoản 3 Điều 1', sourceUrl: CORE_LEGAL_DOC_LINKS['91/2022'] });
         } else if (isCashPaymentTopic) {
           replyContent = isEnterpriseQuery
-            ? `**HƯỚNG DẪN CHỨNG TỪ THANH TOÁN KHÔNG DÙNG TIỀN MẶT CHO: ${org.name}**\n\n` +
-              `**A. Kết luận trực tiếp:** Hóa đơn mua hàng từ ngưỡng luật định bắt buộc phải có chứng từ thanh toán không dùng tiền mặt (qua tài khoản ngân hàng) để được khấu trừ thuế GTGT và tính chi phí được trừ khi tính thuế TNDN.\n\n` +
-              `**D. Danh sách nghĩa vụ thuế:**\n` +
-              `- Hóa đơn từ 20 triệu đồng trở lên (trước 01/07/2025 theo Điều 4 TT 96/2015/TT-BTC và Điều 15 TT 219/2013/TT-BTC) hoặc theo Luật Thuế GTGT số 48/2024/QH15 (từ 01/07/2025) bắt buộc thanh toán qua ngân hàng.\n\n` +
-              `**E. Thông tin cần xác minh:**\n` +
-              `- Cảnh báo bắt buộc: Trường hợp đã thực hiện thanh toán bằng tiền mặt tại thời điểm mua hàng, việc chuyển khoản bổ sung sau đó mà không có thủ tục thỏa thuận hủy giao dịch/trả lại tiền mặt và thực hiện lại đúng quy định pháp luật sẽ không mặc định hợp lệ hóa điều kiện thuế.\n\n` +
-              `**F. Việc nên làm tiếp theo:**\n` +
-              `- 1. Rà soát các khoản chi mua hàng từ ngưỡng luật định để đảm bảo 100% có Ủy nhiệm chi.\n` +
-              `- 2. Kiểm tra thông tin tài khoản người bán trên UNC phải khớp với thông tin đăng ký của bên bán.\n\n` +
-              `**G. Nguồn pháp lý:**\n` +
-              `- Thông tư 96/2015/TT-BTC (Điều 4)\n` +
-              `- Thông tư 219/2013/TT-BTC (Điều 15)\n` +
-              `- Luật Thuế GTGT số 48/2024/QH15 (Điều 14).`
+            ? `**BÁO CÁO RÀ SOÁT CHỨNG TỪ THANH TOÁN KHÔNG DÙNG TIỀN MẶT CHO: ${org.name}**\n\n` +
+              `1. **Tổng quan**: Nghĩa vụ kiểm soát chứng từ thanh toán không dùng tiền mặt cho các hóa đơn mua vào từ ngưỡng luật định; cần rà soát 100% chứng từ ngân hàng.\n` +
+              `2. **Kết luận**: Đã xác định nghĩa vụ áp dụng; các hóa đơn mua vào từ 20 triệu đồng (hoặc theo Luật Thuế GTGT 48/2024 từ 01/07/2025) bắt buộc phải thanh toán qua ngân hàng.\n` +
+              `3. **Nghĩa vụ áp dụng**: Đã xác định nghĩa vụ áp dụng đối với toàn bộ giao dịch mua hàng hóa, dịch vụ có hóa đơn từng lần từ ngưỡng luật định.\n` +
+              `4. **Căn cứ pháp lý**: Điều 4 Thông tư 96/2015/TT-BTC; Điều 15 Thông tư 219/2013/TT-BTC; Điều 14 Luật Thuế GTGT số 48/2024/QH15.\n` +
+              `5. **Dữ liệu đầu vào**: Doanh nghiệp: ${org.name}, Mô hình: ${org.businessModel || 'Tiêu chuẩn'}.\n` +
+              `6. **Kỳ và thời hạn**: Thời điểm thanh toán từng hóa đơn phát sinh trong kỳ tính thuế.\n` +
+              `7. **Bằng chứng còn thiếu**: Ủy nhiệm chi (UNC) và Sao kê tài khoản ngân hàng khớp đúng thông tin và số tài khoản người bán trên hóa đơn.\n` +
+              `8. **Rủi ro**: Bị loại khỏi chi phí được trừ khi tính thuế TNDN và không được khấu trừ thuế GTGT đầu vào. Cảnh báo bắt buộc: Trường hợp đã trả tiền mặt, việc chuyển khoản bổ sung sau đó mà không có thủ tục điều chỉnh/hủy hợp pháp sẽ không mặc định hợp lệ hóa chi phí.\n` +
+              `9. **Hành động tiếp theo**: Kế toán thu thập và đối soát Ủy nhiệm chi kèm theo từng hóa đơn mua vào; kiểm soát phương thức thanh toán trước khi chi tiền.\n` +
+              `10. **Câu hỏi xác minh**: Trong kỳ doanh nghiệp có phát sinh hóa đơn mua hàng từ 20 triệu đồng trở lên nào thanh toán bằng tiền mặt chưa chuyển khoản qua ngân hàng không?`
             : `**QUY ĐỊNH PHÁP LUẬT VỀ CHỨNG TỪ THANH TOÁN KHÔNG DÙNG TIỀN MẶT:**\n\n` +
               `**1. Điều kiện áp dụng:**\n` +
               `- Hàng hóa, dịch vụ mua vào từng lần có giá trị từ ngưỡng luật định (từ 20 triệu đồng trước 01/07/2025; theo Luật Thuế GTGT 48/2024/QH15 từ 01/07/2025) bắt buộc phải có chứng từ thanh toán không dùng tiền mặt.\n\n` +
@@ -832,21 +947,17 @@ export class AIAssistantService implements OnModuleInit {
           );
         } else if (isSalaryTopic) {
           replyContent = isEnterpriseQuery
-            ? `**HƯỚNG DẪN HỒ SƠ TIỀN LƯƠNG & NGHĨA VỤ THUẾ TNCN CHO: ${org.name}**\n\n` +
-              `**A. Kết luận trực tiếp:** Nghĩa vụ tiền lương và thuế TNCN bao gồm nhiều nội dung riêng biệt cần tách bạch:\n\n` +
-              `**D. Danh sách nghĩa vụ thuế:**\n` +
-              `- 1. Đăng ký MST cá nhân: Bắt buộc cho 100% người lao động có hợp đồng lao động.\n` +
-              `- 2. Đăng ký người phụ thuộc giảm trừ gia cảnh: Chỉ áp dụng khi người lao động thực tế có người phụ thuộc hợp pháp và cung cấp đủ hồ sơ chứng minh; không mặc định mọi nhân viên đều có người phụ thuộc.\n` +
-              `- 3. Khấu trừ & Kê khai thuế TNCN: Kê khai theo tháng/quý theo kỳ kê khai GTGT; nếu trong kỳ không phát sinh khấu trừ thuế TNCN thì không phải nộp tờ khai (NĐ 126/2020 & NĐ 91/2022).\n\n` +
-              `**E. Thông tin cần xác minh:**\n` +
-              `- Doanh nghiệp hiện có bao nhiêu lao động ký hợp đồng từ 3 tháng trở lên? Đã có đăng ký MST cá nhân cho tất cả nhân sự chưa?\n\n` +
-              `**F. Việc nên làm tiếp theo:**\n` +
-              `- 1. Rà soát danh sách nhân sự chưa có MST cá nhân để làm thủ tục đăng ký.\n` +
-              `- 2. Tập hợp hồ sơ người phụ thuộc đối với nhân viên có yêu cầu giảm trừ gia cảnh.\n\n` +
-              `**G. Nguồn pháp lý:**\n` +
-              `- Thông tư 111/2013/TT-BTC (Điều 9, Điều 25)\n` +
-              `- Thông tư 96/2015/TT-BTC (Điều 4)\n` +
-              `- Nghị định 126/2020/NĐ-CP (Điều 8, Điều 9).`
+            ? `**BÁO CÁO RÀ SOÁT HỒ SƠ LƯƠNG & THUẾ TNCN CHO: ${org.name}**\n\n` +
+              `1. **Tổng quan**: Nghĩa vụ hồ sơ nhân sự, tiền lương và thuế TNCN gồm nhiều phần riêng biệt: cấp MST, giảm trừ gia cảnh, khấu trừ và kê khai.\n` +
+              `2. **Kết luận**: Đã xác nhận doanh nghiệp có phát sinh lao động; cần tách bạch nghĩa vụ đăng ký MST cá nhân và nghĩa vụ đăng ký người phụ thuộc.\n` +
+              `3. **Nghĩa vụ áp dụng**: Đã xác định nghĩa vụ áp dụng đối với người lao động có ký hợp đồng lao động; riêng đăng ký người phụ thuộc chỉ áp dụng khi người lao động thực tế có người phụ thuộc hợp pháp.\n` +
+              `4. **Căn cứ pháp lý**: Thông tư 111/2013/TT-BTC (Điều 9, Điều 25); Thông tư 96/2015/TT-BTC (Điều 4); Nghị định 126/2020/NĐ-CP (Điều 8, Điều 9).\n` +
+              `5. **Dữ liệu đầu vào**: Doanh nghiệp: ${org.name}, Quy mô nhân sự: ${org.employeeCount || 0} người.\n` +
+              `6. **Kỳ và thời hạn**: Kê khai thuế TNCN định kỳ theo tháng (hạn ngày 20) hoặc theo quý (hạn ngày cuối tháng đầu quý sau); quyết toán năm chậm nhất 31/03 năm sau.\n` +
+              `7. **Bằng chứng còn thiếu**: Hợp đồng lao động, Bảng chấm công, Bảng thanh toán lương có chữ ký hoặc sao kê chuyển khoản lương, hồ sơ chứng minh người phụ thuộc (nếu có).\n` +
+              `8. **Rủi ro**: Chi phí lương không có chứng từ hợp pháp bị loại toàn bộ khỏi chi phí được trừ; khai thiếu thuế TNCN bị phạt 20% và tính tiền chậm nộp 0.03%/ngày.\n` +
+              `9. **Hành động tiếp theo**: Rà soát đăng ký MST cá nhân cho 100% nhân sự mới; chỉ lập hồ sơ giảm trừ gia cảnh cho nhân sự thực tế có người phụ thuộc đủ điều kiện; chỉ nộp tờ khai TNCN khi có phát sinh khấu trừ thuế trong kỳ.\n` +
+              `10. **Câu hỏi xác minh**: Doanh nghiệp hiện có bao nhiêu lao động ký hợp đồng từ 3 tháng trở lên và toàn bộ nhân sự đã được đăng ký Mã số thuế cá nhân chưa?`
             : `**QUY ĐỊNH PHÁP LUẬT VỀ HỒ SƠ LƯƠNG VÀ THUẾ TNCN:**\n\n` +
               `**1. Đăng ký Mã số thuế cá nhân:**\n` +
               `- Doanh nghiệp có trách nhiệm đăng ký thuế thay cho cá nhân có thu nhập từ tiền lương, tiền công trong thời hạn 10 ngày làm việc kể từ ngày phát sinh nghĩa vụ thuế (Điều 30 Luật Quản lý thuế số 38/2019/QH14).\n\n` +
@@ -863,21 +974,20 @@ export class AIAssistantService implements OnModuleInit {
         } else {
           replyContent = isEnterpriseQuery
             ? `**BÁO CÁO RÀ SOÁT THỜI HẠN & KỲ KÊ KHAI THUẾ CHO: ${org.name}**\n\n` +
-              `**A. Kết luận trực tiếp:** Các sắc thuế doanh nghiệp được kê khai và nộp theo kỳ: Tháng, Quý hoặc Năm theo Luật Quản lý thuế số 38/2019/QH14 và Nghị định 126/2020/NĐ-CP.\n\n` +
-              `**D. Danh sách nghĩa vụ thuế:**\n` +
-              `- Lệ phí môn bài: Chậm nhất ngày **30/01 hàng năm** (miễn năm đầu thành lập).\n` +
-              `- Tạm nộp TNDN 80%: Chậm nhất ngày **31/01 năm sau** (hạn chót quý 4 đạt tối thiểu 80% cả năm; không mặc định hạn 30/10).\n` +
-              `- Thuế GTGT và TNCN quý: Chậm nhất ngày cuối tháng đầu quý tiếp theo (**30/04, 31/07, 31/10, 31/01**).\n` +
-              `- Quyết toán năm (TNDN & TNCN): Chậm nhất ngày **31/03 năm tiếp theo**.\n\n` +
-              `**E. Thông tin cần xác minh:**\n` +
-              `- Doanh nghiệp kê khai thuế GTGT theo tháng hay theo quý (doanh thu năm trước > 50 tỷ nộp tháng, <= 50 tỷ nộp quý).\n\n` +
-              `**F. Việc nên làm tiếp theo:**\n` +
-              `- 1. Thiết lập lịch theo dõi hạn nộp tờ khai và tiền thuế các kỳ trong năm.\n` +
-              `- 2. Kiểm tra sao kê và hóa đơn đầu vào đầu ra trước ngày 25 hàng quý.\n\n` +
-              `**G. Nguồn pháp lý:**\n` +
-              `- Luật Quản lý thuế số 38/2019/QH14 (Điều 44, Điều 59)\n` +
-              `- Nghị định 126/2020/NĐ-CP (Điều 8, Điều 18)\n` +
-              `- Nghị định 91/2022/NĐ-CP (Khoản 3 Điều 1).`
+              `1. **Tổng quan**: Báo cáo tổng thể kỳ kê khai và thời hạn nộp các sắc thuế của doanh nghiệp (Môn bài, GTGT, TNDN tạm nộp 4 quý, Quyết toán năm).\n` +
+              `2. **Kết luận**: Đã xác nhận các mốc thời hạn kê khai và nộp thuế theo kỳ Tháng, Quý hoặc Năm; không có sắc thuế nào kê khai theo ngày cố định.\n` +
+              `3. **Nghĩa vụ áp dụng**: Đã xác định nghĩa vụ áp dụng các sắc thuế pháp định cho doanh nghiệp theo quy định của Luật Quản lý thuế số 38/2019/QH14.\n` +
+              `4. **Căn cứ pháp lý**: Luật Quản lý thuế số 38/2019/QH14 (Điều 44, Điều 59); Nghị định 126/2020/NĐ-CP (Điều 8, Điều 18); Nghị định 91/2022/NĐ-CP (Khoản 3 Điều 1).\n` +
+              `5. **Dữ liệu đầu vào**: Doanh nghiệp: ${org.name}, Mã số thuế: ${org.taxCode}, Quy mô: ${org.employeeCount || 0} người.\n` +
+              `6. **Kỳ và thời hạn**:\n` +
+              `   - Lệ phí môn bài: Chậm nhất ngày 30/01 hàng năm (miễn năm đầu thành lập).\n` +
+              `   - Thuế GTGT và TNCN quý: Chậm nhất ngày cuối tháng đầu quý tiếp theo (30/04, 31/07, 31/10, 31/01).\n` +
+              `   - Tạm nộp TNDN 80%: Hạn chót tạm nộp 4 quý tối thiểu 80% cả năm là ngày 31/01 năm sau (không mặc định hạn 30/10).\n` +
+              `   - Quyết toán năm (TNDN & TNCN): Chậm nhất ngày 31/03 năm tiếp theo.\n` +
+              `7. **Bằng chứng còn thiếu**: Thông báo chấp nhận hồ sơ khai thuế điện tử và Giấy nộp tiền NSNN các kỳ.\n` +
+              `8. **Rủi ro**: Chậm nộp tờ khai bị phạt tiền từ 2.000.000đ đến 25.000.000đ theo Nghị định 125/2020/NĐ-CP; chậm nộp tiền thuế bị tính tiền chậm nộp 0.03%/ngày.\n` +
+              `9. **Hành động tiếp theo**: Thiết lập lịch theo dõi kỳ kê khai, nộp tờ khai và tiền thuế đúng hạn chót pháp định.\n` +
+              `10. **Câu hỏi xác minh**: Doanh nghiệp hiện tại đang thực hiện kê khai thuế GTGT theo kỳ tháng hay kỳ quý theo thông báo của cơ quan thuế?`
             : `**QUY ĐỊNH PHÁP LUẬT VỀ THỜI HẠN VÀ KỲ KÊ KHAI THUẾ:**\n\n` +
               `Theo quy định của Luật Quản lý thuế số 38/2019/QH14 và Nghị định 126/2020/NĐ-CP:\n\n` +
               `**1. Kỳ kê khai thuế:**\n` +
@@ -913,6 +1023,7 @@ export class AIAssistantService implements OnModuleInit {
       proposedChecklists: [],
       actionType: isEnterpriseQuery ? 'enterprise_audit' : 'info',
       isEnterpriseQuery: isEnterpriseQuery,
+      verificationChecklist: isEnterpriseQuery ? auditReport.verificationChecklist : [],
       timestamp: Date.now(),
     };
 
@@ -928,6 +1039,7 @@ export class AIAssistantService implements OnModuleInit {
       answer: replyContent,
       actionType: resultPayload.actionType,
       isEnterpriseQuery: isEnterpriseQuery,
+      verificationChecklist: resultPayload.verificationChecklist,
       citations: citedSources,
       confidenceLevel: 'high',
       confidenceReason: isEnterpriseQuery
@@ -1210,6 +1322,85 @@ export class AIAssistantService implements OnModuleInit {
       .replace(/[?.,!;:()\-]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+  private isTaxOrEnterpriseDomain(raw: string): boolean {
+    const normalized = (raw || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'd')
+      .replace(/[?.,!;:()\-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!normalized || normalized.length === 0) return false;
+
+    // 1. Chào hỏi, cảm ơn và hỏi về năng lực của trợ lý
+    const greetingAndBotKeywords = [
+      'chao', 'xin chao', 'hello', 'hi', 'alo', 'ban la ai', 'celra', 'tro ly', 'copilot',
+      'gioi thieu', 'huong dan', 'cam on', 'thank', 'ho tro gi', 'lam duoc gi', 'chuc nang',
+      'hoi dap', 'tu van gi'
+    ];
+    if (greetingAndBotKeywords.some((k) => normalized.includes(k))) {
+      return true;
+    }
+
+    // 2. Thuế & Nghĩa vụ thuế
+    const taxKeywords = [
+      'thue', 'mon bai', 'tndn', 'gtgt', 'vat', 'tncn', 'fct', 'nha thau', 'tieu thu dac biet',
+      'xuat nhap khau', 'ke khai', 'to khai', 'quyet toan', 'khau tru', 'nop thue', 'hoan thue',
+      'mien thue', 'giam thue', 'tien cham nop', 'cham nop', 'nghia vu thue', 'quan ly thue',
+      'co quan thue', 'tong cuc thue', 'chi cuc thue', 'thuedientu', 'gdt', 'ma so thue', 'mst',
+      'ma so doanh nghiep', 'msdn', 'thue dien tu', 'lich thue', 'bac thue', 'thue suat'
+    ];
+    if (taxKeywords.some((k) => normalized.includes(k))) {
+      return true;
+    }
+
+    // 3. Hóa đơn, chứng từ, thanh toán, chi phí, kế toán
+    const invoiceAndCostKeywords = [
+      'hoa don', 'hddt', 'may tinh tien', 'pos', 'chung tu', 'tien mat', 'chuyen khoan',
+      'uy nhiem chi', 'sao ke', 'ngan hang', 'khong dung tien mat', '20 trieu', 'chi phi',
+      'chi phi hop ly', 'chi phi duoc tru', 'xuat toan', 'bctc', 'bao cao tai chinh',
+      'doanh thu', 'loi nhuan', 'gia von', 'so sach', 'ke toan', 'kiem toan'
+    ];
+    if (invoiceAndCostKeywords.some((k) => normalized.includes(k))) {
+      return true;
+    }
+
+    // 4. Doanh nghiệp, tổ chức, pháp lý doanh nghiệp
+    const enterpriseKeywords = [
+      'doanh nghiep', 'cong ty', 'dn', 'phap nhan', 'to chuc', 'dkkd', 'dang ky kinh doanh',
+      'giay phep', 'giay chung nhan', 'von dieu le', 'gop von', 'thanh lap', 'giai the',
+      'tam ngung', 'nganh nghe', 'kinh doanh', 'chi nhanh', 'van phong dai dien', 'tnhh',
+      'co phan', 'f&b', 'sme', 'ban le', 'thuong mai dien tu', 'shopee', 'tiktok', 'cod',
+      'dai dien phap luat', 'chu so huu', 'ho kinh doanh'
+    ];
+    if (enterpriseKeywords.some((k) => normalized.includes(k))) {
+      return true;
+    }
+
+    // 5. Lao động, tiền lương gắn với chi phí & thuế TNCN doanh nghiệp
+    const laborAndSalaryKeywords = [
+      'luong', 'tien luong', 'nhan su', 'nhan vien', 'nguoi lao dong', 'hop dong lao dong',
+      'hdld', 'nguoi phu thuoc', 'giam tru gia canh', 'bhxh', 'bao hiem xa hoi', 'bao hiem y te'
+    ];
+    if (laborAndSalaryKeywords.some((k) => normalized.includes(k))) {
+      return true;
+    }
+
+    // 6. Tuân thủ, rà soát, rủi ro, pháp luật
+    const complianceAndLegalKeywords = [
+      'phap luat', 'luat', 'nghi dinh', 'thong tu', 'nghi quyet', 'quyet dinh', 'dieu khoan',
+      'tuan thu', 'ra soat', 'kiem tra', 'ho so', 'nghia vu', 'rui ro', 'xu phat', 'vi pham',
+      'han chot', 'thoi han', 'ky han', 'con thieu', 'chua lam', 'chua nop', 'xac minh'
+    ];
+    if (complianceAndLegalKeywords.some((k) => normalized.includes(k))) {
+      return true;
+    }
+
+    return false;
   }
 
   private async fetchWithRetry(url: string, options: RequestInit, maxRetries = 2): Promise<Response> {

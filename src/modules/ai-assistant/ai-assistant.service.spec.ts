@@ -29,6 +29,7 @@ describe('AIAssistantService Intent & Prompt Conditioning', () => {
   const mockPrisma = {
     organization: {
       findUnique: jest.fn().mockResolvedValue(mockOrg),
+      update: jest.fn().mockResolvedValue(mockOrg),
     },
     rule: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -36,12 +37,13 @@ describe('AIAssistantService Intent & Prompt Conditioning', () => {
     },
     contextFact: {
       findMany: jest.fn().mockResolvedValue([]),
+      update: jest.fn().mockResolvedValue({}),
+      create: jest.fn().mockResolvedValue({ id: 'fact-new', key: 'q_tax_corp_monbai', currentValue: 'Đã nộp' }),
     },
     task: {
       count: jest.fn().mockResolvedValue(0),
     },
   };
-
   const mockConfig = {
     get: jest.fn((key: string, defaultValue?: string) => {
       if (key === 'OPENCODE_GO_API_URL') return 'https://mock.opencode.ai/v1';
@@ -73,10 +75,10 @@ describe('AIAssistantService Intent & Prompt Conditioning', () => {
 
     expect(result.isEnterpriseQuery).toBe(false);
     expect(result.actionType).toBe('info');
-    // Khi hỏi chung về luật: không chứa các tiêu đề D -> G dạng rà soát doanh nghiệp
-    expect(result.content).not.toContain('D. Danh sách nghĩa vụ thuế');
-    expect(result.content).not.toContain('E. Thông tin cần xác minh');
-    expect(result.content).not.toContain('F. Việc nên làm tiếp theo');
+    // Khi hỏi chung về luật: không chứa 10 phần rà soát doanh nghiệp
+    expect(result.content).not.toContain('1. **Tổng quan**');
+    expect(result.content).not.toContain('7. **Bằng chứng còn thiếu**');
+    expect(result.content).not.toContain('10. **Câu hỏi xác minh**');
     expect(result.content).toContain('QUY ĐỊNH PHÁP LUẬT VỀ LỆ PHÍ MÔN BÀI');
   });
 
@@ -89,11 +91,17 @@ describe('AIAssistantService Intent & Prompt Conditioning', () => {
 
     expect(result.isEnterpriseQuery).toBe(true);
     expect(result.actionType).toBe('enterprise_audit');
-    // Khi hỏi về doanh nghiệp: phải có các phần tương ứng D -> G
-    expect(result.content).toContain('D. Danh sách nghĩa vụ thuế');
-    expect(result.content).toContain('E. Thông tin cần xác minh');
-    expect(result.content).toContain('F. Việc nên làm tiếp theo');
-    expect(result.content).toContain('G. Nguồn pháp lý');
+    // Khi hỏi về doanh nghiệp: phải có đầy đủ 10 phần chuẩn mực
+    expect(result.content).toContain('1. **Tổng quan**');
+    expect(result.content).toContain('2. **Kết luận**');
+    expect(result.content).toContain('3. **Nghĩa vụ áp dụng**');
+    expect(result.content).toContain('4. **Căn cứ pháp lý**');
+    expect(result.content).toContain('5. **Dữ liệu đầu vào**');
+    expect(result.content).toContain('6. **Kỳ và thời hạn**');
+    expect(result.content).toContain('7. **Bằng chứng còn thiếu**');
+    expect(result.content).toContain('8. **Rủi ro**');
+    expect(result.content).toContain('9. **Hành động tiếp theo**');
+    expect(result.content).toContain('10. **Câu hỏi xác minh**');
     expect(result.content).toContain('Công ty TNHH Cà phê Sài Gòn');
   });
 
@@ -106,10 +114,13 @@ describe('AIAssistantService Intent & Prompt Conditioning', () => {
 
     expect(result.isEnterpriseQuery).toBe(true);
     expect(result.actionType).toBe('enterprise_audit');
-    expect(result.content).toContain('D. Danh sách nghĩa vụ thuế');
-    expect(result.content).toContain('E. Thông tin cần xác minh');
-    expect(result.content).toContain('F. Việc nên làm tiếp theo');
-    expect(result.content).toContain('G. Nguồn pháp lý');
+    expect(result.content).toContain('1. **Tổng quan**');
+    expect(result.content).toContain('2. **Kết luận**');
+    expect(result.content).toContain('3. **Nghĩa vụ áp dụng**');
+    expect(result.content).toContain('6. **Kỳ và thời hạn**');
+    expect(result.content).toContain('8. **Rủi ro**');
+    expect(result.content).toContain('9. **Hành động tiếp theo**');
+    expect(result.content).toContain('10. **Câu hỏi xác minh**');
   });
 
   it('câu hỏi chung về hạn nộp tờ khai quý phải trả lời luật bình thường, không chứa D -> G', async () => {
@@ -121,8 +132,9 @@ describe('AIAssistantService Intent & Prompt Conditioning', () => {
 
     expect(result.isEnterpriseQuery).toBe(false);
     expect(result.actionType).toBe('info');
-    expect(result.content).not.toContain('D. Danh sách nghĩa vụ thuế');
-    expect(result.content).not.toContain('E. Thông tin cần xác minh');
+    expect(result.content).not.toContain('1. **Tổng quan**');
+    expect(result.content).not.toContain('7. **Bằng chứng còn thiếu**');
+    expect(result.content).not.toContain('10. **Câu hỏi xác minh**');
     expect(result.content).toContain('QUY ĐỊNH PHÁP LUẬT VỀ THỜI HẠN VÀ KỲ KÊ KHAI THUẾ');
   });
 
@@ -135,9 +147,81 @@ describe('AIAssistantService Intent & Prompt Conditioning', () => {
 
     expect(result.isEnterpriseQuery).toBe(true);
     expect(result.actionType).toBe('enterprise_audit');
-    expect(result.content).toContain('D. Danh sách nghĩa vụ thuế');
-    expect(result.content).toContain('E. Thông tin cần xác minh');
-    expect(result.content).toContain('F. Việc nên làm tiếp theo');
-    expect(result.content).toContain('G. Nguồn pháp lý');
+    expect(result.content).toContain('1. **Tổng quan**');
+    expect(result.content).toContain('2. **Kết luận**');
+    expect(result.content).toContain('3. **Nghĩa vụ áp dụng**');
+    expect(result.content).toContain('4. **Căn cứ pháp lý**');
+    expect(result.content).toContain('5. **Dữ liệu đầu vào**');
+    expect(result.content).toContain('6. **Kỳ và thời hạn**');
+    expect(result.content).toContain('7. **Bằng chứng còn thiếu**');
+    expect(result.content).toContain('8. **Rủi ro**');
+    expect(result.content).toContain('9. **Hành động tiếp theo**');
+    expect(result.content).toContain('10. **Câu hỏi xác minh**');
+  });
+
+  it('câu hỏi rà soát phải sinh ra verificationChecklist chứa các mục thu thập thông tin còn thiếu', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error('Network error'));
+
+    const result = await service.chat('org-test-1', {
+      message: 'Rà soát tổng thể tuân thủ thuế cho doanh nghiệp',
+    });
+
+    expect(result.isEnterpriseQuery).toBe(true);
+    expect(result.verificationChecklist).toBeDefined();
+    expect(Array.isArray(result.verificationChecklist)).toBe(true);
+    expect((result.verificationChecklist as Array<Record<string, unknown>>).length).toBeGreaterThan(0);
+
+    const firstItem = (result.verificationChecklist as Array<Record<string, unknown>>)[0];
+    expect(firstItem.question).toBeDefined();
+    expect(firstItem.options).toBeDefined();
+    expect(Array.isArray(firstItem.options)).toBe(true);
+  });
+
+  it('khi doanh nghiệp gửi xác nhận checklist, hệ thống phân tích theo tình huống giả định nhưng KHÔNG tự ý ghi vào DB contextFact', async () => {
+    const result = await service.chat('org-test-1', {
+      message: 'Xác nhận thông tin: Lệ phí môn bài: Đã nộp đầy đủ vào NSNN; Tạm nộp thuế TNDN (80%): Đã tạm nộp đạt trên 80% số thuế TNDN cả năm',
+    });
+
+    expect(result.isEnterpriseQuery).toBe(true);
+    expect(result.actionType).toBe('enterprise_audit');
+    expect(result.content).toContain('BÁO CÁO PHÂN TÍCH LẠI TUÂN THỦ THUẾ THEO TÌNH HUỐNG GIẢ SỬ');
+    expect(result.content).toContain('1. **Tổng quan**');
+    expect(result.content).toContain('2. **Kết luận**');
+    expect(result.content).toContain('3. **Nghĩa vụ áp dụng**');
+    expect(result.content).toContain('Đã tiếp nhận và đối chiếu thành công các thông tin xác minh mới');
+    expect(mockPrisma.contextFact.update).not.toHaveBeenCalled();
+    expect(mockPrisma.contextFact.create).not.toHaveBeenCalled();
+    expect(mockPrisma.organization.update).not.toHaveBeenCalled();
+  });
+
+  it('từ chối trả lời các câu hỏi ngoài phạm vi doanh nghiệp và thuế (thời tiết, lập trình, ẩm thực)', async () => {
+    // Không cần mock fetch vì hệ thống chặn ngay tại bước 1.2
+    const weatherResult = await service.chat('org-test-1', {
+      message: 'Thời tiết hôm nay ở Hà Nội có mưa không?',
+    });
+
+    expect(weatherResult.content).toContain('TỪ CHỐI TRẢ LỜI — CÂU HỎI NGOÀI PHẠM VI CHUYÊN MÔN');
+    expect(weatherResult.content).toContain('CELRA AI — Trợ lý Rà soát Tuân thủ Thuế Doanh nghiệp');
+    expect(weatherResult.actionType).toBe('info');
+
+    const codeResult = await service.chat('org-test-1', {
+      message: 'Viết cho tôi đoạn mã python tính dãy số fibonacci',
+    });
+    expect(codeResult.content).toContain('TỪ CHỐI TRẢ LỜI — CÂU HỎI NGOÀI PHẠM VI CHUYÊN MÔN');
+
+    const foodResult = await service.chat('org-test-1', {
+      message: 'Cách nấu món canh chua cá lóc thơm ngon',
+    });
+    expect(foodResult.content).toContain('TỪ CHỐI TRẢ LỜI — CÂU HỎI NGOÀI PHẠM VI CHUYÊN MÔN');
+  });
+
+  it('chấp nhận các câu hỏi chào hỏi hoặc hỏi năng lực trợ lý CELRA trong phạm vi', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error('Network error'));
+
+    const greetingResult = await service.chat('org-test-1', {
+      message: 'Xin chào CELRA, bạn có thể hỗ trợ gì cho tôi?',
+    });
+
+    expect(greetingResult.content).not.toContain('TỪ CHỐI TRẢ LỜI');
   });
 });
