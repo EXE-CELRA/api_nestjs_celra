@@ -35,7 +35,7 @@ export const CORE_LEGAL_DOC_LINKS: Record<string, string> = {
   // --------------------------------------------------------------------------
   '58/2014': 'https://dulieuphapluat.vn/van-ban/bao-hiem-van-ban/luat-bao-hiem-xa-hoi-2014-301054.html',
   '84/2015': 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/luat-an-toan-ve-sinh-lao-dong-2015-285199.html',
-  '283/2026': 'https://dulieuphapluat.vn/van-ban/bao-hiem-van-ban/nghi-dinh-2832026nd-cp-quy-dinh-xu-phat-vi-pham-hanh-chinh-trong-linh-vuc-lao-dong-bao-hiem-xa-hoi-nguoi-lao-dong-viet-nam-di-lam-viec-o-nuoc-ngoai-theo-hop-dong-1426549.html',
+  '12/2022': 'https://dulieuphapluat.vn/van-ban/vi-pham-hanh-chinh-van-ban/nghi-dinh-122022nd-cp-quy-dinh-xu-phat-vi-pham-hanh-chinh-trong-linh-vuc-lao-dong-bao-hiem-xa-hoi-nguoi-lao-dong-viet-nam-di-lam-viec-o-nuoc-ngoai-theo-hop-dong-1090483.html',
 
   // --------------------------------------------------------------------------
   // NHÓM 5: DOANH NGHIỆP, AN TOÀN THỰC PHẨM (F&B) & CHẾ TÀI XỬ PHẠT HÀNH CHÍNH
@@ -69,4 +69,174 @@ export function matchCoreLegalDocUrl(text?: string): string | undefined {
     }
   }
   return undefined;
+}
+export interface CanonicalLegalDoc {
+  key: string;
+  title: string;
+  docNumber: string;
+  defaultArticle?: string;
+  sourceUrl: string;
+}
+
+export const CANONICAL_LEGAL_DOCS: Record<string, CanonicalLegalDoc> = {
+  '91/2022': {
+    key: '91/2022',
+    title: 'Nghị định 91/2022/NĐ-CP sửa đổi Nghị định 126/2020/NĐ-CP',
+    docNumber: '91/2022/NĐ-CP',
+    defaultArticle: 'Khoản 3 Điều 1',
+    sourceUrl: CORE_LEGAL_DOC_LINKS['91/2022'],
+  },
+  '126/2020': {
+    key: '126/2020',
+    title: 'Nghị định 126/2020/NĐ-CP quy định chi tiết Luật Quản lý thuế',
+    docNumber: '126/2020/NĐ-CP',
+    defaultArticle: 'Điều 8, Điều 18',
+    sourceUrl: CORE_LEGAL_DOC_LINKS['126/2020'],
+  },
+  '38/2019': {
+    key: '38/2019',
+    title: 'Luật Quản lý thuế số 38/2019/QH14',
+    docNumber: '38/2019/QH14',
+    defaultArticle: 'Điều 44, Điều 59',
+    sourceUrl: CORE_LEGAL_DOC_LINKS['38/2019'],
+  },
+  '125/2020': {
+    key: '125/2020',
+    title: 'Nghị định 125/2020/NĐ-CP xử phạt vi phạm hành chính về thuế, hóa đơn',
+    docNumber: '125/2020/NĐ-CP',
+    defaultArticle: 'Điều 13',
+    sourceUrl: CORE_LEGAL_DOC_LINKS['125/2020'],
+  },
+  '123/2020': {
+    key: '123/2020',
+    title: 'Nghị định 123/2020/NĐ-CP quy định về hóa đơn, chứng từ',
+    docNumber: '123/2020/NĐ-CP',
+    defaultArticle: 'Điều 11',
+    sourceUrl: CORE_LEGAL_DOC_LINKS['123/2020'],
+  },
+  '78/2021': {
+    key: '78/2021',
+    title: 'Thông tư 78/2021/TT-BTC hướng dẫn thực hiện Nghị định 123/2020/NĐ-CP',
+    docNumber: '78/2021/TT-BTC',
+    defaultArticle: 'Điều 8',
+    sourceUrl: CORE_LEGAL_DOC_LINKS['78/2021'],
+  },
+  '139/2016': {
+    key: '139/2016',
+    title: 'Nghị định 139/2016/NĐ-CP quy định về lệ phí môn bài',
+    docNumber: '139/2016/NĐ-CP',
+    defaultArticle: 'Điều 4, Điều 5',
+    sourceUrl: CORE_LEGAL_DOC_LINKS['139/2016'],
+  },
+  '22/2020': {
+    key: '22/2020',
+    title: 'Nghị định 22/2020/NĐ-CP sửa đổi Nghị định 139/2016/NĐ-CP',
+    docNumber: '22/2020/NĐ-CP',
+    defaultArticle: 'Khoản 1 Điều 1',
+    sourceUrl: CORE_LEGAL_DOC_LINKS['22/2020'],
+  },
+  '96/2015': {
+    key: '96/2015',
+    title: 'Thông tư 96/2015/TT-BTC hướng dẫn về thuế TNDN',
+    docNumber: '96/2015/TT-BTC',
+    defaultArticle: 'Điều 4',
+    sourceUrl: CORE_LEGAL_DOC_LINKS['96/2015'],
+  },
+  '219/2013': {
+    key: '219/2013',
+    title: 'Thông tư 219/2013/TT-BTC hướng dẫn về thuế GTGT',
+    docNumber: '219/2013/TT-BTC',
+    defaultArticle: 'Điều 15',
+    sourceUrl: CORE_LEGAL_DOC_LINKS['219/2013'],
+  },
+  '111/2013': {
+    key: '111/2013',
+    title: 'Thông tư 111/2013/TT-BTC hướng dẫn về thuế TNCN',
+    docNumber: '111/2013/TT-BTC',
+    defaultArticle: 'Điều 9, Điều 25',
+    sourceUrl: CORE_LEGAL_DOC_LINKS['111/2013'],
+  },
+  '48/2024': {
+    key: '48/2024',
+    title: 'Luật Thuế Giá trị gia tăng số 48/2024/QH15',
+    docNumber: '48/2024/QH15',
+    defaultArticle: 'Điều 14',
+    sourceUrl: CORE_LEGAL_DOC_LINKS['48/2024'],
+  },
+  '80/2021': {
+    key: '80/2021',
+    title: 'Thông tư 80/2021/TT-BTC hướng dẫn thi hành Luật Quản lý thuế',
+    docNumber: '80/2021/TT-BTC',
+    defaultArticle: 'Điều 86',
+    sourceUrl: CORE_LEGAL_DOC_LINKS['80/2021'],
+  },
+  '12/2022': {
+    key: '12/2022',
+    title: 'Nghị định 12/2022/NĐ-CP xử phạt vi phạm hành chính lĩnh vực lao động, BHXH',
+    docNumber: '12/2022/NĐ-CP',
+    defaultArticle: 'Điều 38',
+    sourceUrl: CORE_LEGAL_DOC_LINKS['12/2022'],
+  },
+  '59/2020': {
+    key: '59/2020',
+    title: 'Luật Doanh nghiệp số 59/2020/QH14',
+    docNumber: '59/2020/QH14',
+    defaultArticle: 'Điều 30',
+    sourceUrl: CORE_LEGAL_DOC_LINKS['59/2020'],
+  },
+};
+
+/**
+ * Trích xuất danh sách văn bản pháp lý thực sự được trích dẫn trong câu trả lời
+ * Tuyệt đối không sinh văn bản giả, không cắt cụt chữ (ví dụ 91/2022/N), không bắt chữ "luật v"
+ */
+export function extractLegalCitationsFromText(
+  text?: string,
+): Array<{ title: string; docNumber: string; articleNumber?: string; sourceUrl?: string }> {
+  if (!text) return [];
+
+  const results: Array<{ title: string; docNumber: string; articleNumber?: string; sourceUrl?: string }> = [];
+  const addedKeys = new Set<string>();
+
+  // 1. Quét đối chiếu danh mục văn bản pháp luật chính thức
+  for (const [key, doc] of Object.entries(CANONICAL_LEGAL_DOCS)) {
+    // Chỉ khớp khi trong văn bản thực sự có chứa số hiệu văn bản (ví dụ "91/2022" hoặc "38/2019/QH14")
+    const keyRegex = new RegExp(`\\b${key.replace('/', '\\/')}(?:\\/[A-ZĐđa-z0-9\\-]+)?\\b`, 'i');
+    if (keyRegex.test(text)) {
+      results.push({
+        title: doc.title,
+        docNumber: doc.docNumber,
+        articleNumber: doc.defaultArticle,
+        sourceUrl: doc.sourceUrl,
+      });
+      addedKeys.add(doc.docNumber.toLowerCase());
+      addedKeys.add(key.toLowerCase());
+    }
+  }
+
+  // 2. Quét các văn bản quy phạm pháp luật khác có số hiệu chuẩn mực (số/năm/ký-hiệu)
+  // Bắt buộc phải có chữ số, dấu gạch chéo, năm 4 chữ số và hậu tố (NĐ-CP, TT-BTC, QH15...)
+  const strictLegalRegex = /(?:Nghị định|Thông tư|Quyết định)\s+(?:số\s+)?(\d+\/\d{4}\/[A-ZĐđ0-9\-]+)|(?:Luật\s+(?:số\s+)?(\d+\/\d{4}\/QH\d+))/gi;
+  let match: RegExpExecArray | null;
+  while ((match = strictLegalRegex.exec(text)) !== null) {
+    const fullMatch = match[0].trim();
+    const docNumber = (match[1] || match[2] || '').trim();
+    if (!docNumber || docNumber.length < 6) continue;
+
+    const lowerNum = docNumber.toLowerCase();
+    if (addedKeys.has(lowerNum)) continue;
+
+    // Tìm URL tương ứng
+    const matchedUrl = matchCoreLegalDocUrl(docNumber) || `https://dulieuphapluat.vn/van-ban/tim-kiem.html?q=${encodeURIComponent(docNumber)}`;
+
+    results.push({
+      title: fullMatch,
+      docNumber: docNumber,
+      articleNumber: 'Văn bản quy phạm pháp luật',
+      sourceUrl: matchedUrl,
+    });
+    addedKeys.add(lowerNum);
+  }
+
+  return results.slice(0, 4);
 }
