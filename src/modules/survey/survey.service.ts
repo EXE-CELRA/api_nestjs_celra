@@ -232,6 +232,7 @@ export class SurveyService {
       for (const q of dto.questions) {
         const factKey = q.id;
 
+        // Phân loại nhóm bối cảnh chuẩn xác theo từng Module bao quát 100%
         let group: ContextGroup = 'tax_accounting';
         if (q.moduleId === 'MODULE_INVOICE_CASHFLOW') {
           group = 'revenue_invoices';
@@ -239,6 +240,16 @@ export class SurveyService {
           group = 'tax_accounting';
         } else if (q.moduleId === 'MODULE_LABOR_HR') {
           group = 'hr_labor';
+        } else if (q.moduleId === 'MODULE_PREMISES_PCCC') {
+          group = 'premises';
+        } else if (q.moduleId === 'MODULE_CONTRACTS') {
+          group = 'contracts';
+        } else if (q.moduleId === 'MODULE_DATA_IP' || q.moduleId === 'MODULE_ECOM_DATA_PRIVACY') {
+          group = 'tech_data';
+        } else if (q.moduleId === 'MODULE_LICENSING_ATTP' || q.moduleId === 'MODULE_LICENSING_CON') {
+          group = 'conditional_licensing';
+        } else if (q.moduleId === 'MODULE_LEGAL_CORP' || q.id === 'q_corp_capital_90d' || q.id === 'q_corp_amend_10d') {
+          group = 'legal';
         } else if (
           q.id?.includes('inv') ||
           q.id?.includes('cashflow') ||
@@ -264,6 +275,16 @@ export class SurveyService {
             ? 'Hóa Đơn & Dòng Tiền'
             : group === 'hr_labor'
             ? 'Lao Động & BHXH'
+            : group === 'premises'
+            ? 'Địa Điểm & PCCC'
+            : group === 'contracts'
+            ? 'Hợp Đồng & Giao Kết'
+            : group === 'tech_data'
+            ? 'Dữ Liệu & Sở Hữu Trí Tuệ'
+            : group === 'conditional_licensing'
+            ? 'Giấy Phép Con'
+            : group === 'legal'
+            ? 'Pháp Lý Doanh Nghiệp & Vốn'
             : q.branchLabel || q.branchCode || 'Khảo sát tình huống';
 
         const exist = await this.prisma.contextFact.findFirst({

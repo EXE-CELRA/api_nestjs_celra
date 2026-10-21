@@ -37,9 +37,18 @@ export function calculateTaxDeadline(taxTypeOrKey: TaxType | string, ref: Date =
       return deadlines[0];
     }
     case 'TNDN_80': {
-      const d = new Date(y, 9, 30);
-      if (ref > d) return new Date(y + 1, 9, 30);
-      return d;
+      // Khoản 3 Điều 1 Nghị định 91/2022/NĐ-CP: Tạm nộp theo 4 quý (Q1: 30/04, Q2: 31/07, Q3: 31/10, Q4: 31/01 năm sau).
+      // Hạn chót tạm nộp 4 quý tối thiểu 80% số thuế TNDN quyết toán cả năm là ngày 31/01 năm tiếp theo.
+      const deadlines = [
+        new Date(y, 3, 30, 23, 59, 59), // Q1: 30/04
+        new Date(y, 6, 31, 23, 59, 59), // Q2: 31/07
+        new Date(y, 9, 31, 23, 59, 59), // Q3: 31/10 (tháng 10 có 31 ngày)
+        new Date(y + 1, 0, 31, 23, 59, 59), // Q4 & chốt hạn 80%: 31/01 năm sau
+      ];
+      for (const d of deadlines) {
+        if (d >= ref) return d;
+      }
+      return deadlines[deadlines.length - 1];
     }
     default:
       return new Date(ref.getTime() + 7 * 24 * 60 * 60 * 1000);
