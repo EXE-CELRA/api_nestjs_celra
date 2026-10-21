@@ -1,7 +1,17 @@
-import { IsNotEmpty, IsString, IsOptional, IsArray } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsArray, ValidateNested, IsIn } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Priority, UserRole } from '@prisma/client';
 
+export class ChatHistoryItemDto {
+  @ApiProperty({ enum: ['user', 'assistant'], example: 'user' })
+  @IsIn(['user', 'assistant'])
+  role!: 'user' | 'assistant';
+
+  @ApiProperty({ example: 'Doanh nghiệp tôi có 5 nhân sự' })
+  @IsString()
+  content!: string;
+}
 export class AIChatMessageDto {
   @ApiPropertyOptional({ example: 'Doanh nghiệp tôi F&B có 5 nhân sự thì cần làm gì về hợp đồng lao động và BHXH?' })
   @IsOptional()
@@ -17,6 +27,13 @@ export class AIChatMessageDto {
   @IsOptional()
   @IsString()
   conversationId?: string;
+
+  @ApiPropertyOptional({ type: [ChatHistoryItemDto], description: 'Lịch sử hội thoại gần nhất (10 messages)' })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ChatHistoryItemDto)
+  history?: ChatHistoryItemDto[];
 }
 
 export class AcceptProposalDto {
