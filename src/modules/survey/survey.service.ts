@@ -1,10 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SubmitSurveyDto } from './dto/survey.dto';
-import { ContextGroup } from '@prisma/client';
+import { ContextGroup, UserRole, MembershipStatus } from '@prisma/client';
 
 @Injectable()
 export class SurveyService {
+  private readonly logger = new Logger(SurveyService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async submitAnswers(orgId: string, userId: string, dto: SubmitSurveyDto) {
@@ -15,6 +17,12 @@ export class SurveyService {
       });
       if (userOrg) {
         targetOrgId = userOrg.organizationId;
+      }
+    }
+    if (!targetOrgId) {
+      const firstOrg = await this.prisma.organization.findFirst();
+      if (firstOrg) {
+        targetOrgId = firstOrg.id;
       }
     }
     if (!targetOrgId) {
@@ -29,16 +37,57 @@ export class SurveyService {
       const p = dto.baseProfile;
       const isQuarterly = p.isNewlyEstablished || (p.annualRevenue || 0) <= 50000000000;
 
-      // Cập nhật thông tin thực thể Organization
-      await this.prisma.organization.update({
-        where: { id: targetOrgId },
-        data: {
-          name: p.companyName || undefined,
-          taxCode: p.taxCode || undefined,
-          employeeCount: Number(p.employeeCount) || (p.employeeScale === 'under_10' ? 8 : p.employeeScale === '10_to_50' ? 25 : 60),
-          revenueStatus: p.isNewlyEstablished ? 'newly_established' : (p.annualRevenue || 0) <= 50000000000 ? 'under_50b' : 'over_50b',
-        },
-      });
+      // Cập nhật thông tin thực thể Organization an toàn
+      try {
+        await this.prisma.organization.update({
+          where: { id: targetOrgId },
+          data: {
+            name: p.companyName || undefined,
+            taxCode: p.taxCode || undefined,
+            employeeCount: Number(p.employeeCount) || (p.employeeScale === 'under_10' ? 8 : p.employeeScale === '10_to_50' ? 25 : 60),
+            revenueStatus: p.isNewlyEstablished ? 'newly_established' : (p.annualRevenue || 0) <= 50000000000 ? 'under_50b' : 'over_50b',
+          },
+        });
+      } catch (err: any) {
+        if (err.code === 'P2002' && p.taxCode) {
+          this.logger.warn(`Mã số thuế ${p.taxCode} đã tồn tại trong DB, chuyển sang dùng Organization tương ứng.`);
+          const existingOrg = await this.prisma.organization.findUnique({
+            where: { taxCode: p.taxCode },
+          });
+          if (existingOrg) {
+            targetOrgId = existingOrg.id;
+            await this.prisma.organization.update({
+              where: { id: targetOrgId },
+              data: {
+                name: p.companyName || undefined,
+                employeeCount: Number(p.employeeCount) || (p.employeeScale === 'under_10' ? 8 : p.employeeScale === '10_to_50' ? 25 : 60),
+                revenueStatus: p.isNewlyEstablished ? 'newly_established' : (p.annualRevenue || 0) <= 50000000000 ? 'under_50b' : 'over_50b',
+              },
+            });
+          }
+        } else {
+          this.logger.error('Lỗi cập nhật organization:', err);
+        }
+      }
+
+      // Đảm bảo user có membership active trong Organization này
+      if (userId && targetOrgId) {
+        await this.prisma.membership.upsert({
+          where: {
+            organizationId_userId: {
+              organizationId: targetOrgId,
+              userId,
+            },
+          },
+          update: { status: MembershipStatus.active },
+          create: {
+            organizationId: targetOrgId,
+            userId,
+            role: UserRole.owner,
+            status: MembershipStatus.active,
+          },
+        });
+      }
 
       const baseFacts = [
         {
@@ -291,6 +340,7 @@ export class SurveyService {
 
     return {
       success: true,
+      organizationId: targetOrgId,
       message: 'Đã lưu hiện trạng khảo sát vào Bối cảnh doanh nghiệp thành công. Hãy rà soát tuân thủ để sinh Checklist kiểm tra.',
       questionsCount: dto.questions?.length || 0,
     };

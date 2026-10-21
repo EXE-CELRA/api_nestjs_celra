@@ -113,6 +113,60 @@ enum TimelineEventType {
   payment
 }
 
+enum StatutoryCycleType {
+  MONTHLY
+  QUARTERLY
+  BIANNUAL_6M
+  ANNUAL
+  EVENT_10D
+  EVENT_20D
+  EVENT_45D
+  EVENT_3D
+  EVENT_10D_BIZ
+  EVENT_30D_CAPITAL
+  EVENT_90D
+}
+
+enum AuditStatus {
+  pending
+  running
+  succeeded
+  failed
+}
+
+enum ApplicableStatus {
+  applicable
+  not_applicable
+  missing_info
+  verification_required
+}
+
+enum LegalValidity {
+  in_force
+  expired
+  unverified
+}
+
+enum ResultSource {
+  rule_based
+  ai_assisted
+  unverified_fallback
+}
+
+enum ChecklistStatus {
+  active
+  paused
+  archived
+}
+
+enum NotificationMilestone {
+  BEFORE_7D
+  BEFORE_3D
+  BEFORE_1D
+  DUE_TODAY
+  OVERDUE
+}
+
 // ===================== MODELS =====================
 
 model User {
@@ -133,6 +187,8 @@ model User {
   createdOrganizations Organization[] @relation("CreatedByUser")
   taskComments         TaskComment[]
   timelineEvents       TaskTimelineEvent[]
+  notifications        ComplianceNotification[]
+  calendarNotes        CalendarNote[]
 
   @@map("users")
 }
@@ -162,6 +218,10 @@ model Organization {
   tasks              Task[]
   evidenceDocuments  EvidenceDocument[]
   wallet             Wallet?
+  complianceAudits   ComplianceAudit[]
+  checklists         Checklist[]
+  notifications      ComplianceNotification[]
+  calendarNotes      CalendarNote[]
 
   @@map("organizations")
 }
@@ -259,10 +319,116 @@ model Rule {
   @@map("rules")
 }
 
+model ComplianceAudit {
+  id                 String          @id @default(uuid())
+  organizationId     String
+  createdById        String?
+  contextFingerprint String
+  rulesVersion       String          @default("1.0")
+  scope              String          @default("ALL")
+  status             AuditStatus     @default(succeeded)
+  summary            String?
+  totalFindings      Int             @default(0)
+  applicableCount    Int             @default(0)
+  verifiedAt         DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  organization       Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  findings           AuditFinding[]
+
+  @@index([organizationId, contextFingerprint])
+  @@map("compliance_audits")
+}
+
+model AuditFinding {
+  id                  String             @id @default(uuid())
+  auditId             String
+  organizationId      String
+  factId              String?
+  ruleCode            String
+  obligationTitle     String
+  category            String
+  applicableStatus    ApplicableStatus   @default(applicable)
+  actionRequired      String
+  evidenceRequired    String
+  legalBasis          String
+  legalDocNumber      String?
+  legalArticle        String?
+  legalDocUrl         String?
+  legalValidity       LegalValidity      @default(in_force)
+  verifiedAt          DateTime?
+  resultSource        ResultSource       @default(rule_based)
+  cycleType           StatutoryCycleType @default(QUARTERLY)
+  calculationMethod   String?
+  missingDataNotice   String?
+  suggestedPriority   Priority           @default(medium)
+  isDismissed         Boolean            @default(false)
+  acceptedAt          DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  audit               ComplianceAudit    @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  checklistItems      ChecklistItem[]
+
+  @@index([organizationId, ruleCode])
+  @@map("audit_findings")
+}
+
+model Checklist {
+  id             String          @id @default(uuid())
+  organizationId String
+  createdById    String?
+  code           String
+  title          String
+  category       String
+  status         ChecklistStatus @default(active)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  items          ChecklistItem[]
+  tasks          Task[]
+
+  @@map("checklists")
+}
+
+model ChecklistItem {
+  id                  String             @id @default(uuid())
+  checklistId         String
+  organizationId      String
+  findingId           String?
+  ruleCode            String
+  title               String
+  cycleType           StatutoryCycleType
+  departmentId        String?
+  assigneeId          String?
+  assigneeName        String             @default("Người phụ trách")
+  assigneeRole        UserRole           @default(owner)
+  defaultPriority     Priority           @default(medium)
+  legalBasis          String
+  legalDocUrl         String?
+  evidenceRequirement String?
+  eventDate           DateTime?
+  isActive            Boolean            @default(true)
+  lastGeneratedPeriod String?
+  nextDueDate         DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  checklist           Checklist          @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  finding             AuditFinding?      @relation(fields: [findingId], references: [id], onDelete: SetNull)
+  tasks               Task[]
+
+  @@index([organizationId, cycleType])
+  @@map("checklist_items")
+}
+
 model Task {
   id                      String              @id @default(uuid())
   organizationId          String
   checklistId             String?
+  checklistItemId         String?
   code                    String
   title                   String
   category                String
@@ -282,7 +448,13 @@ model Task {
   description             String
   contextTrigger          String?
   ruleCode                String
+  periodCycle             StatutoryCycleType?
+  periodKey               String?
+  eventDate               DateTime?
+  calculationBasisJson    Json?               @default("{}")
   legalBasis              String
+  legalValidity           LegalValidity       @default(in_force)
+  verifiedAt              DateTime?
   isPaidTask              Boolean             @default(false)
   isAuditPaid            Boolean             @default(false)
   paidTaskCost            Float?              @default(0)
@@ -295,10 +467,16 @@ model Task {
 
   organization            Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   department              Department?         @relation(fields: [departmentId], references: [id])
+  checklist               Checklist?          @relation(fields: [checklistId], references: [id], onDelete: SetNull)
+  checklistItem           ChecklistItem?      @relation(fields: [checklistItemId], references: [id], onDelete: SetNull)
   documents               EvidenceDocument[]
   comments                TaskComment[]
   timeline                TaskTimelineEvent[]
+  notifications           ComplianceNotification[]
 
+  @@unique([organizationId, ruleCode, periodKey])
+  @@index([organizationId, status, dueDate])
+  @@index([organizationId, periodCycle])
   @@map("tasks")
 }
 
@@ -333,6 +511,29 @@ model TaskTimelineEvent {
   actor       User?             @relation(fields: [actorId], references: [id])
 
   @@map("task_timeline_events")
+}
+
+model ComplianceNotification {
+  id             String                @id @default(uuid())
+  organizationId String
+  userId         String
+  taskId         String?
+  milestone      NotificationMilestone
+  title          String
+  message        String
+  linkUrl        String?
+  isRead         Boolean               @default(false)
+  readAt         DateTime?
+  dueDateVersion DateTime?
+  createdAt      DateTime              @default(now())
+
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task           Task?                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, milestone, userId])
+  @@index([organizationId, userId, isRead])
+  @@map("compliance_notifications")
 }
 
 model EvidenceDocument {
@@ -394,4 +595,24 @@ model WalletTransaction {
   wallet      Wallet            @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
   @@map("wallet_transactions")
+}
+
+model CalendarNote {
+  id             String       @id @default(uuid())
+  organizationId String
+  date           String       // Định dạng YYYY-MM-DD
+  title          String
+  content        String?
+  category       String?      @default("general") // general, tax, labor, legal, reminder
+  authorId       String?
+  authorName     String?
+  isCompleted    Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author         User?        @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, date])
+  @@map("calendar_notes")
 }

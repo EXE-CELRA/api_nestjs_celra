@@ -10,16 +10,22 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
 import { ContextEngineService } from './context-engine.service';
+import { ComplianceFlowService } from './compliance-flow.service';
 import { CreateContextFactDto, UpdateContextFactDto, GenerateChecklistFromFactDto } from './dto/context-fact.dto';
+import { BatchAuditContextDto, ConfirmChecklistsDto } from './dto/compliance-flow.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OrganizationMembershipGuard } from '../../common/guards/organization-membership.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
-@ApiTags('Context Engine (9 Nhóm Dữ kiện Bối cảnh)')
+@ApiTags('Context Engine (9 Nhóm Dữ kiện Bối cảnh & Rà soát Pháp luật)')
 @Controller('context-facts')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, OrganizationMembershipGuard)
 @ApiBearerAuth()
 export class ContextEngineController {
-  constructor(private readonly contextService: ContextEngineService) {}
+  constructor(
+    private readonly contextService: ContextEngineService,
+    private readonly complianceFlowService: ComplianceFlowService,
+  ) {}
 
   @Post()
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
@@ -40,6 +46,28 @@ export class ContextEngineController {
     @CurrentUser('sub') userId: string,
   ) {
     return this.contextService.findAll(orgId, userId);
+  }
+
+  @Post('batch-audit')
+  @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
+  @ApiOperation({ summary: 'Rà soát tuân thủ toàn diện theo ma trận bối cảnh (Tích hợp Cache Fingerprint 0 token/0 phí)' })
+  async batchAudit(
+    @Headers('x-organization-id') orgId: string,
+    @CurrentUser('sub') userId: string,
+    @Body() dto: BatchAuditContextDto,
+  ) {
+    return this.complianceFlowService.runAudit(orgId, userId, dto);
+  }
+
+  @Post('confirm-checklists')
+  @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
+  @ApiOperation({ summary: 'Xác nhận tạo Checklist và Tác vụ chính thức (Chống trùng lặp tuyệt đối)' })
+  async confirmChecklists(
+    @Headers('x-organization-id') orgId: string,
+    @CurrentUser('sub') userId: string,
+    @Body() dto: ConfirmChecklistsDto,
+  ) {
+    return this.complianceFlowService.confirmChecklists(orgId, userId, dto);
   }
 
   @Get(':id')
@@ -69,7 +97,7 @@ export class ContextEngineController {
 
   @Post(':id/compliance-audit')
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
-  @ApiOperation({ summary: 'Rà soát tuân thủ thẻ bối cảnh (Thu phí 50.000 VNĐ qua Ví CELRA)' })
+  @ApiOperation({ summary: 'Rà soát tuân thủ đơn lẻ thẻ bối cảnh' })
   async auditCompliance(
     @Headers('x-organization-id') orgId: string,
     @Param('id') factId: string,
@@ -90,4 +118,3 @@ export class ContextEngineController {
     return this.contextService.generateChecklists(orgId, factId, userId, dto);
   }
 }
-
