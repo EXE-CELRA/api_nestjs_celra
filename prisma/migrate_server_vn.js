@@ -1,16 +1,17 @@
 /**
  * SCRIPT ĐỒNG BỘ TOÀN DIỆN CƠ SỞ DỮ LIỆU SANG TIẾNG VIỆT CHO SERVER
- * - Đổi tên toàn bộ 19 bảng sang snake_case Tiếng Việt
- * - Đổi tên toàn bộ các cột sang snake_case Tiếng Việt
+ * - Đổi tên toàn bộ 19 bảng và cột sang snake_case Tiếng Việt
+ * - Tự động tạo các ENUM và 6 BẢNG MỚI nếu chưa có (CREATE TABLE IF NOT EXISTS)
  * - Đổi tên các giá trị enum ContextGroup sang Tiếng Việt
- * - AN TOÀN TUYỆT ĐỐI: Có IF EXISTS, không xóa bảng, không làm mất bất kỳ dòng dữ liệu nào!
+ * - AN TOÀN TUYỆT ĐỐI: Có IF EXISTS / IF NOT EXISTS, không xóa bảng, không làm mất bất kỳ dòng dữ liệu nào!
  */
 const { PrismaClient } = require('@prisma/client');
 
-// Tự động nhận diện DATABASE_URL từ môi trường (hoặc truyền trực tiếp)
+// Tự động nhận diện DATABASE_URL từ môi trường
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
   console.error('❌ LỖI: Chưa có biến môi trường DATABASE_URL');
+  console.error('Gợi ý: Hãy chạy $env:DATABASE_URL="postgresql://..." trước khi chạy script.');
   process.exit(1);
 }
 
@@ -34,296 +35,264 @@ async function main() {
   console.log('🚀 BẮT ĐẦU ĐỒNG BỘ CƠ SỞ DỮ LIỆU SERVER SANG TIẾNG VIỆT CHUẨN');
   console.log('================================================================\n');
 
-  // 1. users -> nguoi_dung
-  console.log('--- 1. BẢNG NGUOIDUNG ---');
-  await runSql(`ALTER TABLE IF EXISTS "users" RENAME COLUMN "passwordHash" TO "mat_khau_ma_hoa";`, 'users.passwordHash');
-  await runSql(`ALTER TABLE IF EXISTS "users" RENAME COLUMN "name" TO "ho_va_ten";`, 'users.name');
-  await runSql(`ALTER TABLE IF EXISTS "users" RENAME COLUMN "role" TO "vai_tro";`, 'users.role');
-  await runSql(`ALTER TABLE IF EXISTS "users" RENAME COLUMN "roleTitle" TO "chuc_danh";`, 'users.roleTitle');
-  await runSql(`ALTER TABLE IF EXISTS "users" RENAME COLUMN "avatar" TO "anh_dai_dien";`, 'users.avatar');
-  await runSql(`ALTER TABLE IF EXISTS "users" RENAME COLUMN "phone" TO "so_dien_thoai";`, 'users.phone');
-  await runSql(`ALTER TABLE IF EXISTS "users" RENAME COLUMN "twoFactorSecret" TO "ma_bi_mat_2fa";`, 'users.twoFactorSecret');
-  await runSql(`ALTER TABLE IF EXISTS "users" RENAME COLUMN "isTwoFactorEnabled" TO "kich_hoat_2fa";`, 'users.isTwoFactorEnabled');
-  await runSql(`ALTER TABLE IF EXISTS "users" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'users.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "users" RENAME COLUMN "updatedAt" TO "ngay_cap_nhat";`, 'users.updatedAt');
-  await runSql(`ALTER TABLE IF EXISTS "users" RENAME TO "nguoi_dung";`, 'table nguoi_dung');
+  // ==================== 1. TẠO CÁC KIỂU ENUM MỚI ====================
+  console.log('--- 1. TẠO CÁC ENUM TUÂN THỦ (NẾU CHƯA CÓ) ---');
+  await runSql(`
+    DO $$ BEGIN
+      CREATE TYPE "StatutoryCycleType" AS ENUM ('MONTHLY', 'QUARTERLY', 'BIANNUAL_6M', 'ANNUAL', 'EVENT_10D', 'EVENT_20D', 'EVENT_45D', 'EVENT_3D', 'EVENT_10D_BIZ', 'EVENT_30D_CAPITAL', 'EVENT_90D');
+    EXCEPTION WHEN duplicate_object THEN null; END $$;
+  `, 'enum StatutoryCycleType');
 
-  // 2. organizations -> doanh_nghiep
-  console.log('\n--- 2. BẢNG DOANH NGHIEP ---');
-  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME COLUMN "name" TO "ten_doanh_nghiep";`, 'organizations.name');
-  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME COLUMN "taxCode" TO "ma_so_thue";`, 'organizations.taxCode');
-  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME COLUMN "legalType" TO "loai_hinh_phap_ly";`, 'organizations.legalType');
-  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME COLUMN "industry" TO "nganh_nghe";`, 'organizations.industry');
-  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME COLUMN "businessModel" TO "mo_hinh_kinh_doanh";`, 'organizations.businessModel');
-  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME COLUMN "operatingYears" TO "so_nam_hoat_dong";`, 'organizations.operatingYears');
-  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME COLUMN "revenueStatus" TO "tinh_trang_doanh_thu";`, 'organizations.revenueStatus');
-  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME COLUMN "employeeCount" TO "so_luong_nhan_su";`, 'organizations.employeeCount');
-  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME COLUMN "locations" TO "dia_diem_kinh_doanh";`, 'organizations.locations');
-  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME COLUMN "hasOnlineSales" TO "co_ban_hang_online";`, 'organizations.hasOnlineSales');
-  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME COLUMN "address" TO "dia_chi";`, 'organizations.address');
-  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME COLUMN "representativeName" TO "ten_nguoi_dai_dien";`, 'organizations.representativeName');
-  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME COLUMN "createdById" TO "id_nguoi_tao";`, 'organizations.createdById');
-  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'organizations.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME COLUMN "updatedAt" TO "ngay_cap_nhat";`, 'organizations.updatedAt');
-  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME TO "doanh_nghiep";`, 'table doanh_nghiep');
+  await runSql(`
+    DO $$ BEGIN
+      CREATE TYPE "AuditStatus" AS ENUM ('pending', 'running', 'succeeded', 'failed');
+    EXCEPTION WHEN duplicate_object THEN null; END $$;
+  `, 'enum AuditStatus');
 
-  // 3. departments -> phong_ban
-  console.log('\n--- 3. BẢNG PHONG BAN ---');
-  await runSql(`ALTER TABLE IF EXISTS "departments" RENAME COLUMN "organizationId" TO "id_doanh_nghiep";`, 'dept.orgId');
-  await runSql(`ALTER TABLE IF EXISTS "departments" RENAME COLUMN "name" TO "ten_phong_ban";`, 'dept.name');
-  await runSql(`ALTER TABLE IF EXISTS "departments" RENAME COLUMN "code" TO "ma_phong_ban";`, 'dept.code');
-  await runSql(`ALTER TABLE IF EXISTS "departments" RENAME COLUMN "leadName" TO "ten_truong_phong";`, 'dept.leadName');
-  await runSql(`ALTER TABLE IF EXISTS "departments" RENAME COLUMN "memberCount" TO "so_luong_thanh_vien";`, 'dept.memberCount');
-  await runSql(`ALTER TABLE IF EXISTS "departments" RENAME COLUMN "description" TO "mo_ta";`, 'dept.desc');
-  await runSql(`ALTER TABLE IF EXISTS "departments" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'dept.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "departments" RENAME COLUMN "updatedAt" TO "ngay_cap_nhat";`, 'dept.updatedAt');
-  await runSql(`ALTER TABLE IF EXISTS "departments" RENAME TO "phong_ban";`, 'table phong_ban');
+  await runSql(`
+    DO $$ BEGIN
+      CREATE TYPE "ApplicableStatus" AS ENUM ('applicable', 'not_applicable', 'missing_info', 'verification_required');
+    EXCEPTION WHEN duplicate_object THEN null; END $$;
+  `, 'enum ApplicableStatus');
 
-  // 4. memberships -> thanh_vien_doanh_nghiep
-  console.log('\n--- 4. BẢNG THANH VIEN DOANH NGHIEP ---');
-  await runSql(`ALTER TABLE IF EXISTS "memberships" RENAME COLUMN "organizationId" TO "id_doanh_nghiep";`, 'mem.orgId');
-  await runSql(`ALTER TABLE IF EXISTS "memberships" RENAME COLUMN "userId" TO "id_nguoi_dung";`, 'mem.userId');
-  await runSql(`ALTER TABLE IF EXISTS "memberships" RENAME COLUMN "departmentId" TO "id_phong_ban";`, 'mem.deptId');
-  await runSql(`ALTER TABLE IF EXISTS "memberships" RENAME COLUMN "role" TO "vai_tro";`, 'mem.role');
-  await runSql(`ALTER TABLE IF EXISTS "memberships" RENAME COLUMN "roleTitle" TO "chuc_danh";`, 'mem.roleTitle');
-  await runSql(`ALTER TABLE IF EXISTS "memberships" RENAME COLUMN "permissions" TO "quyen_han";`, 'mem.permissions');
-  await runSql(`ALTER TABLE IF EXISTS "memberships" RENAME COLUMN "status" TO "trang_thai";`, 'mem.status');
-  await runSql(`ALTER TABLE IF EXISTS "memberships" RENAME COLUMN "invitedAt" TO "ngay_moi";`, 'mem.invitedAt');
-  await runSql(`ALTER TABLE IF EXISTS "memberships" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'mem.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "memberships" RENAME COLUMN "updatedAt" TO "ngay_cap_nhat";`, 'mem.updatedAt');
-  await runSql(`ALTER TABLE IF EXISTS "memberships" RENAME TO "thanh_vien_doanh_nghiep";`, 'table thanh_vien_doanh_nghiep');
+  await runSql(`
+    DO $$ BEGIN
+      CREATE TYPE "LegalValidity" AS ENUM ('in_force', 'expired', 'unverified');
+    EXCEPTION WHEN duplicate_object THEN null; END $$;
+  `, 'enum LegalValidity');
 
-  // 5. context_facts -> du_lieu_ngu_canh
-  console.log('\n--- 5. BẢNG DU LIEU NGU CANH ---');
-  await runSql(`ALTER TABLE IF EXISTS "context_facts" RENAME COLUMN "organizationId" TO "id_doanh_nghiep";`, 'fact.orgId');
-  await runSql(`ALTER TABLE IF EXISTS "context_facts" RENAME COLUMN "key" TO "khoa_ngu_canh";`, 'fact.key');
-  await runSql(`ALTER TABLE IF EXISTS "context_facts" RENAME COLUMN "label" TO "nhan_hien_thi";`, 'fact.label');
-  await runSql(`ALTER TABLE IF EXISTS "context_facts" RENAME COLUMN "group" TO "nhom_ngu_canh";`, 'fact.group');
-  await runSql(`ALTER TABLE IF EXISTS "context_facts" RENAME COLUMN "currentValue" TO "gia_tri_hien_tai";`, 'fact.currentValue');
-  await runSql(`ALTER TABLE IF EXISTS "context_facts" RENAME COLUMN "source" TO "nguon_du_lieu";`, 'fact.source');
-  await runSql(`ALTER TABLE IF EXISTS "context_facts" RENAME COLUMN "providedBy" TO "cung_cap_boi";`, 'fact.providedBy');
-  await runSql(`ALTER TABLE IF EXISTS "context_facts" RENAME COLUMN "providedAt" TO "thoi_gian_cung_cap";`, 'fact.providedAt');
-  await runSql(`ALTER TABLE IF EXISTS "context_facts" RENAME COLUMN "status" TO "trang_thai";`, 'fact.status');
-  await runSql(`ALTER TABLE IF EXISTS "context_facts" RENAME COLUMN "confirmedBy" TO "xac_nhan_boi";`, 'fact.confirmedBy');
-  await runSql(`ALTER TABLE IF EXISTS "context_facts" RENAME COLUMN "affectedRules" TO "quy_tac_anh_huong";`, 'fact.affectedRules');
-  await runSql(`ALTER TABLE IF EXISTS "context_facts" RENAME COLUMN "conflictDetails" TO "chi_tiet_xung_dot";`, 'fact.conflictDetails');
-  await runSql(`ALTER TABLE IF EXISTS "context_facts" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'fact.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "context_facts" RENAME COLUMN "updatedAt" TO "ngay_cap_nhat";`, 'fact.updatedAt');
-  await runSql(`ALTER TABLE IF EXISTS "context_facts" RENAME TO "du_lieu_ngu_canh";`, 'table du_lieu_ngu_canh');
+  await runSql(`
+    DO $$ BEGIN
+      CREATE TYPE "ResultSource" AS ENUM ('rule_based', 'ai_assisted', 'unverified_fallback');
+    EXCEPTION WHEN duplicate_object THEN null; END $$;
+  `, 'enum ResultSource');
 
-  // 6. context_fact_histories -> lich_su_ngu_canh
-  console.log('\n--- 6. BẢNG LICH SU NGU CANH ---');
-  await runSql(`ALTER TABLE IF EXISTS "context_fact_histories" RENAME COLUMN "contextFactId" TO "id_du_lieu_ngu_canh";`, 'hist.factId');
-  await runSql(`ALTER TABLE IF EXISTS "context_fact_histories" RENAME COLUMN "value" TO "gia_tri";`, 'hist.value');
-  await runSql(`ALTER TABLE IF EXISTS "context_fact_histories" RENAME COLUMN "changedBy" TO "thay_doi_boi";`, 'hist.changedBy');
-  await runSql(`ALTER TABLE IF EXISTS "context_fact_histories" RENAME COLUMN "changedAt" TO "thoi_gian_thay_doi";`, 'hist.changedAt');
-  await runSql(`ALTER TABLE IF EXISTS "context_fact_histories" RENAME COLUMN "note" TO "ghi_chu";`, 'hist.note');
-  await runSql(`ALTER TABLE IF EXISTS "context_fact_histories" RENAME TO "lich_su_ngu_canh";`, 'table lich_su_ngu_canh');
+  await runSql(`
+    DO $$ BEGIN
+      CREATE TYPE "NotificationMilestone" AS ENUM ('BEFORE_7D', 'BEFORE_3D', 'BEFORE_1D', 'DUE_TODAY', 'OVERDUE');
+    EXCEPTION WHEN duplicate_object THEN null; END $$;
+  `, 'enum NotificationMilestone');
 
-  // 7. rules -> quy_tac_tuan_thu
-  console.log('\n--- 7. BẢNG QUY TAC TUAN THU ---');
-  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME COLUMN "code" TO "ma_quy_tac";`, 'rule.code');
-  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME COLUMN "name" TO "ten_quy_tac";`, 'rule.name');
-  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME COLUMN "category" TO "phan_loai";`, 'rule.category');
-  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME COLUMN "domain" TO "linh_vuc";`, 'rule.domain');
-  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME COLUMN "description" TO "mo_ta";`, 'rule.desc');
-  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME COLUMN "severity" TO "muc_do_nghiem_trong";`, 'rule.severity');
-  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME COLUMN "penalty" TO "che_tai_xu_phat";`, 'rule.penalty');
-  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME COLUMN "legalBasis" TO "can_cu_phap_ly";`, 'rule.legalBasis');
-  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME COLUMN "cycleType" TO "chu_ky_luat_dinh";`, 'rule.cycleType');
-  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME COLUMN "dueDayOffset" TO "do_lech_ngay_han";`, 'rule.dueDayOffset');
-  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME COLUMN "eventTrigger" TO "su_kien_kich_hoat";`, 'rule.eventTrigger');
-  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME COLUMN "applicableCondition" TO "dieu_kien_ap_dung";`, 'rule.cond');
-  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME COLUMN "isActive" TO "dang_kich_hoat";`, 'rule.isActive');
-  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'rule.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME COLUMN "updatedAt" TO "ngay_cap_nhat";`, 'rule.updatedAt');
-  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME TO "quy_tac_tuan_thu";`, 'table quy_tac_tuan_thu');
+  await runSql(`
+    DO $$ BEGIN
+      CREATE TYPE "ChecklistStatus" AS ENUM ('active', 'paused', 'archived');
+    EXCEPTION WHEN duplicate_object THEN null; END $$;
+  `, 'enum ChecklistStatus');
 
-  // 8. compliance_audits -> dot_danh_gia_tuan_thu
-  console.log('\n--- 8. BẢNG DOT DANH GIA TUAN THU ---');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_audits" RENAME COLUMN "organizationId" TO "id_doanh_nghiep";`, 'audit.orgId');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_audits" RENAME COLUMN "totalRulesChecked" TO "tong_so_quy_tac_kiem_tra";`, 'audit.total');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_audits" RENAME COLUMN "compliantCount" TO "so_luong_tuan_thu";`, 'audit.compliant');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_audits" RENAME COLUMN "nonCompliantCount" TO "so_luong_vi_pham";`, 'audit.nonCompliant');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_audits" RENAME COLUMN "warningCount" TO "so_luong_canh_bao";`, 'audit.warning');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_audits" RENAME COLUMN "status" TO "trang_thai";`, 'audit.status');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_audits" RENAME COLUMN "snapshotFacts" TO "anh_chup_du_kien";`, 'audit.snapshot');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_audits" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'audit.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_audits" RENAME TO "dot_danh_gia_tuan_thu";`, 'table dot_danh_gia_tuan_thu');
+  for (const val of ['active', 'paused', 'archived']) {
+    await runSql(`ALTER TYPE "ChecklistStatus" ADD VALUE IF NOT EXISTS '${val}';`, `ChecklistStatus + ${val}`);
+  }
 
-  // 9. audit_findings -> phat_hien_vi_pham
-  console.log('\n--- 9. BẢNG PHAT HIEN VI PHAM ---');
-  await runSql(`ALTER TABLE IF EXISTS "audit_findings" RENAME COLUMN "auditId" TO "id_dot_danh_gia";`, 'find.auditId');
-  await runSql(`ALTER TABLE IF EXISTS "audit_findings" RENAME COLUMN "ruleCode" TO "ma_quy_tac";`, 'find.ruleCode');
-  await runSql(`ALTER TABLE IF EXISTS "audit_findings" RENAME COLUMN "status" TO "trang_thai";`, 'find.status');
-  await runSql(`ALTER TABLE IF EXISTS "audit_findings" RENAME COLUMN "legalBasis" TO "can_cu_phap_ly";`, 'find.legalBasis');
-  await runSql(`ALTER TABLE IF EXISTS "audit_findings" RENAME COLUMN "penaltyText" TO "noi_dung_che_tai";`, 'find.penalty');
-  await runSql(`ALTER TABLE IF EXISTS "audit_findings" RENAME COLUMN "explanation" TO "giai_thich_chi_tiet";`, 'find.explain');
-  await runSql(`ALTER TABLE IF EXISTS "audit_findings" RENAME COLUMN "source" TO "nguon_phat_hien";`, 'find.source');
-  await runSql(`ALTER TABLE IF EXISTS "audit_findings" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'find.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "audit_findings" RENAME TO "phat_hien_vi_pham";`, 'table phat_hien_vi_pham');
+  // ==================== 2. ĐỔI TÊN BẢNG TIẾNG ANH -> TIẾNG VIỆT (NẾU CÒN) ====================
+  console.log('\n--- 2. ĐỔI TÊN CÁC BẢNG TIẾNG ANH (NẾU CÒN TỒN TẠI) ---');
+  await runSql(`ALTER TABLE IF EXISTS "users" RENAME TO "nguoi_dung";`, 'table users -> nguoi_dung');
+  await runSql(`ALTER TABLE IF EXISTS "organizations" RENAME TO "doanh_nghiep";`, 'table organizations -> doanh_nghiep');
+  await runSql(`ALTER TABLE IF EXISTS "departments" RENAME TO "phong_ban";`, 'table departments -> phong_ban');
+  await runSql(`ALTER TABLE IF EXISTS "memberships" RENAME TO "thanh_vien_doanh_nghiep";`, 'table memberships -> thanh_vien_doanh_nghiep');
+  await runSql(`ALTER TABLE IF EXISTS "context_facts" RENAME TO "du_lieu_ngu_canh";`, 'table context_facts -> du_lieu_ngu_canh');
+  await runSql(`ALTER TABLE IF EXISTS "context_fact_histories" RENAME TO "lich_su_ngu_canh";`, 'table context_fact_histories -> lich_su_ngu_canh');
+  await runSql(`ALTER TABLE IF EXISTS "rules" RENAME TO "quy_tac_tuan_thu";`, 'table rules -> quy_tac_tuan_thu');
+  await runSql(`ALTER TABLE IF EXISTS "compliance_audits" RENAME TO "dot_danh_gia_tuan_thu";`, 'table compliance_audits -> dot_danh_gia_tuan_thu');
+  await runSql(`ALTER TABLE IF EXISTS "audit_findings" RENAME TO "phat_hien_vi_pham";`, 'table audit_findings -> phat_hien_vi_pham');
+  await runSql(`ALTER TABLE IF EXISTS "checklists" RENAME TO "danh_muc_kiem_tra";`, 'table checklists -> danh_muc_kiem_tra');
+  await runSql(`ALTER TABLE IF EXISTS "checklist_items" RENAME TO "muc_kiem_tra";`, 'table checklist_items -> muc_kiem_tra');
+  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME TO "nhiem_vu_tuan_thu";`, 'table tasks -> nhiem_vu_tuan_thu');
+  await runSql(`ALTER TABLE IF EXISTS "task_comments" RENAME TO "binh_luan_nhiem_vu";`, 'table task_comments -> binh_luan_nhiem_vu');
+  await runSql(`ALTER TABLE IF EXISTS "task_timeline_events" RENAME TO "nhat_ky_nhiem_vu";`, 'table task_timeline_events -> nhat_ky_nhiem_vu');
+  await runSql(`ALTER TABLE IF EXISTS "compliance_notifications" RENAME TO "thong_bao_tuan_thu";`, 'table compliance_notifications -> thong_bao_tuan_thu');
+  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME TO "chung_tu_bang_chung";`, 'table evidence_documents -> chung_tu_bang_chung');
+  await runSql(`ALTER TABLE IF EXISTS "wallets" RENAME TO "vi_tin_dung";`, 'table wallets -> vi_tin_dung');
+  await runSql(`ALTER TABLE IF EXISTS "wallet_transactions" RENAME TO "giao_dich_vi";`, 'table wallet_transactions -> giao_dich_vi');
+  await runSql(`ALTER TABLE IF EXISTS "calendar_notes" RENAME TO "ghi_chu_lich";`, 'table calendar_notes -> ghi_chu_lich');
 
-  // 10. checklists -> danh_muc_kiem_tra
-  console.log('\n--- 10. BẢNG DANH MUC KIEM TRA ---');
-  await runSql(`ALTER TABLE IF EXISTS "checklists" RENAME COLUMN "organizationId" TO "id_doanh_nghiep";`, 'ckl.orgId');
-  await runSql(`ALTER TABLE IF EXISTS "checklists" RENAME COLUMN "code" TO "ma_danh_muc";`, 'ckl.code');
-  await runSql(`ALTER TABLE IF EXISTS "checklists" RENAME COLUMN "name" TO "ten_danh_muc";`, 'ckl.name');
-  await runSql(`ALTER TABLE IF EXISTS "checklists" RENAME COLUMN "description" TO "mo_ta";`, 'ckl.desc');
-  await runSql(`ALTER TABLE IF EXISTS "checklists" RENAME COLUMN "category" TO "phan_loai";`, 'ckl.cat');
-  await runSql(`ALTER TABLE IF EXISTS "checklists" RENAME COLUMN "status" TO "trang_thai";`, 'ckl.status');
-  await runSql(`ALTER TABLE IF EXISTS "checklists" RENAME COLUMN "periodKey" TO "khoa_ky_han";`, 'ckl.periodKey');
-  await runSql(`ALTER TABLE IF EXISTS "checklists" RENAME COLUMN "totalItems" TO "tong_so_muc";`, 'ckl.totalItems');
-  await runSql(`ALTER TABLE IF EXISTS "checklists" RENAME COLUMN "completedItems" TO "so_muc_da_hoan_thanh";`, 'ckl.completed');
-  await runSql(`ALTER TABLE IF EXISTS "checklists" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'ckl.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "checklists" RENAME COLUMN "updatedAt" TO "ngay_cap_nhat";`, 'ckl.updatedAt');
-  await runSql(`ALTER TABLE IF EXISTS "checklists" RENAME TO "danh_muc_kiem_tra";`, 'table danh_muc_kiem_tra');
+  // ==================== 3. ĐỒNG BỘ CỘT TIẾNG VIỆT CHO CÁC BẢNG HIỆN CÓ ====================
+  console.log('\n--- 3. ĐỒNG BỘ CỘT CHO CÁC BẢNG HIỆN CÓ ---');
 
-  // 11. checklist_items -> muc_kiem_tra
-  console.log('\n--- 11. BẢNG MUC KIEM TRA ---');
-  await runSql(`ALTER TABLE IF EXISTS "checklist_items" RENAME COLUMN "checklistId" TO "id_danh_muc";`, 'item.checklistId');
-  await runSql(`ALTER TABLE IF EXISTS "checklist_items" RENAME COLUMN "taskId" TO "id_nhiem_vu";`, 'item.taskId');
-  await runSql(`ALTER TABLE IF EXISTS "checklist_items" RENAME COLUMN "title" TO "tieu_de";`, 'item.title');
-  await runSql(`ALTER TABLE IF EXISTS "checklist_items" RENAME COLUMN "isCompleted" TO "da_hoan_thanh";`, 'item.isCompleted');
-  await runSql(`ALTER TABLE IF EXISTS "checklist_items" RENAME COLUMN "completedAt" TO "thoi_gian_hoan_thanh";`, 'item.completedAt');
-  await runSql(`ALTER TABLE IF EXISTS "checklist_items" RENAME COLUMN "completedBy" TO "hoan_thanh_boi";`, 'item.completedBy');
-  await runSql(`ALTER TABLE IF EXISTS "checklist_items" RENAME COLUMN "order" TO "thu_tu";`, 'item.order');
-  await runSql(`ALTER TABLE IF EXISTS "checklist_items" RENAME COLUMN "legalDocCode" TO "ma_van_ban_luat";`, 'item.docCode');
-  await runSql(`ALTER TABLE IF EXISTS "checklist_items" RENAME COLUMN "legalDocTitle" TO "ten_van_ban_luat";`, 'item.docTitle');
-  await runSql(`ALTER TABLE IF EXISTS "checklist_items" RENAME COLUMN "legalDocArticle" TO "dieu_khoan_luat";`, 'item.article');
-  await runSql(`ALTER TABLE IF EXISTS "checklist_items" RENAME COLUMN "legalDocUrl" TO "duong_dan_van_ban_luat";`, 'item.url');
-  await runSql(`ALTER TABLE IF EXISTS "checklist_items" RENAME COLUMN "penaltyClause" TO "dieu_khoan_che_tai";`, 'item.penalty');
-  await runSql(`ALTER TABLE IF EXISTS "checklist_items" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'item.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "checklist_items" RENAME COLUMN "updatedAt" TO "ngay_cap_nhat";`, 'item.updatedAt');
-  await runSql(`ALTER TABLE IF EXISTS "checklist_items" RENAME TO "muc_kiem_tra";`, 'table muc_kiem_tra');
+  // nhat_ky_nhiem_vu
+  await runSql(`ALTER TABLE IF EXISTS "nhat_ky_nhiem_vu" RENAME COLUMN "type" TO "loai_nhat_ky";`, 'nhat_ky.type');
+  await runSql(`ALTER TABLE IF EXISTS "nhat_ky_nhiem_vu" RENAME COLUMN "title" TO "tieu_de";`, 'nhat_ky.title');
+  await runSql(`ALTER TABLE IF EXISTS "nhat_ky_nhiem_vu" RENAME COLUMN "description" TO "mo_ta";`, 'nhat_ky.description');
+  await runSql(`ALTER TABLE IF EXISTS "nhat_ky_nhiem_vu" RENAME COLUMN "timestamp" TO "thoi_diem";`, 'nhat_ky.timestamp');
 
-  // 12. tasks -> nhiem_vu_tuan_thu
-  console.log('\n--- 12. BẢNG NHIEM VU TUAN THU ---');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "organizationId" TO "id_doanh_nghiep";`, 'task.orgId');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "departmentId" TO "id_phong_ban";`, 'task.deptId');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "assigneeId" TO "id_nguoi_xu_ly";`, 'task.assigneeId');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "code" TO "ma_nhiem_vu";`, 'task.code');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "title" TO "tieu_de";`, 'task.title');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "description" TO "mo_ta";`, 'task.desc');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "category" TO "danh_muc";`, 'task.cat');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "priority" TO "do_uu_tien";`, 'task.priority');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "status" TO "trang_thai";`, 'task.status');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "dueDate" TO "han_chot";`, 'task.dueDate');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "ruleCode" TO "ma_quy_tac";`, 'task.ruleCode');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "legalBasis" TO "can_cu_phap_ly";`, 'task.legalBasis');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "periodCycle" TO "chu_ky_luat_dinh";`, 'task.periodCycle');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "periodKey" TO "khoa_ky_han";`, 'task.periodKey');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "assigneeName" TO "ten_nguoi_xu_ly";`, 'task.assigneeName');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "assigneeRole" TO "vai_tro_nguoi_xu_ly";`, 'task.assigneeRole');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "waitingOnName" TO "ten_nguoi_cho_doi";`, 'task.waitingName');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "waitingOnRole" TO "vai_tro_cho_doi";`, 'task.waitingRole');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "paymentStatus" TO "trang_thai_thanh_toan";`, 'task.payStatus');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "expertFee" TO "phi_chuyen_gia";`, 'task.expertFee');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "isSelfCertified" TO "da_tu_xac_nhan";`, 'task.isSelf');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "selfCertifiedAt" TO "thoi_gian_tu_xac_nhan";`, 'task.selfAt');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "selfCertifiedBy" TO "tu_xac_nhan_boi";`, 'task.selfBy');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'task.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME COLUMN "updatedAt" TO "ngay_cap_nhat";`, 'task.updatedAt');
-  await runSql(`ALTER TABLE IF EXISTS "tasks" RENAME TO "nhiem_vu_tuan_thu";`, 'table nhiem_vu_tuan_thu');
+  // binh_luan_nhiem_vu
+  await runSql(`ALTER TABLE IF EXISTS "binh_luan_nhiem_vu" RENAME COLUMN "authorId" TO "id_tac_gia";`, 'binh_luan.authorId');
+  await runSql(`ALTER TABLE IF EXISTS "binh_luan_nhiem_vu" RENAME COLUMN "isInternalOnly" TO "chi_noi_bo";`, 'binh_luan.isInternalOnly');
 
-  // 13. task_comments -> binh_luan_nhiem_vu
-  console.log('\n--- 13. BẢNG BINH LUAN NHIEM VU ---');
-  await runSql(`ALTER TABLE IF EXISTS "task_comments" RENAME COLUMN "taskId" TO "id_nhiem_vu";`, 'comment.taskId');
-  await runSql(`ALTER TABLE IF EXISTS "task_comments" RENAME COLUMN "userId" TO "id_nguoi_dung";`, 'comment.userId');
-  await runSql(`ALTER TABLE IF EXISTS "task_comments" RENAME COLUMN "authorName" TO "ten_tac_gia";`, 'comment.authorName');
-  await runSql(`ALTER TABLE IF EXISTS "task_comments" RENAME COLUMN "authorRole" TO "vai_tro_tac_gia";`, 'comment.authorRole');
-  await runSql(`ALTER TABLE IF EXISTS "task_comments" RENAME COLUMN "content" TO "noi_dung";`, 'comment.content');
-  await runSql(`ALTER TABLE IF EXISTS "task_comments" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'comment.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "task_comments" RENAME TO "binh_luan_nhiem_vu";`, 'table binh_luan_nhiem_vu');
+  // quy_tac_tuan_thu
+  await runSql(`ALTER TABLE IF EXISTS "quy_tac_tuan_thu" RENAME COLUMN "title" TO "tieu_de";`, 'quy_tac.title');
+  await runSql(`ALTER TABLE IF EXISTS "quy_tac_tuan_thu" RENAME COLUMN "conditionSummary" TO "tom_tat_dieu_kien";`, 'quy_tac.conditionSummary');
+  await runSql(`ALTER TABLE IF EXISTS "quy_tac_tuan_thu" RENAME COLUMN "conditionsJson" TO "dieu_kien_json";`, 'quy_tac.conditionsJson');
+  await runSql(`ALTER TABLE IF EXISTS "quy_tac_tuan_thu" RENAME COLUMN "triggeredChecklists" TO "danh_muc_kich_hoat";`, 'quy_tac.triggeredChecklists');
+  await runSql(`ALTER TABLE IF EXISTS "quy_tac_tuan_thu" RENAME COLUMN "version" TO "phien_ban";`, 'quy_tac.version');
+  await runSql(`ALTER TABLE IF EXISTS "quy_tac_tuan_thu" RENAME COLUMN "effectiveDate" TO "ngay_hieu_luc";`, 'quy_tac.effectiveDate');
+  await runSql(`ALTER TABLE IF EXISTS "quy_tac_tuan_thu" RENAME COLUMN "legalReference" TO "can_cu_phap_ly";`, 'quy_tac.legalReference');
+  await runSql(`ALTER TABLE IF EXISTS "quy_tac_tuan_thu" RENAME COLUMN "priority" TO "do_uu_tien";`, 'quy_tac.priority');
 
-  // 14. task_timeline_events -> nhat_ky_nhiem_vu
-  console.log('\n--- 14. BẢNG NHAT KY NHIEM VU ---');
-  await runSql(`ALTER TABLE IF EXISTS "task_timeline_events" RENAME COLUMN "taskId" TO "id_nhiem_vu";`, 'timeline.taskId');
-  await runSql(`ALTER TABLE IF EXISTS "task_timeline_events" RENAME COLUMN "eventType" TO "loai_su_kien";`, 'timeline.eventType');
-  await runSql(`ALTER TABLE IF EXISTS "task_timeline_events" RENAME COLUMN "actorId" TO "id_nguoi_thuc_hien";`, 'timeline.actorId');
-  await runSql(`ALTER TABLE IF EXISTS "task_timeline_events" RENAME COLUMN "actorName" TO "ten_nguoi_thuc_hien";`, 'timeline.actorName');
-  await runSql(`ALTER TABLE IF EXISTS "task_timeline_events" RENAME COLUMN "actorRole" TO "vai_tro_nguoi_thuc_hien";`, 'timeline.actorRole');
-  await runSql(`ALTER TABLE IF EXISTS "task_timeline_events" RENAME COLUMN "details" TO "chi_tiet";`, 'timeline.details');
-  await runSql(`ALTER TABLE IF EXISTS "task_timeline_events" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'timeline.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "task_timeline_events" RENAME TO "nhat_ky_nhiem_vu";`, 'table nhat_ky_nhiem_vu');
+  // nhiem_vu_tuan_thu
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" RENAME COLUMN "id_nguoi_xu_ly" TO "id_nguoi_phu_trach";`, 'nhiem_vu.id_nguoi_xu_ly');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" RENAME COLUMN "ten_nguoi_xu_ly" TO "ten_nguoi_phu_trach";`, 'nhiem_vu.ten_nguoi_xu_ly');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" RENAME COLUMN "vai_tro_nguoi_xu_ly" TO "vai_tro_nguoi_phu_trach";`, 'nhiem_vu.vai_tro_nguoi_xu_ly');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" RENAME COLUMN "danh_muc" TO "phan_loai";`, 'nhiem_vu.danh_muc');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" RENAME COLUMN "can_cu_phap_ly" TO "co_so_phap_ly";`, 'nhiem_vu.can_cu_phap_ly');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" RENAME COLUMN "checklistId" TO "id_danh_muc";`, 'nhiem_vu.checklistId');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" RENAME COLUMN "departmentName" TO "ten_phong_ban";`, 'nhiem_vu.departmentName');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" RENAME COLUMN "reviewerId" TO "id_nguoi_duyet";`, 'nhiem_vu.reviewerId');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" RENAME COLUMN "reviewerName" TO "ten_nguoi_duyet";`, 'nhiem_vu.reviewerName');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" RENAME COLUMN "reviewerRole" TO "vai_tro_nguoi_duyet";`, 'nhiem_vu.reviewerRole');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" RENAME COLUMN "contextTrigger" TO "kich_hoat_ngu_canh";`, 'nhiem_vu.contextTrigger');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" RENAME COLUMN "isPaidTask" TO "la_nhiem_vu_tinh_phi";`, 'nhiem_vu.isPaidTask');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" RENAME COLUMN "paidTaskCost" TO "chi_phi_nhiem_vu";`, 'nhiem_vu.paidTaskCost');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" RENAME COLUMN "findingId" TO "id_phat_hien";`, 'nhiem_vu.findingId');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" RENAME COLUMN "isSelfCertifiedNoUpload" TO "tu_xac_nhan_khong_tai_tep";`, 'nhiem_vu.isSelfCertifiedNoUpload');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" RENAME COLUMN "notApplicableReason" TO "ly_do_khong_ap_dung";`, 'nhiem_vu.notApplicableReason');
 
-  // 15. compliance_notifications -> thong_bao_tuan_thu
-  console.log('\n--- 15. BẢNG THONG BAO TUAN THU ---');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_notifications" RENAME COLUMN "organizationId" TO "id_doanh_nghiep";`, 'notif.orgId');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_notifications" RENAME COLUMN "userId" TO "id_nguoi_dung";`, 'notif.userId');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_notifications" RENAME COLUMN "taskId" TO "id_nhiem_vu";`, 'notif.taskId');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_notifications" RENAME COLUMN "milestone" TO "cot_moc";`, 'notif.milestone');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_notifications" RENAME COLUMN "title" TO "tieu_de";`, 'notif.title');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_notifications" RENAME COLUMN "message" TO "thong_diep";`, 'notif.message');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_notifications" RENAME COLUMN "linkUrl" TO "duong_dan_lien_ket";`, 'notif.link');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_notifications" RENAME COLUMN "isRead" TO "da_doc";`, 'notif.isRead');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_notifications" RENAME COLUMN "readAt" TO "thoi_gian_doc";`, 'notif.readAt');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_notifications" RENAME COLUMN "dueDateVersion" TO "phien_ban_han_chot";`, 'notif.dueVer');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_notifications" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'notif.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "compliance_notifications" RENAME TO "thong_bao_tuan_thu";`, 'table thong_bao_tuan_thu');
+  // Thêm các cột bổ sung cho nhiem_vu_tuan_thu (nếu chưa có)
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" ADD COLUMN IF NOT EXISTS "id_muc_kiem_tra" TEXT;`, 'nhiem_vu.id_muc_kiem_tra');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" ADD COLUMN IF NOT EXISTS "chu_ky_dinh_ky" "StatutoryCycleType";`, 'nhiem_vu.chu_ky_dinh_ky');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" ADD COLUMN IF NOT EXISTS "khoa_ky" TEXT;`, 'nhiem_vu.khoa_ky');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" ADD COLUMN IF NOT EXISTS "ngay_su_kien" TIMESTAMP(3);`, 'nhiem_vu.ngay_su_kien');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" ADD COLUMN IF NOT EXISTS "can_cu_tinh_toan_json" JSONB DEFAULT '{}';`, 'nhiem_vu.can_cu_tinh_toan_json');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" ADD COLUMN IF NOT EXISTS "hieu_luc_phap_ly" "LegalValidity" NOT NULL DEFAULT 'in_force';`, 'nhiem_vu.hieu_luc_phap_ly');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" ADD COLUMN IF NOT EXISTS "thoi_gian_xac_minh" TIMESTAMP(3);`, 'nhiem_vu.thoi_gian_xac_minh');
+  await runSql(`ALTER TABLE IF EXISTS "nhiem_vu_tuan_thu" ADD COLUMN IF NOT EXISTS "da_thanh_toan_danh_gia" BOOLEAN NOT NULL DEFAULT false;`, 'nhiem_vu.da_thanh_toan_danh_gia');
 
-  // 16. evidence_documents -> chung_tu_bang_chung
-  console.log('\n--- 16. BẢNG CHUNG TU BANG CHUNG ---');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "organizationId" TO "id_doanh_nghiep";`, 'doc.orgId');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "linkedTaskId" TO "id_nhiem_vu_lien_ket";`, 'doc.taskId');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "name" TO "ten_tai_lieu";`, 'doc.name');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "category" TO "phan_loai";`, 'doc.category');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "fileType" TO "loai_tep";`, 'doc.fileType');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "fileSize" TO "dung_luong_tep";`, 'doc.fileSize');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "filePath" TO "duong_dan_tep";`, 'doc.filePath');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "fileUrl" TO "duong_dan_url";`, 'doc.fileUrl');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "uploadedBy" TO "tai_len_boi";`, 'doc.uploadedBy');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "uploadedRole" TO "vai_tro_nguoi_tai";`, 'doc.uploadedRole');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "uploadedAt" TO "thoi_gian_tai_len";`, 'doc.uploadedAt');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "version" TO "phien_ban";`, 'doc.version');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "expiryDate" TO "ngay_het_han";`, 'doc.expiry');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "status" TO "trang_thai";`, 'doc.status');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "rejectionReason" TO "ly_do_tu_choi";`, 'doc.rejectionReason');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "ocrExtractedData" TO "du_lieu_trich_xuat_ocr";`, 'doc.ocrData');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "ocrVerified" TO "da_xac_minh_ocr";`, 'doc.ocrVerified');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "viewPermissions" TO "quyen_xem";`, 'doc.viewPermissions');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'doc.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME COLUMN "updatedAt" TO "ngay_cap_nhat";`, 'doc.updatedAt');
-  await runSql(`ALTER TABLE IF EXISTS "evidence_documents" RENAME TO "chung_tu_bang_chung";`, 'table chung_tu_bang_chung');
+  // ==================== 4. TẠO 6 BẢNG MỚI (NẾU CHƯA TỒN TẠI) ====================
+  console.log('\n--- 4. TẠO 6 BẢNG TÍNH NĂNG MỚI (NẾU CHƯA CÓ) ---');
 
-  // 17. wallets -> vi_tin_dung
-  console.log('\n--- 17. BẢNG VI TIN DUNG ---');
-  await runSql(`ALTER TABLE IF EXISTS "wallets" RENAME COLUMN "organizationId" TO "id_doanh_nghiep";`, 'wallet.orgId');
-  await runSql(`ALTER TABLE IF EXISTS "wallets" RENAME COLUMN "balance" TO "so_du";`, 'wallet.balance');
-  await runSql(`ALTER TABLE IF EXISTS "wallets" RENAME COLUMN "heldAmount" TO "so_tien_tam_giu";`, 'wallet.heldAmount');
-  await runSql(`ALTER TABLE IF EXISTS "wallets" RENAME COLUMN "currency" TO "loai_tien_te";`, 'wallet.currency');
-  await runSql(`ALTER TABLE IF EXISTS "wallets" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'wallet.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "wallets" RENAME COLUMN "updatedAt" TO "ngay_cap_nhat";`, 'wallet.updatedAt');
-  await runSql(`ALTER TABLE IF EXISTS "wallets" RENAME TO "vi_tin_dung";`, 'table vi_tin_dung');
+  // 1. dot_danh_gia_tuan_thu
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS "dot_danh_gia_tuan_thu" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "id_doanh_nghiep" TEXT NOT NULL REFERENCES "doanh_nghiep"("id") ON DELETE CASCADE,
+      "id_nguoi_tao" TEXT,
+      "ma_van_tay_ngu_canh" TEXT NOT NULL,
+      "phien_ban_quy_tac" TEXT NOT NULL DEFAULT '1.0',
+      "pham_vi" TEXT NOT NULL DEFAULT 'ALL',
+      "trang_thai" "AuditStatus" NOT NULL DEFAULT 'succeeded',
+      "tom_tat" TEXT,
+      "tong_phat_hien" INTEGER NOT NULL DEFAULT 0,
+      "so_luong_ap_dung" INTEGER NOT NULL DEFAULT 0,
+      "thoi_gian_xac_minh" TIMESTAMP(3),
+      "ngay_tao" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "ngay_cap_nhat" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `, 'create dot_danh_gia_tuan_thu');
+  await runSql(`CREATE INDEX IF NOT EXISTS "dot_danh_gia_tuan_thu_id_doanh_nghiep_ma_van_tay_ngu_canh_idx" ON "dot_danh_gia_tuan_thu"("id_doanh_nghiep", "ma_van_tay_ngu_canh");`, 'idx dot_danh_gia_tuan_thu');
 
-  // 18. wallet_transactions -> giao_dich_vi
-  console.log('\n--- 18. BẢNG GIAO DICH VI ---');
-  await runSql(`ALTER TABLE IF EXISTS "wallet_transactions" RENAME COLUMN "walletId" TO "id_vi";`, 'tx.walletId');
-  await runSql(`ALTER TABLE IF EXISTS "wallet_transactions" RENAME COLUMN "code" TO "ma_giao_dich";`, 'tx.code');
-  await runSql(`ALTER TABLE IF EXISTS "wallet_transactions" RENAME COLUMN "taskName" TO "ten_nhiem_vu";`, 'tx.taskName');
-  await runSql(`ALTER TABLE IF EXISTS "wallet_transactions" RENAME COLUMN "requestedBy" TO "yeu_cau_boi";`, 'tx.requestedBy');
-  await runSql(`ALTER TABLE IF EXISTS "wallet_transactions" RENAME COLUMN "amount" TO "so_tien";`, 'tx.amount');
-  await runSql(`ALTER TABLE IF EXISTS "wallet_transactions" RENAME COLUMN "type" TO "loai_giao_dich";`, 'tx.type');
-  await runSql(`ALTER TABLE IF EXISTS "wallet_transactions" RENAME COLUMN "status" TO "trang_thai";`, 'tx.status');
-  await runSql(`ALTER TABLE IF EXISTS "wallet_transactions" RENAME COLUMN "note" TO "ghi_chu";`, 'tx.note');
-  await runSql(`ALTER TABLE IF EXISTS "wallet_transactions" RENAME COLUMN "timestamp" TO "thoi_diem";`, 'tx.timestamp');
-  await runSql(`ALTER TABLE IF EXISTS "wallet_transactions" RENAME TO "giao_dich_vi";`, 'table giao_dich_vi');
+  // 2. phat_hien_vi_pham
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS "phat_hien_vi_pham" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "id_dot_danh_gia" TEXT NOT NULL REFERENCES "dot_danh_gia_tuan_thu"("id") ON DELETE CASCADE,
+      "id_doanh_nghiep" TEXT NOT NULL,
+      "id_su_that" TEXT,
+      "ma_quy_tac" TEXT NOT NULL,
+      "tieu_de_nghia_vu" TEXT NOT NULL,
+      "phan_loai" TEXT NOT NULL,
+      "trang_thai_ap_dung" "ApplicableStatus" NOT NULL DEFAULT 'applicable',
+      "hanh_dong_yeu_cau" TEXT NOT NULL,
+      "bang_chung_yeu_cau" TEXT NOT NULL,
+      "co_so_phap_ly" TEXT NOT NULL,
+      "so_van_ban_phap_ly" TEXT,
+      "dieu_khoan_phap_ly" TEXT,
+      "duong_dan_van_ban" TEXT,
+      "hieu_luc_phap_ly" "LegalValidity" NOT NULL DEFAULT 'in_force',
+      "thoi_gian_xac_minh" TIMESTAMP(3),
+      "nguon_ket_qua" "ResultSource" NOT NULL DEFAULT 'rule_based',
+      "chu_ky_luat_dinh" "StatutoryCycleType" NOT NULL DEFAULT 'QUARTERLY',
+      "phuong_phap_tinh" TEXT,
+      "thong_bao_thieu_du_lieu" TEXT,
+      "do_uu_tien_goi_y" "Priority" NOT NULL DEFAULT 'medium',
+      "da_bo_qua" BOOLEAN NOT NULL DEFAULT false,
+      "thoi_gian_chap_nhan" TIMESTAMP(3),
+      "ngay_tao" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "ngay_cap_nhat" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `, 'create phat_hien_vi_pham');
+  await runSql(`CREATE INDEX IF NOT EXISTS "phat_hien_vi_pham_id_doanh_nghiep_ma_quy_tac_idx" ON "phat_hien_vi_pham"("id_doanh_nghiep", "ma_quy_tac");`, 'idx phat_hien_vi_pham');
 
-  // 19. calendar_notes -> ghi_chu_lich
-  console.log('\n--- 19. BẢNG GHI CHU LICH ---');
-  await runSql(`ALTER TABLE IF EXISTS "calendar_notes" RENAME COLUMN "organizationId" TO "id_doanh_nghiep";`, 'note.orgId');
-  await runSql(`ALTER TABLE IF EXISTS "calendar_notes" RENAME COLUMN "date" TO "ngay";`, 'note.date');
-  await runSql(`ALTER TABLE IF EXISTS "calendar_notes" RENAME COLUMN "title" TO "tieu_de";`, 'note.title');
-  await runSql(`ALTER TABLE IF EXISTS "calendar_notes" RENAME COLUMN "content" TO "noi_dung";`, 'note.content');
-  await runSql(`ALTER TABLE IF EXISTS "calendar_notes" RENAME COLUMN "category" TO "phan_loai";`, 'note.cat');
-  await runSql(`ALTER TABLE IF EXISTS "calendar_notes" RENAME COLUMN "authorId" TO "id_tac_gia";`, 'note.authorId');
-  await runSql(`ALTER TABLE IF EXISTS "calendar_notes" RENAME COLUMN "authorName" TO "ten_tac_gia";`, 'note.authorName');
-  await runSql(`ALTER TABLE IF EXISTS "calendar_notes" RENAME COLUMN "isCompleted" TO "da_hoan_thanh";`, 'note.isCompleted');
-  await runSql(`ALTER TABLE IF EXISTS "calendar_notes" RENAME COLUMN "createdAt" TO "ngay_tao";`, 'note.createdAt');
-  await runSql(`ALTER TABLE IF EXISTS "calendar_notes" RENAME COLUMN "updatedAt" TO "ngay_cap_nhat";`, 'note.updatedAt');
-  await runSql(`ALTER TABLE IF EXISTS "calendar_notes" RENAME TO "ghi_chu_lich";`, 'table ghi_chu_lich');
+  // 3. danh_muc_kiem_tra
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS "danh_muc_kiem_tra" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "id_doanh_nghiep" TEXT NOT NULL REFERENCES "doanh_nghiep"("id") ON DELETE CASCADE,
+      "id_nguoi_tao" TEXT,
+      "ma_danh_muc" TEXT NOT NULL,
+      "tieu_de" TEXT NOT NULL,
+      "phan_loai" TEXT NOT NULL,
+      "trang_thai" "ChecklistStatus" NOT NULL DEFAULT 'active',
+      "ngay_tao" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "ngay_cap_nhat" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `, 'create danh_muc_kiem_tra');
 
-  // 20. ENUM ContextGroup
-  console.log('\n--- 20. ĐỔI TÊN ENUM ContextGroup SANG TIẾNG VIỆT ---');
+  // 4. muc_kiem_tra
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS "muc_kiem_tra" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "id_danh_muc" TEXT NOT NULL REFERENCES "danh_muc_kiem_tra"("id") ON DELETE CASCADE,
+      "id_doanh_nghiep" TEXT NOT NULL,
+      "id_phat_hien" TEXT REFERENCES "phat_hien_vi_pham"("id") ON DELETE SET NULL,
+      "ma_quy_tac" TEXT NOT NULL,
+      "tieu_de" TEXT NOT NULL,
+      "chu_ky_luat_dinh" "StatutoryCycleType" NOT NULL,
+      "id_phong_ban" TEXT,
+      "id_nguoi_phu_trach" TEXT,
+      "ten_nguoi_phu_trach" TEXT NOT NULL DEFAULT 'Người phụ trách',
+      "vai_tro_nguoi_phu_trach" "UserRole" NOT NULL DEFAULT 'owner',
+      "do_uu_tien_mac_dinh" "Priority" NOT NULL DEFAULT 'medium',
+      "co_so_phap_ly" TEXT NOT NULL,
+      "duong_dan_van_ban" TEXT,
+      "yeu_cau_bang_chung" TEXT,
+      "ngay_su_kien" TIMESTAMP(3),
+      "dang_hoat_dong" BOOLEAN NOT NULL DEFAULT true,
+      "ky_sinh_gan_nhat" TEXT,
+      "han_chot_tiep_theo" TIMESTAMP(3),
+      "ngay_tao" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "ngay_cap_nhat" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `, 'create muc_kiem_tra');
+  await runSql(`CREATE INDEX IF NOT EXISTS "muc_kiem_tra_id_doanh_nghiep_chu_ky_luat_dinh_idx" ON "muc_kiem_tra"("id_doanh_nghiep", "chu_ky_luat_dinh");`, 'idx muc_kiem_tra');
+
+  // 5. thong_bao_tuan_thu
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS "thong_bao_tuan_thu" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "id_doanh_nghiep" TEXT NOT NULL REFERENCES "doanh_nghiep"("id") ON DELETE CASCADE,
+      "id_nguoi_dung" TEXT NOT NULL REFERENCES "nguoi_dung"("id") ON DELETE CASCADE,
+      "id_nhiem_vu" TEXT REFERENCES "nhiem_vu_tuan_thu"("id") ON DELETE CASCADE,
+      "cot_moc" "NotificationMilestone" NOT NULL,
+      "tieu_de" TEXT NOT NULL,
+      "thong_diep" TEXT NOT NULL,
+      "duong_dan_lien_ket" TEXT,
+      "da_doc" BOOLEAN NOT NULL DEFAULT false,
+      "thoi_gian_doc" TIMESTAMP(3),
+      "phien_ban_han_chot" TIMESTAMP(3),
+      "ngay_tao" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `, 'create thong_bao_tuan_thu');
+  await runSql(`CREATE INDEX IF NOT EXISTS "thong_bao_tuan_thu_id_doanh_nghiep_id_nguoi_dung_da_doc_idx" ON "thong_bao_tuan_thu"("id_doanh_nghiep", "id_nguoi_dung", "da_doc");`, 'idx thong_bao_tuan_thu');
+
+  // 6. ghi_chu_lich
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS "ghi_chu_lich" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "id_doanh_nghiep" TEXT NOT NULL REFERENCES "doanh_nghiep"("id") ON DELETE CASCADE,
+      "ngay" TEXT NOT NULL,
+      "tieu_de" TEXT NOT NULL,
+      "noi_dung" TEXT,
+      "phan_loai" TEXT DEFAULT 'general',
+      "id_tac_gia" TEXT REFERENCES "nguoi_dung"("id") ON DELETE SET NULL,
+      "ten_tac_gia" TEXT,
+      "da_hoan_thanh" BOOLEAN NOT NULL DEFAULT false,
+      "ngay_tao" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "ngay_cap_nhat" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `, 'create ghi_chu_lich');
+  await runSql(`CREATE INDEX IF NOT EXISTS "ghi_chu_lich_id_doanh_nghiep_ngay_idx" ON "ghi_chu_lich"("id_doanh_nghiep", "ngay");`, 'idx ghi_chu_lich');
+
+  // ==================== 5. ENUM ContextGroup SANG TIẾNG VIỆT ====================
+  console.log('\n--- 5. ĐỔI TÊN GIÁ TRỊ ENUM ContextGroup SANG TIẾNG VIỆT ---');
   const ENUM_MAPPINGS = {
     tax_accounting: 'thue_ke_toan',
     legal: 'phap_ly_von',
@@ -339,8 +308,17 @@ async function main() {
     await runSql(`ALTER TYPE "ContextGroup" RENAME VALUE '${oldVal}' TO '${newVal}';`, `enum ${oldVal} -> ${newVal}`);
   }
 
+  // ==================== 6. BÁO CÁO TỔNG SỐ BẢNG SAU KHI ĐỒNG BỘ ====================
+  const finalTables = await prisma.$queryRawUnsafe(`
+    SELECT table_name 
+    FROM information_schema.tables 
+    WHERE table_schema = 'public' 
+    ORDER BY table_name;
+  `);
+
   console.log('\n================================================================');
-  console.log('🎉 ĐỒNG BỘ TOÀN DIỆN CƠ SỞ DỮ LIỆU SANG TIẾNG VIỆT HOÀN TẤT 100%!');
+  console.log(`🎉 ĐỒNG BỘ HOÀN TẤT! HIỆN TẠI CÓ TỔNG CỘNG ${finalTables.length} BẢNG TRÊN DATABASE:`);
+  finalTables.forEach((t, i) => console.log(`  ${i + 1}. ${t.table_name}`));
   console.log('================================================================\n');
 
   await prisma.$disconnect();

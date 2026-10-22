@@ -20,13 +20,66 @@ export class SurveyService {
       }
     }
     if (!targetOrgId) {
-      const firstOrg = await this.prisma.organization.findFirst();
-      if (firstOrg) {
-        targetOrgId = firstOrg.id;
+      const p = dto.baseProfile;
+      const orgName = p?.companyName?.trim() || 'Doanh nghiệp mới';
+      const cleanTaxCode = p?.taxCode?.trim() || undefined;
+
+      let existingOrg = null;
+      if (cleanTaxCode) {
+        existingOrg = await this.prisma.organization.findUnique({
+          where: { taxCode: cleanTaxCode },
+        });
       }
-    }
-    if (!targetOrgId) {
-      throw new Error('Không xác định được tổ chức hợp lệ để lưu khảo sát bối cảnh');
+
+      if (existingOrg) {
+        targetOrgId = existingOrg.id;
+      } else {
+        const newOrg = await this.prisma.organization.create({
+          data: {
+            name: orgName,
+            taxCode: cleanTaxCode || ('MST-' + Date.now()),
+            legalType: p?.companyTypeTag === 'TAG_HKD'
+              ? 'Hộ kinh doanh cá thể'
+              : p?.companyTypeTag === 'TAG_TNHH_1TV'
+              ? 'Công ty TNHH Một thành viên'
+              : p?.companyTypeTag === 'TAG_JSC'
+              ? 'Công ty Cổ phần'
+              : 'Công ty TNHH Hai thành viên trở lên',
+            industry: Array.isArray(p?.industryTags) ? p.industryTags.join(', ') : 'Dịch vụ ăn uống',
+            businessModel: 'Trực tiếp tại cơ sở và trực tuyến',
+            operatingYears: p?.isNewlyEstablished ? 'Dưới 1 năm' : '1 - 3 năm',
+            revenueStatus: p?.isNewlyEstablished ? 'newly_established' : (p?.annualRevenue || 0) <= 50000000000 ? 'under_50b' : 'over_50b',
+            employeeCount: Number(p?.employeeCount) || (p?.employeeScale === 'under_10' ? 8 : p?.employeeScale === '10_to_50' ? 25 : 60),
+            createdById: userId,
+            wallet: {
+              create: {
+                balance: 0,
+                heldAmount: 0,
+                currency: 'VND',
+              },
+            },
+          },
+        });
+        targetOrgId = newOrg.id;
+      }
+
+      if (userId && targetOrgId) {
+        await this.prisma.membership.upsert({
+          where: {
+            organizationId_userId: {
+              organizationId: targetOrgId,
+              userId,
+            },
+          },
+          update: { status: MembershipStatus.active },
+          create: {
+            organizationId: targetOrgId,
+            userId,
+            role: UserRole.owner,
+            status: MembershipStatus.active,
+          },
+        });
+      }
     }
 
     const user = userId ? await this.prisma.user.findUnique({ where: { id: userId } }) : null;
