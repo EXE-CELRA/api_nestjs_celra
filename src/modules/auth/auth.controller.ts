@@ -11,7 +11,6 @@ import { AuthService } from './auth.service';
 import {
   RegisterDto,
   LoginDto,
-  VerifyOtpDto,
   ChangePasswordDto,
   UpdateProfileDto,
 } from './dto/auth.dto';
@@ -34,7 +33,7 @@ export class AuthController {
 
   @Public()
   @Post('login')
-  @ApiOperation({ summary: 'Đăng nhập hệ thống (Email + Password + 2FA nếu có)' })
+  @ApiOperation({ summary: 'Đăng nhập hệ thống (Email + Mật khẩu)' })
   async login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
@@ -54,33 +53,6 @@ export class AuthController {
     @Body() dto: UpdateProfileDto,
   ) {
     return this.authService.updateProfile(userId, dto);
-  }
-
-  @Post('2fa/generate')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Tạo mã bí mật và QR Code để kích hoạt 2FA' })
-  async generate2FA(@CurrentUser('sub') userId: string) {
-    return this.authService.generate2FASecret(userId);
-  }
-
-  @Post('2fa/enable')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Xác nhận OTP để chính thức bật 2FA' })
-  async enable2FA(
-    @CurrentUser('sub') userId: string,
-    @Body() dto: VerifyOtpDto,
-  ) {
-    return this.authService.enable2FA(userId, dto);
-  }
-
-  @Post('2fa/disable')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Tắt xác thực 2 lớp 2FA' })
-  async disable2FA(
-    @CurrentUser('sub') userId: string,
-    @Body() dto: VerifyOtpDto,
-  ) {
-    return this.authService.disable2FA(userId, dto);
   }
 
   @Patch('change-password')

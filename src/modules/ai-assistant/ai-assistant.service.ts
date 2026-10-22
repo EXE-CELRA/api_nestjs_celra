@@ -231,7 +231,7 @@ export class AIAssistantService implements OnModuleInit {
         } else if (/(moi thanh lap|mới thành lập|mien|miễn)/i.test(confirmText)) {
           monBaiVal = 'Mới thành lập (miễn lệ phí môn bài năm đầu)';
         }
-        simulateFact('q_tax_corp_monbai', 'Lệ phí môn bài', ContextGroup.tax_accounting, monBaiVal);
+        simulateFact('q_tax_corp_monbai', 'Lệ phí môn bài', ContextGroup.thue_ke_toan, monBaiVal);
       }
 
       // 2. Nhận diện TNDN 80%
@@ -244,7 +244,7 @@ export class AIAssistantService implements OnModuleInit {
         } else if (/(dang chuan bi|đang chuẩn bị)/i.test(confirmText)) {
           tndnVal = 'Đang chuẩn bị số liệu kế toán và nộp tạm tính';
         }
-        simulateFact('q_tax_corp_2', 'Tạm nộp thuế TNDN (80%)', ContextGroup.tax_accounting, tndnVal);
+        simulateFact('q_tax_corp_2', 'Tạm nộp thuế TNDN (80%)', ContextGroup.thue_ke_toan, tndnVal);
       }
 
       // 3. Nhận diện Thanh toán không dùng tiền mặt
@@ -255,7 +255,7 @@ export class AIAssistantService implements OnModuleInit {
         } else if (/(chua doi chieu|đang đối chiếu)/i.test(confirmText)) {
           nonCashVal = 'Đang đối chiếu sao kê và ủy nhiệm chi ngân hàng';
         }
-        simulateFact('q_tax_corp_3', 'Thanh toán không dùng tiền mặt', ContextGroup.tax_accounting, nonCashVal);
+        simulateFact('q_tax_corp_3', 'Thanh toán không dùng tiền mặt', ContextGroup.thue_ke_toan, nonCashVal);
       }
 
       // 4. Nhận diện HĐĐT máy tính tiền / Bán lẻ trực tiếp
@@ -267,7 +267,7 @@ export class AIAssistantService implements OnModuleInit {
           : isNo
           ? 'Không bán hàng trực tiếp đến người tiêu dùng (Áp dụng HĐĐT thông thường)'
           : 'Chưa xác định rõ hình thức bán hàng trực tiếp';
-        simulateFact('q_fnb_tax_1', 'Hóa đơn điện tử máy tính tiền', ContextGroup.revenue_invoices, posVal);
+        simulateFact('q_fnb_tax_1', 'Hóa đơn điện tử máy tính tiền', ContextGroup.hoa_don_dong_tien, posVal);
         if (isYes || isNo) {
           simulatedOrg.hasOnlineSales = isYes;
         }
@@ -279,7 +279,7 @@ export class AIAssistantService implements OnModuleInit {
         const gtgtVal = isMonth
           ? 'Kê khai thuế GTGT định kỳ theo tháng'
           : 'Kê khai thuế GTGT định kỳ theo quý';
-        simulateFact('q_tax_corp_1', 'Kê khai thuế GTGT định kỳ', ContextGroup.tax_accounting, gtgtVal);
+        simulateFact('q_tax_corp_1', 'Kê khai thuế GTGT định kỳ', ContextGroup.thue_ke_toan, gtgtVal);
       }
 
       // 6. Nhận diện Hồ sơ tiền lương & thuế TNCN
@@ -290,7 +290,7 @@ export class AIAssistantService implements OnModuleInit {
         } else if (/(dang lam|đang hoàn thiện)/i.test(confirmText)) {
           salaryVal = 'Đang hoàn thiện đăng ký MST cá nhân cho nhân viên';
         }
-        simulateFact('q_tax_salary_1', 'Hồ sơ chi phí tiền lương & thuế TNCN', ContextGroup.hr_labor, salaryVal);
+        simulateFact('q_tax_salary_1', 'Hồ sơ chi phí tiền lương & thuế TNCN', ContextGroup.lao_dong_bhxh, salaryVal);
       }
 
       // KẾT HỢP DỮ LIỆU MỚI VÀO BỐI CẢNH VÀ PHÂN TÍCH LẠI (RE-ANALYZE)

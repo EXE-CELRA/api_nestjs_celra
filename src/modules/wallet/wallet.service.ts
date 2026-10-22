@@ -46,6 +46,35 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
 export class WalletService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private enrichWalletWithVietnamese(wallet: any) {
+    if (!wallet) return wallet;
+    return {
+      ...wallet,
+      soDu: wallet.balance,
+      soTienTamGiu: wallet.heldAmount,
+      donViTienTe: wallet.currency,
+      taoLuc: wallet.createdAt,
+      capNhatLuc: wallet.updatedAt,
+      giaoDich: wallet.transactions ? wallet.transactions.map((t: any) => this.enrichTransactionWithVietnamese(t)) : undefined,
+    };
+  }
+
+  private enrichTransactionWithVietnamese(tx: any) {
+    if (!tx) return tx;
+    return {
+      ...tx,
+      maGiaoDich: tx.code,
+      tenTacVu: tx.taskName,
+      soTien: tx.amount,
+      soDuSauGiaoDich: tx.amount,
+      loaiGiaoDich: tx.type,
+      trangThai: tx.status,
+      ghiChu: tx.note,
+      thoiGian: tx.timestamp,
+    };
+  }
+
+
   getPackages() {
     return CREDIT_PACKAGES;
   }
@@ -101,7 +130,7 @@ export class WalletService {
       });
     }
 
-    return wallet;
+    return this.enrichWalletWithVietnamese(wallet);
   }
 
   /**
@@ -413,10 +442,11 @@ export class WalletService {
 
   async getTransactions(orgId: string) {
     const wallet = await this.getWallet(orgId);
-    return this.prisma.walletTransaction.findMany({
+    const txs = await this.prisma.walletTransaction.findMany({
       where: { walletId: wallet.id },
       orderBy: { timestamp: 'desc' },
     });
+    return txs.map((t: any) => this.enrichTransactionWithVietnamese(t));
   }
 
   /**
