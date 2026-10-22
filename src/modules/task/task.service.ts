@@ -127,6 +127,7 @@ export class TaskService {
       checklistId?: string;
     },
   ) {
+    if (!orgId) return [];
     const where: Record<string, unknown> = { organizationId: orgId };
 
     if (query?.status) where.status = query.status;
