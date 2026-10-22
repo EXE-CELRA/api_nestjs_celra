@@ -98,13 +98,6 @@ export class ContextEngineService {
       }
     }
     if (!targetOrgId) {
-      const firstOrg = await this.prisma.organization.findFirst();
-      if (firstOrg) {
-        targetOrgId = firstOrg.id;
-      }
-    }
-
-    if (!targetOrgId) {
       return [];
     }
 

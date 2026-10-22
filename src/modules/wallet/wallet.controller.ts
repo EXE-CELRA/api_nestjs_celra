@@ -33,8 +33,11 @@ export class WalletController {
   @Get('my-wallet')
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Lấy số dư khả dụng và số tiền tạm giữ (Hold) của ví doanh nghiệp' })
-  async getWallet(@Headers('x-organization-id') orgId: string) {
-    return this.walletService.getWallet(orgId);
+  async getWallet(
+    @Headers('x-organization-id') orgId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.walletService.getWallet(orgId, userId);
   }
 
   @Post('buy-package')

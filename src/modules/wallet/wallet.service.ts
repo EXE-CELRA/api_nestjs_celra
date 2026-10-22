@@ -79,15 +79,24 @@ export class WalletService {
     return CREDIT_PACKAGES;
   }
 
-  async getWallet(orgId: string) {
+  async getWallet(orgId: string, userId?: string) {
     let targetOrgId = orgId;
-    if (!targetOrgId) {
-      const first = await this.prisma.organization.findFirst();
-      if (first) targetOrgId = first.id;
+    if (!targetOrgId && userId) {
+      const userOrg = await this.prisma.membership.findFirst({
+        where: { userId },
+      });
+      if (userOrg) {
+        targetOrgId = userOrg.organizationId;
+      }
     }
 
     if (!targetOrgId) {
-      throw new NotFoundException('Không tìm thấy tổ chức doanh nghiệp');
+      return {
+        balance: 0,
+        heldAmount: 0,
+        currency: 'VND',
+        transactions: [],
+      };
     }
 
     let wallet = await this.prisma.wallet.findUnique({
