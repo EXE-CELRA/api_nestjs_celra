@@ -120,3 +120,53 @@ export class SelfCertifyTaskDto {
   @IsString()
   reason?: string;
 }
+
+
+export class CreateCalendarNoteDto {
+  @ApiProperty({ example: '2026-10-31', description: 'Ngày của ghi chú (YYYY-MM-DD)' })
+  @IsString()
+  @IsNotEmpty()
+  date!: string;
+
+  @ApiProperty({ example: 'Nộp báo cáo thuế GTGT Quý 3' })
+  @IsString()
+  @IsNotEmpty()
+  title!: string;
+
+  @ApiPropertyOptional({ example: 'Kiểm tra kỹ hóa đơn đầu vào trước 17h' })
+  @IsOptional()
+  @IsString()
+  content?: string;
+
+  @ApiPropertyOptional({ example: 'tax', enum: ['general', 'tax', 'labor', 'legal', 'reminder'] })
+  @IsOptional()
+  @IsString()
+  category?: string;
+}
+
+export class UpdateCalendarNoteDto {
+  @ApiPropertyOptional({ example: '2026-10-31' })
+  @IsOptional()
+  @IsString()
+  date?: string;
+
+  @ApiPropertyOptional({ example: 'Nộp báo cáo thuế GTGT Quý 3' })
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @ApiPropertyOptional({ example: 'Đã hoàn thành kiểm tra và nộp' })
+  @IsOptional()
+  @IsString()
+  content?: string;
+
+  @ApiPropertyOptional({ example: 'tax' })
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  isCompleted?: boolean;
+}

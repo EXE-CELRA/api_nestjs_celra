@@ -5,8 +5,16 @@ import {
   UpdateTaskStatusDto,
   AddTaskCommentDto,
   SelfCertifyTaskDto,
+  CreateCalendarNoteDto,
+  UpdateCalendarNoteDto,
 } from './dto/task.dto';
-import { TaskStatus, TimelineEventType, UserRole, WaitingOnRole } from '@prisma/client';
+import {
+  TaskStatus,
+  TimelineEventType,
+  UserRole,
+  WaitingOnRole,
+  StatutoryCycleType,
+} from '@prisma/client';
 
 @Injectable()
 export class TaskService {
@@ -55,18 +63,32 @@ export class TaskService {
     });
   }
 
-  async findAll(orgId: string, query?: { status?: TaskStatus; assigneeRole?: UserRole; waitingOnRole?: WaitingOnRole; departmentId?: string }) {
+  async findAll(
+    orgId: string,
+    query?: {
+      status?: TaskStatus;
+      assigneeRole?: UserRole;
+      waitingOnRole?: WaitingOnRole;
+      departmentId?: string;
+      periodCycle?: StatutoryCycleType;
+      checklistId?: string;
+    },
+  ) {
     const where: Record<string, unknown> = { organizationId: orgId };
 
     if (query?.status) where.status = query.status;
     if (query?.assigneeRole) where.assigneeRole = query.assigneeRole;
     if (query?.waitingOnRole) where.waitingOnRole = query.waitingOnRole;
     if (query?.departmentId) where.departmentId = query.departmentId;
+    if (query?.periodCycle) where.periodCycle = query.periodCycle;
+    if (query?.checklistId) where.checklistId = query.checklistId;
 
     return this.prisma.task.findMany({
       where,
       include: {
         documents: true,
+        checklist: true,
+        checklistItem: true,
         comments: {
           orderBy: { createdAt: 'desc' },
         },
@@ -83,6 +105,8 @@ export class TaskService {
       where: { id },
       include: {
         documents: true,
+        checklist: true,
+        checklistItem: true,
         comments: {
           orderBy: { createdAt: 'asc' },
         },
@@ -199,5 +223,141 @@ export class TaskService {
         },
       },
     });
+  }
+
+  /**
+   * Lấy danh sách các Checklist của tổ chức kèm thống kê tiến độ
+   */
+  async findAllChecklists(orgId: string) {
+    const checklists = await this.prisma.checklist.findMany({
+      where: { organizationId: orgId },
+      include: {
+        items: true,
+        tasks: {
+          select: {
+            id: true,
+            status: true,
+            dueDate: true,
+            priority: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return checklists.map((chk) => {
+      const totalTasks = chk.tasks.length;
+      const completedTasks = chk.tasks.filter((t) => t.status === TaskStatus.completed).length;
+      const progressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+      return {
+        id: chk.id,
+        code: chk.code,
+        title: chk.title,
+        category: chk.category,
+        status: chk.status,
+        itemCount: chk.items.length,
+        totalTasks,
+        completedTasks,
+        progressPercent,
+        items: chk.items,
+        createdAt: chk.createdAt,
+      };
+    });
+  }
+
+  /**
+   * Lấy danh sách ghi chú lịch tuân thủ của tổ chức
+   */
+  async getCalendarNotes(orgId: string, month?: string) {
+    const where: any = { organizationId: orgId };
+    if (month) {
+      where.date = { startsWith: month };
+    }
+    return this.prisma.calendarNote.findMany({
+      where,
+      orderBy: { date: 'asc' },
+      include: {
+        author: {
+          select: { id: true, name: true, role: true, avatar: true },
+        },
+      },
+    });
+  }
+
+  /**
+   * Tạo ghi chú lịch mới
+   */
+  async createCalendarNote(
+    orgId: string,
+    authorId: string,
+    authorName: string,
+    dto: CreateCalendarNoteDto,
+  ) {
+    return this.prisma.calendarNote.create({
+      data: {
+        organizationId: orgId,
+        authorId,
+        authorName,
+        date: dto.date,
+        title: dto.title,
+        content: dto.content,
+        category: dto.category || 'general',
+      },
+      include: {
+        author: {
+          select: { id: true, name: true, role: true, avatar: true },
+        },
+      },
+    });
+  }
+
+  /**
+   * Cập nhật ghi chú lịch
+   */
+  async updateCalendarNote(
+    noteId: string,
+    orgId: string,
+    dto: UpdateCalendarNoteDto,
+  ) {
+    const note = await this.prisma.calendarNote.findFirst({
+      where: { id: noteId, organizationId: orgId },
+    });
+    if (!note) {
+      throw new NotFoundException('Không tìm thấy ghi chú lịch');
+    }
+
+    return this.prisma.calendarNote.update({
+      where: { id: noteId },
+      data: {
+        date: dto.date !== undefined ? dto.date : note.date,
+        title: dto.title !== undefined ? dto.title : note.title,
+        content: dto.content !== undefined ? dto.content : note.content,
+        category: dto.category !== undefined ? dto.category : note.category,
+        isCompleted: dto.isCompleted !== undefined ? dto.isCompleted : note.isCompleted,
+      },
+      include: {
+        author: {
+          select: { id: true, name: true, role: true, avatar: true },
+        },
+      },
+    });
+  }
+
+  /**
+   * Xóa ghi chú lịch
+   */
+  async deleteCalendarNote(noteId: string, orgId: string) {
+    const note = await this.prisma.calendarNote.findFirst({
+      where: { id: noteId, organizationId: orgId },
+    });
+    if (!note) {
+      throw new NotFoundException('Không tìm thấy ghi chú lịch');
+    }
+
+    await this.prisma.calendarNote.delete({
+      where: { id: noteId },
+    });
+
+    return { success: true, message: 'Đã xóa ghi chú lịch' };
   }
 }
