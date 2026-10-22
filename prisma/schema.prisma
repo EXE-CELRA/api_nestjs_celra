@@ -44,15 +44,15 @@ enum MembershipStatus {
 }
 
 enum ContextGroup {
-  legal
-  operations
-  revenue_invoices
-  hr_labor
-  tax_accounting
-  premises
-  conditional_licensing
-  contracts
-  tech_data
+  phap_ly_von
+  nganh_nghe_van_hanh
+  hoa_don_dong_tien
+  lao_dong_bhxh
+  thue_ke_toan
+  dia_diem_pccc
+  giay_phep_con
+  hop_dong
+  du_lieu_shtt
 }
 
 enum ContextStatus {
@@ -113,47 +113,103 @@ enum TimelineEventType {
   payment
 }
 
+enum StatutoryCycleType {
+  MONTHLY
+  QUARTERLY
+  BIANNUAL_6M
+  ANNUAL
+  EVENT_10D
+  EVENT_20D
+  EVENT_45D
+  EVENT_3D
+  EVENT_10D_BIZ
+  EVENT_30D_CAPITAL
+  EVENT_90D
+}
+
+enum AuditStatus {
+  pending
+  running
+  succeeded
+  failed
+}
+
+enum ApplicableStatus {
+  applicable
+  not_applicable
+  missing_info
+  verification_required
+}
+
+enum LegalValidity {
+  in_force
+  expired
+  unverified
+}
+
+enum ResultSource {
+  rule_based
+  ai_assisted
+  unverified_fallback
+}
+
+enum ChecklistStatus {
+  active
+  paused
+  archived
+}
+
+enum NotificationMilestone {
+  BEFORE_7D
+  BEFORE_3D
+  BEFORE_1D
+  DUE_TODAY
+  OVERDUE
+}
+
 // ===================== MODELS =====================
 
 model User {
   id                   String       @id @default(uuid())
   email                String       @unique
-  passwordHash         String
-  name                 String
-  role                 UserRole     @default(owner)
-  roleTitle            String?
-  avatar               String?
-  phone                String?
-  twoFactorSecret      String?
-  isTwoFactorEnabled   Boolean      @default(false)
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @updatedAt
+  passwordHash         String       @map("mat_khau_ma_hoa")
+  name                 String       @map("ho_va_ten")
+  role                 UserRole     @default(owner) @map("vai_tro")
+  roleTitle            String?      @map("chuc_danh")
+  avatar               String?      @map("anh_dai_dien")
+  phone                String?      @map("so_dien_thoai")
+  twoFactorSecret      String?      @map("ma_bi_mat_2fa")
+  isTwoFactorEnabled   Boolean      @default(false) @map("kich_hoat_2fa")
+  createdAt            DateTime     @default(now()) @map("ngay_tao")
+  updatedAt            DateTime     @updatedAt @map("ngay_cap_nhat")
 
   memberships          Membership[]
   createdOrganizations Organization[] @relation("CreatedByUser")
   taskComments         TaskComment[]
   timelineEvents       TaskTimelineEvent[]
+  notifications        ComplianceNotification[]
+  calendarNotes        CalendarNote[]
 
-  @@map("users")
+  @@map("nguoi_dung")
 }
 
 model Organization {
   id                 String       @id @default(uuid())
-  name               String
-  taxCode            String       @unique
-  legalType          String
-  industry           String
-  businessModel      String
-  operatingYears     String
-  revenueStatus      String
-  employeeCount      Int          @default(1)
-  locations          String?
-  hasOnlineSales     Boolean      @default(false)
-  address            String?
-  representativeName String?
-  createdById        String?
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  name               String       @map("ten_doanh_nghiep")
+  taxCode            String       @unique @map("ma_so_thue")
+  legalType          String       @map("loai_hinh_phap_ly")
+  industry           String       @map("nganh_nghe")
+  businessModel      String       @map("mo_hinh_kinh_doanh")
+  operatingYears     String       @map("so_nam_hoat_dong")
+  revenueStatus      String       @map("tinh_trang_doanh_thu")
+  employeeCount      Int          @default(1) @map("so_luong_nhan_su")
+  locations          String?      @map("dia_diem_kinh_doanh")
+  hasOnlineSales     Boolean      @default(false) @map("co_ban_hang_online")
+  address            String?      @map("dia_chi")
+  representativeName String?      @map("ten_nguoi_dai_dien")
+  createdById        String?      @map("id_nguoi_tao")
+  createdAt          DateTime     @default(now()) @map("ngay_tao")
+  updatedAt          DateTime     @updatedAt @map("ngay_cap_nhat")
 
   createdBy          User?        @relation("CreatedByUser", fields: [createdById], references: [id])
   departments        Department[]
@@ -162,236 +218,401 @@ model Organization {
   tasks              Task[]
   evidenceDocuments  EvidenceDocument[]
   wallet             Wallet?
+  complianceAudits   ComplianceAudit[]
+  checklists         Checklist[]
+  notifications      ComplianceNotification[]
+  calendarNotes      CalendarNote[]
 
-  @@map("organizations")
+  @@map("doanh_nghiep")
 }
 
 model Department {
   id             String       @id @default(uuid())
-  organizationId String
-  name           String
-  code           String
-  leadName       String?
-  memberCount    Int          @default(0)
-  description    String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  organizationId String       @map("id_doanh_nghiep")
+  name           String       @map("ten_phong_ban")
+  code           String       @map("ma_phong_ban")
+  leadName       String?      @map("ten_truong_phong")
+  memberCount    Int          @default(0) @map("so_luong_thanh_vien")
+  description    String?      @map("mo_ta")
+  createdAt      DateTime     @default(now()) @map("ngay_tao")
+  updatedAt      DateTime     @updatedAt @map("ngay_cap_nhat")
 
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   memberships    Membership[]
   tasks          Task[]
 
-  @@map("departments")
+  @@map("phong_ban")
 }
 
 model Membership {
   id             String           @id @default(uuid())
-  organizationId String
-  userId         String
-  departmentId   String?
-  role           UserRole         @default(owner)
-  roleTitle      String?
-  permissions    Json?            @default("[]")
-  status         MembershipStatus @default(active)
-  invitedAt      DateTime         @default(now())
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  organizationId String           @map("id_doanh_nghiep")
+  userId         String           @map("id_nguoi_dung")
+  departmentId   String?          @map("id_phong_ban")
+  role           UserRole         @default(owner) @map("vai_tro")
+  roleTitle      String?          @map("chuc_danh")
+  permissions    Json?            @default("[]") @map("quyen_han")
+  status         MembershipStatus @default(active) @map("trang_thai")
+  invitedAt      DateTime         @default(now()) @map("ngay_moi")
+  createdAt      DateTime         @default(now()) @map("ngay_tao")
+  updatedAt      DateTime         @updatedAt @map("ngay_cap_nhat")
 
   organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   department     Department?      @relation(fields: [departmentId], references: [id])
 
   @@unique([organizationId, userId])
-  @@map("memberships")
+  @@map("thanh_vien_doanh_nghiep")
 }
 
 model ContextFact {
   id              String               @id @default(uuid())
-  organizationId  String
-  key             String
-  label           String
-  group           ContextGroup
-  currentValue    String
-  source          String
-  providedBy      String
-  providedAt      DateTime             @default(now())
-  status          ContextStatus        @default(unconfirmed)
-  confirmedBy     String?
-  affectedRules   Json?                @default("[]")
-  conflictDetails String?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  organizationId  String               @map("id_doanh_nghiep")
+  key             String               @map("khoa_ngu_canh")
+  label           String               @map("nhan_hien_thi")
+  group           ContextGroup         @map("nhom_ngu_canh")
+  currentValue    String               @map("gia_tri_hien_tai")
+  source          String               @map("nguon_du_lieu")
+  providedBy      String               @map("cung_cap_boi")
+  providedAt      DateTime             @default(now()) @map("thoi_gian_cung_cap")
+  status          ContextStatus        @default(unconfirmed) @map("trang_thai")
+  confirmedBy     String?              @map("xac_nhan_boi")
+  affectedRules   Json?                @default("[]") @map("quy_tac_anh_huong")
+  conflictDetails String?              @map("chi_tiet_xung_dot")
+  createdAt       DateTime             @default(now()) @map("ngay_tao")
+  updatedAt       DateTime             @updatedAt @map("ngay_cap_nhat")
 
   organization    Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   history         ContextFactHistory[]
 
-  @@map("context_facts")
+  @@map("du_lieu_ngu_canh")
 }
 
 model ContextFactHistory {
   id            String      @id @default(uuid())
-  contextFactId String
-  value         String
-  changedBy     String
-  changedAt     DateTime    @default(now())
-  note          String?
+  contextFactId String      @map("id_du_lieu_ngu_canh")
+  value         String      @map("gia_tri")
+  changedBy     String      @map("thay_doi_boi")
+  changedAt     DateTime    @default(now()) @map("thoi_gian_thay_doi")
+  note          String?     @map("ghi_chu")
 
   contextFact   ContextFact @relation(fields: [contextFactId], references: [id], onDelete: Cascade)
 
-  @@map("context_fact_histories")
+  @@map("lich_su_ngu_canh")
 }
 
 model Rule {
   id                   String      @id @default(uuid())
-  code                 String      @unique
-  title                String
-  conditionSummary     String
-  conditionsJson       Json?       @default("{}")
-  triggeredChecklists  Json?       @default("[]")
-  version              String      @default("1.0")
-  effectiveDate        DateTime    @default(now())
-  legalReference       String
-  priority             Priority    @default(medium)
-  category             String
-  createdAt            DateTime    @default(now())
-  updatedAt            DateTime    @updatedAt
+  code                 String      @unique @map("ma_quy_tac")
+  title                String      @map("tieu_de")
+  conditionSummary     String      @map("tom_tat_dieu_kien")
+  conditionsJson       Json?       @default("{}") @map("dieu_kien_json")
+  triggeredChecklists  Json?       @default("[]") @map("danh_muc_kich_hoat")
+  version              String      @default("1.0") @map("phien_ban")
+  effectiveDate        DateTime    @default(now()) @map("ngay_hieu_luc")
+  legalReference       String      @map("can_cu_phap_ly")
+  priority             Priority    @default(medium) @map("do_uu_tien")
+  category             String      @map("phan_loai")
+  createdAt            DateTime    @default(now()) @map("ngay_tao")
+  updatedAt            DateTime    @updatedAt @map("ngay_cap_nhat")
 
-  @@map("rules")
+  @@map("quy_tac_tuan_thu")
+}
+
+model ComplianceAudit {
+  id                 String          @id @default(uuid())
+  organizationId     String          @map("id_doanh_nghiep")
+  createdById        String?         @map("id_nguoi_tao")
+  contextFingerprint String          @map("ma_van_tay_ngu_canh")
+  rulesVersion       String          @default("1.0") @map("phien_ban_quy_tac")
+  scope              String          @default("ALL") @map("pham_vi")
+  status             AuditStatus     @default(succeeded) @map("trang_thai")
+  summary            String?         @map("tom_tat")
+  totalFindings      Int             @default(0) @map("tong_phat_hien")
+  applicableCount    Int             @default(0) @map("so_luong_ap_dung")
+  verifiedAt         DateTime?       @map("thoi_gian_xac_minh")
+  createdAt          DateTime        @default(now()) @map("ngay_tao")
+  updatedAt          DateTime        @updatedAt @map("ngay_cap_nhat")
+
+  organization       Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  findings           AuditFinding[]
+
+  @@index([organizationId, contextFingerprint])
+  @@map("dot_danh_gia_tuan_thu")
+}
+
+model AuditFinding {
+  id                  String             @id @default(uuid())
+  auditId             String             @map("id_dot_danh_gia")
+  organizationId      String             @map("id_doanh_nghiep")
+  factId              String?            @map("id_su_that")
+  ruleCode            String             @map("ma_quy_tac")
+  obligationTitle     String             @map("tieu_de_nghia_vu")
+  category            String             @map("phan_loai")
+  applicableStatus    ApplicableStatus   @default(applicable) @map("trang_thai_ap_dung")
+  actionRequired      String             @map("hanh_dong_yeu_cau")
+  evidenceRequired    String             @map("bang_chung_yeu_cau")
+  legalBasis          String             @map("co_so_phap_ly")
+  legalDocNumber      String?            @map("so_van_ban_phap_ly")
+  legalArticle        String?            @map("dieu_khoan_phap_ly")
+  legalDocUrl         String?            @map("duong_dan_van_ban")
+  legalValidity       LegalValidity      @default(in_force) @map("hieu_luc_phap_ly")
+  verifiedAt          DateTime?          @map("thoi_gian_xac_minh")
+  resultSource        ResultSource       @default(rule_based) @map("nguon_ket_qua")
+  cycleType           StatutoryCycleType @default(QUARTERLY) @map("chu_ky_luat_dinh")
+  calculationMethod   String?            @map("phuong_phap_tinh")
+  missingDataNotice   String?            @map("thong_bao_thieu_du_lieu")
+  suggestedPriority   Priority           @default(medium) @map("do_uu_tien_goi_y")
+  isDismissed         Boolean            @default(false) @map("da_bo_qua")
+  acceptedAt          DateTime?          @map("thoi_gian_chap_nhan")
+  createdAt           DateTime           @default(now()) @map("ngay_tao")
+  updatedAt           DateTime           @updatedAt @map("ngay_cap_nhat")
+
+  audit               ComplianceAudit    @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  checklistItems      ChecklistItem[]
+
+  @@index([organizationId, ruleCode])
+  @@map("phat_hien_vi_pham")
+}
+
+model Checklist {
+  id             String          @id @default(uuid())
+  organizationId String          @map("id_doanh_nghiep")
+  createdById    String?         @map("id_nguoi_tao")
+  code           String          @map("ma_danh_muc")
+  title          String          @map("tieu_de")
+  category       String          @map("phan_loai")
+  status         ChecklistStatus @default(active) @map("trang_thai")
+  createdAt      DateTime        @default(now()) @map("ngay_tao")
+  updatedAt      DateTime        @updatedAt @map("ngay_cap_nhat")
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  items          ChecklistItem[]
+  tasks          Task[]
+
+  @@map("danh_muc_kiem_tra")
+}
+
+model ChecklistItem {
+  id                  String             @id @default(uuid())
+  checklistId         String             @map("id_danh_muc")
+  organizationId      String             @map("id_doanh_nghiep")
+  findingId           String?            @map("id_phat_hien")
+  ruleCode            String             @map("ma_quy_tac")
+  title               String             @map("tieu_de")
+  cycleType           StatutoryCycleType @map("chu_ky_luat_dinh")
+  departmentId        String?            @map("id_phong_ban")
+  assigneeId          String?            @map("id_nguoi_phu_trach")
+  assigneeName        String             @default("Người phụ trách") @map("ten_nguoi_phu_trach")
+  assigneeRole        UserRole           @default(owner) @map("vai_tro_nguoi_phu_trach")
+  defaultPriority     Priority           @default(medium) @map("do_uu_tien_mac_dinh")
+  legalBasis          String             @map("co_so_phap_ly")
+  legalDocUrl         String?            @map("duong_dan_van_ban")
+  evidenceRequirement String?            @map("yeu_cau_bang_chung")
+  eventDate           DateTime?          @map("ngay_su_kien")
+  isActive            Boolean            @default(true) @map("dang_hoat_dong")
+  lastGeneratedPeriod String?            @map("ky_sinh_gan_nhat")
+  nextDueDate         DateTime?          @map("han_chot_tiep_theo")
+  createdAt           DateTime           @default(now()) @map("ngay_tao")
+  updatedAt           DateTime           @updatedAt @map("ngay_cap_nhat")
+
+  checklist           Checklist          @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  finding             AuditFinding?      @relation(fields: [findingId], references: [id], onDelete: SetNull)
+  tasks               Task[]
+
+  @@index([organizationId, cycleType])
+  @@map("muc_kiem_tra")
 }
 
 model Task {
   id                      String              @id @default(uuid())
-  organizationId          String
-  checklistId             String?
-  code                    String
-  title                   String
-  category                String
-  priority                Priority            @default(medium)
-  departmentId            String?
-  departmentName          String?
-  assigneeId              String?
-  assigneeName            String
-  assigneeRole            UserRole            @default(owner)
-  waitingOnRole           WaitingOnRole       @default(none)
-  waitingOnName           String?
-  reviewerId              String?
-  reviewerName            String?
-  reviewerRole            UserRole?
-  dueDate                 DateTime
-  status                  TaskStatus          @default(need_info)
-  description             String
-  contextTrigger          String?
-  ruleCode                String
-  legalBasis              String
-  isPaidTask              Boolean             @default(false)
-  isAuditPaid            Boolean             @default(false)
-  paidTaskCost            Float?              @default(0)
-  paymentStatus           PaymentStatus       @default(none)
-  findingId               String?
-  isSelfCertifiedNoUpload Boolean             @default(false)
-  notApplicableReason     String?
-  createdAt               DateTime            @default(now())
-  updatedAt               DateTime            @updatedAt
+  organizationId          String              @map("id_doanh_nghiep")
+  checklistId             String?             @map("id_danh_muc")
+  checklistItemId         String?             @map("id_muc_kiem_tra")
+  code                    String              @map("ma_nhiem_vu")
+  title                   String              @map("tieu_de")
+  category                String              @map("phan_loai")
+  priority                Priority            @default(medium) @map("do_uu_tien")
+  departmentId            String?             @map("id_phong_ban")
+  departmentName          String?             @map("ten_phong_ban")
+  assigneeId              String?             @map("id_nguoi_phu_trach")
+  assigneeName            String              @map("ten_nguoi_phu_trach")
+  assigneeRole            UserRole            @default(owner) @map("vai_tro_nguoi_phu_trach")
+  waitingOnRole           WaitingOnRole       @default(none) @map("vai_tro_cho_doi")
+  waitingOnName           String?             @map("ten_nguoi_cho_doi")
+  reviewerId              String?             @map("id_nguoi_duyet")
+  reviewerName            String?             @map("ten_nguoi_duyet")
+  reviewerRole            UserRole?           @map("vai_tro_nguoi_duyet")
+  dueDate                 DateTime            @map("han_chot")
+  status                  TaskStatus          @default(need_info) @map("trang_thai")
+  description             String              @map("mo_ta")
+  contextTrigger          String?             @map("kich_hoat_ngu_canh")
+  ruleCode                String              @map("ma_quy_tac")
+  periodCycle             StatutoryCycleType? @map("chu_ky_dinh_ky")
+  periodKey               String?             @map("khoa_ky")
+  eventDate               DateTime?           @map("ngay_su_kien")
+  calculationBasisJson    Json?               @default("{}") @map("can_cu_tinh_toan_json")
+  legalBasis              String              @map("co_so_phap_ly")
+  legalValidity           LegalValidity       @default(in_force) @map("hieu_luc_phap_ly")
+  verifiedAt              DateTime?           @map("thoi_gian_xac_minh")
+  isPaidTask              Boolean             @default(false) @map("la_nhiem_vu_tinh_phi")
+  isAuditPaid            Boolean             @default(false) @map("da_thanh_toan_danh_gia")
+  paidTaskCost            Float?              @default(0) @map("chi_phi_nhiem_vu")
+  paymentStatus           PaymentStatus       @default(none) @map("trang_thai_thanh_toan")
+  findingId               String?             @map("id_phat_hien")
+  isSelfCertifiedNoUpload Boolean             @default(false) @map("tu_xac_nhan_khong_tai_tep")
+  notApplicableReason     String?             @map("ly_do_khong_ap_dung")
+  createdAt               DateTime            @default(now()) @map("ngay_tao")
+  updatedAt               DateTime            @updatedAt @map("ngay_cap_nhat")
 
   organization            Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   department              Department?         @relation(fields: [departmentId], references: [id])
+  checklist               Checklist?          @relation(fields: [checklistId], references: [id], onDelete: SetNull)
+  checklistItem           ChecklistItem?      @relation(fields: [checklistItemId], references: [id], onDelete: SetNull)
   documents               EvidenceDocument[]
   comments                TaskComment[]
   timeline                TaskTimelineEvent[]
+  notifications           ComplianceNotification[]
 
-  @@map("tasks")
+  @@unique([organizationId, ruleCode, periodKey])
+  @@index([organizationId, status, dueDate])
+  @@index([organizationId, periodCycle])
+  @@map("nhiem_vu_tuan_thu")
 }
 
 model TaskComment {
   id             String    @id @default(uuid())
-  taskId         String
-  authorId       String?
-  authorName     String
-  authorRole     UserRole  @default(owner)
-  content        String
-  isInternalOnly Boolean   @default(false)
-  createdAt      DateTime  @default(now())
+  taskId         String    @map("id_nhiem_vu")
+  authorId       String?   @map("id_tac_gia")
+  authorName     String    @map("ten_tac_gia")
+  authorRole     UserRole  @default(owner) @map("vai_tro_tac_gia")
+  content        String    @map("noi_dung")
+  isInternalOnly Boolean   @default(false) @map("chi_noi_bo")
+  createdAt      DateTime  @default(now()) @map("ngay_tao")
 
   task           Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
   author         User?     @relation(fields: [authorId], references: [id])
 
-  @@map("task_comments")
+  @@map("binh_luan_nhiem_vu")
 }
 
 model TaskTimelineEvent {
   id          String            @id @default(uuid())
-  taskId      String
-  actorId     String?
-  actorName   String
-  actorRole   UserRole          @default(owner)
-  type        TimelineEventType @default(status_change)
-  title       String
-  description String
-  timestamp   DateTime          @default(now())
+  taskId      String            @map("id_nhiem_vu")
+  actorId     String?           @map("id_nguoi_thuc_hien")
+  actorName   String            @map("ten_nguoi_thuc_hien")
+  actorRole   UserRole          @default(owner) @map("vai_tro_nguoi_thuc_hien")
+  type        TimelineEventType @default(status_change) @map("loai_nhat_ky")
+  title       String            @map("tieu_de")
+  description String            @map("mo_ta")
+  timestamp   DateTime          @default(now()) @map("thoi_diem")
 
   task        Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
   actor       User?             @relation(fields: [actorId], references: [id])
 
-  @@map("task_timeline_events")
+  @@map("nhat_ky_nhiem_vu")
+}
+
+model ComplianceNotification {
+  id             String                @id @default(uuid())
+  organizationId String                @map("id_doanh_nghiep")
+  userId         String                @map("id_nguoi_dung")
+  taskId         String?               @map("id_nhiem_vu")
+  milestone      NotificationMilestone @map("cot_moc")
+  title          String                @map("tieu_de")
+  message        String                @map("thong_diep")
+  linkUrl        String?               @map("duong_dan_lien_ket")
+  isRead         Boolean               @default(false) @map("da_doc")
+  readAt         DateTime?             @map("thoi_gian_doc")
+  dueDateVersion DateTime?             @map("phien_ban_han_chot")
+  createdAt      DateTime              @default(now()) @map("ngay_tao")
+
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task           Task?                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, milestone, userId])
+  @@index([organizationId, userId, isRead])
+  @@map("thong_bao_tuan_thu")
 }
 
 model EvidenceDocument {
   id                String         @id @default(uuid())
-  organizationId    String
-  linkedTaskId      String?
-  name              String
-  category          String
-  fileType          String
-  fileSize          String
-  filePath          String
-  fileUrl           String?
-  uploadedBy        String
-  uploadedRole      UserRole       @default(owner)
-  uploadedAt        DateTime       @default(now())
-  version           String         @default("1.0")
-  expiryDate        DateTime?
-  status            EvidenceStatus @default(unverified)
-  rejectionReason   String?
-  ocrExtractedData  Json?          @default("{}")
-  ocrVerified       Boolean        @default(false)
-  viewPermissions   Json?          @default("[]")
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  organizationId    String         @map("id_doanh_nghiep")
+  linkedTaskId      String?        @map("id_nhiem_vu_lien_ket")
+  name              String         @map("ten_tai_lieu")
+  category          String         @map("phan_loai")
+  fileType          String         @map("loai_tep")
+  fileSize          String         @map("dung_luong_tep")
+  filePath          String         @map("duong_dan_tep")
+  fileUrl           String?        @map("duong_dan_url")
+  uploadedBy        String         @map("tai_len_boi")
+  uploadedRole      UserRole       @default(owner) @map("vai_tro_nguoi_tai")
+  uploadedAt        DateTime       @default(now()) @map("thoi_gian_tai_len")
+  version           String         @default("1.0") @map("phien_ban")
+  expiryDate        DateTime?      @map("ngay_het_han")
+  status            EvidenceStatus @default(unverified) @map("trang_thai")
+  rejectionReason   String?        @map("ly_do_tu_choi")
+  ocrExtractedData  Json?          @default("{}") @map("du_lieu_trich_xuat_ocr")
+  ocrVerified       Boolean        @default(false) @map("da_xac_minh_ocr")
+  viewPermissions   Json?          @default("[]") @map("quyen_xem")
+  createdAt         DateTime       @default(now()) @map("ngay_tao")
+  updatedAt         DateTime       @updatedAt @map("ngay_cap_nhat")
 
   organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   task              Task?          @relation(fields: [linkedTaskId], references: [id])
 
-  @@map("evidence_documents")
+  @@map("chung_tu_bang_chung")
 }
 
 model Wallet {
   id             String              @id @default(uuid())
-  organizationId String              @unique
-  balance        Float               @default(0)
-  heldAmount     Float               @default(0)
-  currency       String              @default("VND")
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  organizationId String              @unique @map("id_doanh_nghiep")
+  balance        Float               @default(0) @map("so_du")
+  heldAmount     Float               @default(0) @map("so_tien_tam_giu")
+  currency       String              @default("VND") @map("loai_tien_te")
+  createdAt      DateTime            @default(now()) @map("ngay_tao")
+  updatedAt      DateTime            @updatedAt @map("ngay_cap_nhat")
 
   organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   transactions   WalletTransaction[]
 
-  @@map("wallets")
+  @@map("vi_tin_dung")
 }
 
 model WalletTransaction {
   id          String            @id @default(uuid())
-  walletId    String
-  code        String
-  taskName    String?
-  requestedBy String
-  amount      Float
-  type        TransactionType
-  status      TransactionStatus @default(pending)
-  note        String?
-  timestamp   DateTime          @default(now())
+  walletId    String            @map("id_vi")
+  code        String            @map("ma_giao_dich")
+  taskName    String?           @map("ten_nhiem_vu")
+  requestedBy String            @map("yeu_cau_boi")
+  amount      Float             @map("so_tien")
+  type        TransactionType   @map("loai_giao_dich")
+  status      TransactionStatus @default(pending) @map("trang_thai")
+  note        String?           @map("ghi_chu")
+  timestamp   DateTime          @default(now()) @map("thoi_diem")
 
   wallet      Wallet            @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
-  @@map("wallet_transactions")
+  @@map("giao_dich_vi")
+}
+
+model CalendarNote {
+  id             String       @id @default(uuid())
+  organizationId String       @map("id_doanh_nghiep")
+  date           String       @map("ngay")
+  title          String       @map("tieu_de")
+  content        String?      @map("noi_dung")
+  category       String?      @default("general") @map("phan_loai")
+  authorId       String?      @map("id_tac_gia")
+  authorName     String?      @map("ten_tac_gia")
+  isCompleted    Boolean      @default(false) @map("da_hoan_thanh")
+  createdAt      DateTime     @default(now()) @map("ngay_tao")
+  updatedAt      DateTime     @updatedAt @map("ngay_cap_nhat")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author         User?        @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, date])
+  @@map("ghi_chu_lich")
 }

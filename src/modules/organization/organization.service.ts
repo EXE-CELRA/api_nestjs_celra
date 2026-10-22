@@ -11,33 +11,71 @@ import { UserRole, ContextStatus, ContextGroup, TaskStatus, Priority, WaitingOnR
 export class OrganizationService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private enrichOrgWithVietnamese(org: any) {
+    if (!org) return org;
+    return {
+      ...org,
+      tenDoanhNghiep: org.name,
+      maSoThue: org.taxCode,
+      loaiHinhPhapLy: org.legalType,
+      nganhNghe: org.industry,
+      moHinhKinhDoanh: org.businessModel,
+      soNamHoatDong: org.operatingYears,
+      tinhTrangDoanhThu: org.revenueStatus,
+      soLuongNhanSu: org.employeeCount,
+      diaDiemKinhDoanh: org.locations,
+      coBanHangOnline: org.hasOnlineSales,
+      diaChi: org.address,
+      tenNguoiDaiDien: org.representativeName,
+      taoLuc: org.createdAt,
+      capNhatLuc: org.updatedAt,
+    };
+  }
+
   async create(userId: string, dto: CreateOrganizationDto) {
+    const taxCode = dto.maSoThue || dto.taxCode;
+    if (!taxCode) {
+      throw new BadRequestException('Mã số thuế không được để trống');
+    }
+
     const existingOrg = await this.prisma.organization.findUnique({
-      where: { taxCode: dto.taxCode },
+      where: { taxCode },
     });
 
     if (existingOrg) {
       throw new BadRequestException('Mã số thuế này đã được đăng ký trên hệ thống');
     }
 
-    const companyName = dto.name || dto.legalName || 'Doanh nghiệp mới';
+    const companyName = dto.tenDoanhNghiep || dto.name || dto.legalName || 'Doanh nghiệp mới';
+    const city = dto.thanhPho || dto.city || 'TP. Hồ Chí Minh';
+    const legalType = dto.loaiHinhPhapLy || dto.legalType || 'Công ty TNHH';
+    const industry = dto.nganhNghe || dto.industry || 'Dịch vụ ăn uống';
+    const businessModel = dto.moHinhKinhDoanh || dto.businessModel || 'Trực tiếp tại cơ sở và trực tuyến';
+    const operatingYears = dto.soNamHoatDong || dto.operatingYears || '1 - 3 năm';
+    const revenueStatus = dto.tinhTrangDoanhThu || dto.revenueStatus || 'Đã phát sinh doanh thu';
+    const employeeCount = dto.soLuongNhanSu !== undefined ? dto.soLuongNhanSu : (dto.employeeCount || 5);
+    const locations = dto.diaDiemKinhDoanh || dto.locations || city;
+    const hasOnlineSales = dto.coBanHangOnline !== undefined ? dto.coBanHangOnline : (dto.hasOnlineSales || false);
+    const address = dto.diaChi || dto.address || city;
+    const representativeName = dto.tenNguoiDaiDien || dto.representativeName || companyName;
+    const registrantRole = dto.vaiTroDangKy || dto.registrantRole || 'Chủ doanh nghiệp';
 
     return this.prisma.$transaction(async (tx) => {
       // 1. Tạo Doanh nghiệp
       const org = await tx.organization.create({
         data: {
           name: companyName,
-          taxCode: dto.taxCode,
-          legalType: dto.legalType || 'Công ty TNHH',
-          industry: dto.industry || 'Dịch vụ ăn uống',
-          businessModel: dto.businessModel || 'Trực tiếp tại cơ sở và trực tuyến',
-          operatingYears: dto.operatingYears || '1 - 3 năm',
-          revenueStatus: dto.revenueStatus || 'Đã phát sinh doanh thu',
-          employeeCount: dto.employeeCount || 5,
-          locations: dto.locations || dto.city || 'TP. Hồ Chí Minh',
-          hasOnlineSales: dto.hasOnlineSales || false,
-          address: dto.address || `${dto.city || 'TP. Hồ Chí Minh'}`,
-          representativeName: dto.representativeName || companyName,
+          taxCode,
+          legalType,
+          industry,
+          businessModel,
+          operatingYears,
+          revenueStatus,
+          employeeCount,
+          locations,
+          hasOnlineSales,
+          address,
+          representativeName,
           createdById: userId,
         },
       });
@@ -76,7 +114,7 @@ export class OrganizationService {
           organizationId: org.id,
           userId,
           role: UserRole.owner,
-          roleTitle: dto.registrantRole || 'Chủ doanh nghiệp',
+          roleTitle: registrantRole,
           departmentId: hrDept.id,
           permissions: ['all'],
         },
@@ -96,6 +134,15 @@ export class OrganizationService {
       const user = await tx.user.findUnique({ where: { id: userId } });
       const providedBy = user ? user.name : 'Hệ thống';
 
+      const accountingRegime = dto.cheDoKeToan || dto.accountingRegime || 'TT133';
+      const vatMethod = dto.phuongPhapVat || dto.vatMethod || 'KHAU_TRU';
+      const taxCycle = dto.kyKhaiThue || dto.taxCycle || 'QUY';
+      const hasLaborContractAndInsurance = dto.hopDongVaBaoHiem || dto.hasLaborContractAndInsurance || 'DA_DONG_DU';
+      const hasElectronicInvoice = dto.coHoaDonDienTu !== undefined ? dto.coHoaDonDienTu : (dto.hasElectronicInvoice ?? true);
+      const hasFireSafetyCert = dto.coChungNhanPccc !== undefined ? dto.coChungNhanPccc : (dto.hasFireSafetyCert ?? true);
+      const hasSectoralPermit = dto.coGiayPhepCon !== undefined ? dto.coGiayPhepCon : (dto.hasSectoralPermit ?? true);
+      const hasTrademarkRegistered = dto.coDangKyNhanHieu !== undefined ? dto.coDangKyNhanHieu : (dto.hasTrademarkRegistered ?? false);
+
       const initialFacts: Array<{
         key: string;
         label: string;
@@ -106,64 +153,64 @@ export class OrganizationService {
         {
           key: 'tax.accounting_regime',
           label: 'Chế độ kế toán áp dụng',
-          group: ContextGroup.tax_accounting,
-          currentValue: dto.accountingRegime || 'TT133',
+          group: ContextGroup.thue_ke_toan,
+          currentValue: accountingRegime,
           source: 'Khai báo Onboarding',
         },
         {
           key: 'tax.vat_method',
           label: 'Phương pháp kê khai thuế GTGT',
-          group: ContextGroup.tax_accounting,
-          currentValue: dto.vatMethod || 'KHAU_TRU',
+          group: ContextGroup.thue_ke_toan,
+          currentValue: vatMethod,
           source: 'Khai báo Onboarding',
         },
         {
           key: 'tax.tax_cycle',
           label: 'Kỳ kê khai thuế',
-          group: ContextGroup.tax_accounting,
-          currentValue: dto.taxCycle || 'QUY',
+          group: ContextGroup.thue_ke_toan,
+          currentValue: taxCycle,
           source: 'Khai báo Onboarding',
         },
         {
           key: 'invoice.electronic_invoice',
           label: 'Sử dụng Hóa đơn điện tử (NĐ 123)',
-          group: ContextGroup.revenue_invoices,
-          currentValue: dto.hasElectronicInvoice ? 'Đã kích hoạt sử dụng' : 'Chưa đăng ký',
+          group: ContextGroup.hoa_don_dong_tien,
+          currentValue: hasElectronicInvoice ? 'Đã kích hoạt sử dụng' : 'Chưa đăng ký',
           source: 'Khai báo Onboarding',
         },
         {
           key: 'labor.insurance_status',
           label: 'Trích nộp BHXH bắt buộc',
-          group: ContextGroup.hr_labor,
-          currentValue: dto.hasLaborContractAndInsurance || 'DA_DONG_DU',
+          group: ContextGroup.lao_dong_bhxh,
+          currentValue: hasLaborContractAndInsurance,
           source: 'Khai báo Onboarding',
         },
         {
           key: 'safety.fire_prevention',
           label: 'Hồ sơ quản lý PCCC cơ sở',
-          group: ContextGroup.premises,
-          currentValue: dto.hasFireSafetyCert ? 'Đạt chuẩn PCCC cơ sở' : 'Chưa có phương án PCCC',
+          group: ContextGroup.dia_diem_pccc,
+          currentValue: hasFireSafetyCert ? 'Đạt chuẩn PCCC cơ sở' : 'Chưa có phương án PCCC',
           source: 'Khai báo Onboarding',
         },
         {
           key: 'permit.sectoral_license',
           label: 'Giấy phép con theo ngành nghề',
-          group: ContextGroup.conditional_licensing,
-          currentValue: dto.hasSectoralPermit ? 'Có yêu cầu giấy phép con' : 'Không thuộc ngành nghề có điều kiện',
+          group: ContextGroup.giay_phep_con,
+          currentValue: hasSectoralPermit ? 'Có yêu cầu giấy phép con' : 'Không thuộc ngành nghề có điều kiện',
           source: 'Khai báo Onboarding',
         },
         {
           key: 'ip.trademark_registration',
           label: 'Đăng ký bảo hộ nhãn hiệu / Logo',
-          group: ContextGroup.tech_data,
-          currentValue: dto.hasTrademarkRegistered ? 'Đã đăng ký tại Cục SHTT' : 'Chưa bảo hộ độc quyền',
+          group: ContextGroup.du_lieu_shtt,
+          currentValue: hasTrademarkRegistered ? 'Đã đăng ký tại Cục SHTT' : 'Chưa bảo hộ độc quyền',
           source: 'Khai báo Onboarding',
         },
         {
           key: 'legal.entity_profile',
           label: 'Pháp nhân & Địa bàn hoạt động',
-          group: ContextGroup.legal,
-          currentValue: `${dto.legalType || 'Công ty TNHH'} - ${dto.city || 'TP. Hồ Chí Minh'}`,
+          group: ContextGroup.phap_ly_von,
+          currentValue: `${legalType} - ${city}`,
           source: 'Khai báo Onboarding',
         },
       ];
@@ -193,7 +240,7 @@ export class OrganizationService {
       // 6. Theo chuẩn Prototype: Không tự ý sinh task/checklist khi chưa qua Rà soát tuân thủ
       // Danh mục Tác vụ (Tasks) ban đầu luôn luôn rỗng (tasks = [])
 
-      return org;
+      return this.enrichOrgWithVietnamese(org);
     });
   }
 
@@ -211,13 +258,20 @@ export class OrganizationService {
       },
     });
 
-    return memberships.map((m) => ({
-      ...m.organization,
-      legalName: m.organization.name,
-      myRole: m.role,
-      myRoleTitle: m.roleTitle,
-      myDepartment: m.department,
-    }));
+    return memberships.map((m) => {
+      const enrichedOrg = this.enrichOrgWithVietnamese(m.organization);
+      return {
+        ...enrichedOrg,
+        legalName: m.organization.name,
+        tenDoanhNghiep: m.organization.name,
+        myRole: m.role,
+        vaiTroCuaToi: m.role,
+        myRoleTitle: m.roleTitle,
+        chucDanhCuaToi: m.roleTitle,
+        myDepartment: m.department,
+        phongBanCuaToi: m.department,
+      };
+    });
   }
 
   async getOne(orgId: string) {
@@ -247,7 +301,7 @@ export class OrganizationService {
       throw new NotFoundException('Không tìm thấy thông tin doanh nghiệp');
     }
 
-    return org;
+    return this.enrichOrgWithVietnamese(org);
   }
 
   async update(orgId: string, dto: UpdateOrganizationDto) {
@@ -256,9 +310,25 @@ export class OrganizationService {
       throw new NotFoundException('Không tìm thấy thông tin doanh nghiệp');
     }
 
-    return this.prisma.organization.update({
+    const name = dto.tenDoanhNghiep || dto.name;
+    const shortName = dto.tenVietTat || dto.shortName;
+    const employeeCount = dto.soLuongNhanSu !== undefined ? dto.soLuongNhanSu : dto.employeeCount;
+    const address = dto.diaChi || dto.address;
+    const representativeName = dto.tenNguoiDaiDien || dto.representativeName;
+    const hasOnlineSales = dto.coBanHangOnline !== undefined ? dto.coBanHangOnline : dto.hasOnlineSales;
+
+    const updated = await this.prisma.organization.update({
       where: { id: orgId },
-      data: dto,
+      data: {
+        ...(name !== undefined && { name }),
+        ...(shortName !== undefined && { shortName }),
+        ...(employeeCount !== undefined && { employeeCount }),
+        ...(address !== undefined && { address }),
+        ...(representativeName !== undefined && { representativeName }),
+        ...(hasOnlineSales !== undefined && { hasOnlineSales }),
+      },
     });
+
+    return this.enrichOrgWithVietnamese(updated);
   }
 }

@@ -14,6 +14,12 @@ export class RegisterDto {
   @MinLength(6, { message: 'Mật khẩu tối thiểu 6 ký tự' })
   password?: string;
 
+  @ApiPropertyOptional({ example: '12345678', description: 'Mật khẩu tiếng Việt (camelCase)' })
+  @IsOptional()
+  @IsString({ message: 'Mật khẩu phải là chuỗi' })
+  @MinLength(6, { message: 'Mật khẩu tối thiểu 6 ký tự' })
+  matKhau?: string;
+
   @ApiPropertyOptional({ example: '12345678', description: 'Mật khẩu bí danh' })
   @IsOptional()
   @IsString()
@@ -23,6 +29,11 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @ApiPropertyOptional({ example: 'Nguyễn Minh Anh', description: 'Họ và tên tiếng Việt (camelCase)' })
+  @IsOptional()
+  @IsString()
+  hoVaTen?: string;
 
   @ApiPropertyOptional({ example: 'Nguyễn Minh Anh', description: 'Họ và tên bí danh' })
   @IsOptional()
@@ -34,15 +45,30 @@ export class RegisterDto {
   @IsEnum(UserRole)
   role?: UserRole;
 
+  @ApiPropertyOptional({ enum: UserRole, description: 'Vai trò tiếng Việt (camelCase)' })
+  @IsOptional()
+  @IsEnum(UserRole)
+  vaiTro?: UserRole;
+
   @ApiPropertyOptional({ example: 'Chủ doanh nghiệp', description: 'Chức danh' })
   @IsOptional()
   @IsString()
   roleTitle?: string;
 
+  @ApiPropertyOptional({ example: 'Chủ doanh nghiệp', description: 'Chức danh tiếng Việt (camelCase)' })
+  @IsOptional()
+  @IsString()
+  chucDanh?: string;
+
   @ApiPropertyOptional({ example: '0901234567', description: 'Số điện thoại' })
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @ApiPropertyOptional({ example: '0901234567', description: 'Số điện thoại tiếng Việt (camelCase)' })
+  @IsOptional()
+  @IsString()
+  soDienThoai?: string;
 
   @ApiPropertyOptional({ example: '0901234567', description: 'Số điện thoại bí danh' })
   @IsOptional()
@@ -61,34 +87,39 @@ export class LoginDto {
   @IsString()
   password?: string;
 
+  @ApiPropertyOptional({ example: '12345678', description: 'Mật khẩu tiếng Việt (camelCase)' })
+  @IsOptional()
+  @IsString()
+  matKhau?: string;
+
   @ApiPropertyOptional({ example: '12345678', description: 'Mật khẩu bí danh' })
   @IsOptional()
   @IsString()
   passwordHash?: string;
-
-  @ApiPropertyOptional({ example: '123456', description: 'Mã 2FA OTP nếu đã kích hoạt' })
-  @IsOptional()
-  @IsString()
-  twoFactorCode?: string;
-}
-
-export class VerifyOtpDto {
-  @ApiProperty({ example: '123456', description: 'Mã OTP 6 chữ số' })
-  @IsString()
-  @IsNotEmpty({ message: 'Mã OTP không được để trống' })
-  code!: string;
 }
 
 export class ChangePasswordDto {
-  @ApiProperty({ example: '12345678', description: 'Mật khẩu hiện tại' })
+  @ApiPropertyOptional({ example: '12345678', description: 'Mật khẩu hiện tại' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  oldPassword!: string;
+  oldPassword?: string;
 
-  @ApiProperty({ example: 'newpassword123', description: 'Mật khẩu mới' })
+  @ApiPropertyOptional({ example: '12345678', description: 'Mật khẩu cũ tiếng Việt (camelCase)' })
+  @IsOptional()
+  @IsString()
+  matKhauCu?: string;
+
+  @ApiPropertyOptional({ example: 'newpassword123', description: 'Mật khẩu mới' })
+  @IsOptional()
   @IsString()
   @MinLength(6, { message: 'Mật khẩu mới tối thiểu 6 ký tự' })
-  newPassword!: string;
+  newPassword?: string;
+
+  @ApiPropertyOptional({ example: 'newpassword123', description: 'Mật khẩu mới tiếng Việt (camelCase)' })
+  @IsOptional()
+  @IsString()
+  @MinLength(6, { message: 'Mật khẩu mới tối thiểu 6 ký tự' })
+  matKhauMoi?: string;
 }
 
 export class UpdateProfileDto {
@@ -97,10 +128,20 @@ export class UpdateProfileDto {
   @IsString()
   name?: string;
 
+  @ApiPropertyOptional({ example: 'Nguyễn Trung Hậu', description: 'Họ và tên tiếng Việt (camelCase)' })
+  @IsOptional()
+  @IsString()
+  hoVaTen?: string;
+
   @ApiPropertyOptional({ example: '0901234567', description: 'Số điện thoại' })
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @ApiPropertyOptional({ example: '0901234567', description: 'Số điện thoại tiếng Việt (camelCase)' })
+  @IsOptional()
+  @IsString()
+  soDienThoai?: string;
 
   @ApiPropertyOptional({ example: 'hauntce190069@gmail.com', description: 'Email' })
   @IsOptional()

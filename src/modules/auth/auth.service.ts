@@ -6,13 +6,10 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import * as speakeasy from 'speakeasy';
-import * as QRCode from 'qrcode';
 import { PrismaService } from '../../database/prisma.service';
 import {
   RegisterDto,
   LoginDto,
-  VerifyOtpDto,
   ChangePasswordDto,
   UpdateProfileDto,
 } from './dto/auth.dto';
@@ -25,6 +22,19 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
+  private enrichUserWithVietnamese(user: any) {
+    if (!user) return user;
+    return {
+      ...user,
+      hoVaTen: user.name,
+      soDienThoai: user.phone,
+      vaiTro: user.role,
+      chucDanh: user.roleTitle,
+      anhDaiDien: user.avatar,
+      taoLuc: user.createdAt,
+    };
+  }
+
   async register(dto: RegisterDto) {
     const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
@@ -34,7 +44,7 @@ export class AuthService {
       throw new BadRequestException('Email này đã được sử dụng trong hệ thống');
     }
 
-    const rawPassword = dto.password || dto.passwordHash;
+    const rawPassword = dto.matKhau || dto.password || dto.passwordHash;
     if (!rawPassword) {
       throw new BadRequestException('Mật khẩu không được để trống');
     }
@@ -42,16 +52,18 @@ export class AuthService {
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(rawPassword, saltRounds);
 
-    const userName = dto.name || dto.fullName || 'Người dùng';
-    const userPhone = dto.phone || dto.phoneNumber;
+    const userName = dto.hoVaTen || dto.name || dto.fullName || 'Người dùng';
+    const userPhone = dto.soDienThoai || dto.phone || dto.phoneNumber;
+    const userRole = dto.vaiTro || dto.role || UserRole.owner;
+    const userRoleTitle = dto.chucDanh || dto.roleTitle || 'Chủ doanh nghiệp';
 
     const user = await this.prisma.user.create({
       data: {
         email: dto.email.toLowerCase(),
         passwordHash,
         name: userName,
-        role: dto.role || UserRole.owner,
-        roleTitle: dto.roleTitle || 'Chủ doanh nghiệp',
+        role: userRole,
+        roleTitle: userRoleTitle,
         phone: userPhone,
       },
       select: {
@@ -70,7 +82,7 @@ export class AuthService {
     const token = await this.generateToken(user);
 
     return {
-      user,
+      user: this.enrichUserWithVietnamese(user),
       accessToken: token,
     };
   }
@@ -78,7 +90,7 @@ export class AuthService {
   async login(dto: LoginDto) {
     const adminEmail = (process.env.ADMIN_EMAIL || 'admin@gmail.com').toLowerCase();
     const adminPassword = process.env.ADMIN_PASSWORD || 'admin123!@#';
-    const rawPassword = dto.password || dto.passwordHash;
+    const rawPassword = dto.matKhau || dto.password || dto.passwordHash;
 
     // Kiểm tra tài khoản ảo Super Admin (In-Memory, không chạm vào DB)
     if (dto.email.toLowerCase() === adminEmail) {
@@ -102,7 +114,7 @@ export class AuthService {
       const token = await this.generateToken(virtualAdmin);
 
       return {
-        user: virtualAdmin,
+        user: this.enrichUserWithVietnamese(virtualAdmin),
         accessToken: token,
       };
     }
@@ -131,114 +143,13 @@ export class AuthService {
       throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
     }
 
-    // Nếu đã bật 2FA mà chưa cung cấp mã hoặc mã sai
-    if (user.isTwoFactorEnabled) {
-      if (!dto.twoFactorCode) {
-        return {
-          require2FA: true,
-          message: 'Tài khoản yêu cầu mã xác thực 2FA OTP',
-        };
-      }
-
-      const is2FAValid = speakeasy.totp.verify({
-        secret: user.twoFactorSecret || '',
-        encoding: 'base32',
-        token: dto.twoFactorCode,
-        window: 1,
-      });
-
-      if (!is2FAValid) {
-        throw new UnauthorizedException('Mã 2FA OTP không hợp lệ hoặc đã hết hạn');
-      }
-    }
-
     const token = await this.generateToken(user);
 
-    const { passwordHash: _, twoFactorSecret: __, ...safeUser } = user;
+    const { passwordHash: _, ...safeUser } = user;
 
     return {
-      user: safeUser,
+      user: this.enrichUserWithVietnamese(safeUser),
       accessToken: token,
-    };
-  }
-
-  async generate2FASecret(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('Không tìm thấy người dùng');
-    }
-
-    const secret = speakeasy.generateSecret({
-      name: `CELRA (${user.email})`,
-      issuer: 'CELRA Compliance',
-    });
-
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { twoFactorSecret: secret.base32 },
-    });
-
-    const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url || '');
-
-    return {
-      secret: secret.base32,
-      qrCodeUrl,
-    };
-  }
-
-  async enable2FA(userId: string, dto: VerifyOtpDto) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.twoFactorSecret) {
-      throw new BadRequestException('Vui lòng tạo mã bí mật 2FA trước');
-    }
-
-    const isVerified = speakeasy.totp.verify({
-      secret: user.twoFactorSecret,
-      encoding: 'base32',
-      token: dto.code,
-      window: 1,
-    });
-
-    if (!isVerified) {
-      throw new BadRequestException('Mã OTP không hợp lệ. Không thể kích hoạt 2FA');
-    }
-
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { isTwoFactorEnabled: true },
-    });
-
-    return {
-      success: true,
-      message: 'Đã kích hoạt xác thực 2 lớp (2FA) thành công',
-    };
-  }
-
-  async disable2FA(userId: string, dto: VerifyOtpDto) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.isTwoFactorEnabled) {
-      throw new BadRequestException('Tài khoản chưa bật 2FA');
-    }
-
-    const isVerified = speakeasy.totp.verify({
-      secret: user.twoFactorSecret || '',
-      encoding: 'base32',
-      token: dto.code,
-      window: 1,
-    });
-
-    if (!isVerified) {
-      throw new BadRequestException('Mã OTP không hợp lệ. Không thể tắt 2FA');
-    }
-
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { isTwoFactorEnabled: false, twoFactorSecret: null },
-    });
-
-    return {
-      success: true,
-      message: 'Đã tắt bảo mật 2 lớp 2FA thành công',
     };
   }
 
@@ -248,13 +159,20 @@ export class AuthService {
       throw new NotFoundException('Không tìm thấy người dùng');
     }
 
-    const isOldPasswordValid = await bcrypt.compare(dto.oldPassword, user.passwordHash);
+    const oldPassword = dto.matKhauCu || dto.oldPassword;
+    const newPassword = dto.matKhauMoi || dto.newPassword;
+
+    if (!oldPassword || !newPassword) {
+      throw new BadRequestException('Mật khẩu cũ và mật khẩu mới không được để trống');
+    }
+
+    const isOldPasswordValid = await bcrypt.compare(oldPassword, user.passwordHash);
     if (!isOldPasswordValid) {
       throw new BadRequestException('Mật khẩu hiện tại không chính xác');
     }
 
     const saltRounds = 10;
-    const newPasswordHash = await bcrypt.hash(dto.newPassword, saltRounds);
+    const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
 
     await this.prisma.user.update({
       where: { id: userId },
@@ -269,7 +187,7 @@ export class AuthService {
 
   async getProfile(userId: string) {
     if (userId === 'admin-virtual-system-id') {
-      return {
+      const virtualAdmin = {
         id: 'admin-virtual-system-id',
         email: process.env.ADMIN_EMAIL || 'admin@gmail.com',
         name: process.env.ADMIN_DEFAULT_NAME || 'Quản Trị Viên Hệ Thống CELRA',
@@ -282,6 +200,7 @@ export class AuthService {
         memberships: [],
         isSuperAdmin: true,
       };
+      return this.enrichUserWithVietnamese(virtualAdmin);
     }
 
     const user = await this.prisma.user.findUnique({
@@ -309,7 +228,7 @@ export class AuthService {
       throw new NotFoundException('Không tìm thấy thông tin người dùng');
     }
 
-    return user;
+    return this.enrichUserWithVietnamese(user);
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
@@ -327,11 +246,14 @@ export class AuthService {
       }
     }
 
+    const targetName = dto.hoVaTen || dto.name;
+    const targetPhone = dto.soDienThoai || dto.phone;
+
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: {
-        ...(dto.name !== undefined && { name: dto.name.trim() }),
-        ...(dto.phone !== undefined && { phone: dto.phone.trim() }),
+        ...(targetName !== undefined && { name: targetName.trim() }),
+        ...(targetPhone !== undefined && { phone: targetPhone.trim() }),
         ...(dto.email !== undefined && { email: dto.email.trim().toLowerCase() }),
       },
       select: {
@@ -350,7 +272,7 @@ export class AuthService {
     return {
       success: true,
       message: 'Cập nhật thông tin cá nhân thành công',
-      user: updatedUser,
+      user: this.enrichUserWithVietnamese(updatedUser),
     };
   }
 
