@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SubmitSurveyDto } from './dto/survey.dto';
 import { ContextGroup, UserRole, MembershipStatus } from '@prisma/client';
