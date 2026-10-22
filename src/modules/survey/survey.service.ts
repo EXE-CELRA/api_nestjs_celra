@@ -93,7 +93,7 @@ export class SurveyService {
         {
           key: 'tax_code',
           label: 'Mã số thuế & Định danh',
-          group: 'legal',
+          group: 'phap_ly_von',
           currentValue: p.taxCode || '',
           source: 'Khảo sát nền tảng Bước 1',
           affectedRules: ['RULE_TAX_REGISTRATION'],
@@ -101,7 +101,7 @@ export class SurveyService {
         {
           key: 'company_type_tag',
           label: 'Loại hình doanh nghiệp',
-          group: 'legal',
+          group: 'phap_ly_von',
           currentValue: p.companyTypeTag === 'TAG_HKD'
             ? 'Hộ kinh doanh cá thể'
             : p.companyTypeTag === 'TAG_TNHH_1TV'
@@ -115,7 +115,7 @@ export class SurveyService {
         {
           key: 'employee_scale',
           label: 'Quy mô nhân sự',
-          group: 'legal',
+          group: 'phap_ly_von',
           currentValue: p.employeeScale === 'under_10' 
             ? 'Dưới 10 nhân viên' 
             : p.employeeScale === '10_to_50' 
@@ -127,7 +127,7 @@ export class SurveyService {
         {
           key: 'employee_count',
           label: 'Số lượng nhân sự thực tế',
-          group: 'hr_labor',
+          group: 'lao_dong_bhxh',
           currentValue: String(p.employeeCount || (p.employeeScale === 'under_10' ? 8 : p.employeeScale === '10_to_50' ? 25 : 60)),
           source: 'Khảo sát nền tảng Bước 1',
           affectedRules: ['RULE_LABOR_GENERAL'],
@@ -135,7 +135,7 @@ export class SurveyService {
         {
           key: 'annual_revenue',
           label: 'Doanh thu năm trước liền kề',
-          group: 'tax_accounting',
+          group: 'thue_ke_toan',
           currentValue: p.isNewlyEstablished ? '0 (Mới thành lập)' : String(p.annualRevenue || 0),
           source: 'Khảo sát nền tảng Bước 1',
           affectedRules: ['RULE-TAX-GTGT', 'RULE-TAX-TNDN-80'],
@@ -143,7 +143,7 @@ export class SurveyService {
         {
           key: 'charter_capital',
           label: 'Vốn điều lệ đăng ký',
-          group: 'legal',
+          group: 'phap_ly_von',
           currentValue: String(p.charterCapital || 0),
           source: 'Khảo sát nền tảng Bước 1',
           affectedRules: ['RULE-TAX-MONBAI'],
@@ -151,7 +151,7 @@ export class SurveyService {
         {
           key: 'tax_filing_cycle',
           label: 'Kỳ kê khai thuế GTGT & TNCN',
-          group: 'tax_accounting',
+          group: 'thue_ke_toan',
           currentValue: isQuarterly ? 'THEO_QUY' : 'THEO_THANG',
           source: 'Khảo sát nền tảng Bước 1 (Tự động xác định theo NĐ 126/2020)',
           affectedRules: ['RULE-TAX-GTGT'],
@@ -159,7 +159,7 @@ export class SurveyService {
         {
           key: 'industry_tags',
           label: 'Ngành nghề & Hoạt động thực tế',
-          group: 'operations',
+          group: 'nganh_nghe_van_hanh',
           currentValue: Array.isArray(p.industryTags) ? p.industryTags.join(', ') : '',
           source: 'Khảo sát nền tảng Bước 1',
           affectedRules: Array.isArray(p.industryTags) ? p.industryTags.map((t: string) => `RULE_${t}`) : ['RULE_FNB_OPERATIONS'],
@@ -233,23 +233,23 @@ export class SurveyService {
         const factKey = q.id;
 
         // Phân loại nhóm bối cảnh chuẩn xác theo từng Module bao quát 100%
-        let group: ContextGroup = 'tax_accounting';
+        let group: ContextGroup = 'thue_ke_toan';
         if (q.moduleId === 'MODULE_INVOICE_CASHFLOW') {
-          group = 'revenue_invoices';
+          group = 'hoa_don_dong_tien';
         } else if (q.moduleId === 'MODULE_TAX_CORE') {
-          group = 'tax_accounting';
+          group = 'thue_ke_toan';
         } else if (q.moduleId === 'MODULE_LABOR_HR') {
-          group = 'hr_labor';
+          group = 'lao_dong_bhxh';
         } else if (q.moduleId === 'MODULE_PREMISES_PCCC') {
-          group = 'premises';
+          group = 'dia_diem_pccc';
         } else if (q.moduleId === 'MODULE_CONTRACTS') {
-          group = 'contracts';
+          group = 'hop_dong';
         } else if (q.moduleId === 'MODULE_DATA_IP' || q.moduleId === 'MODULE_ECOM_DATA_PRIVACY') {
-          group = 'tech_data';
+          group = 'du_lieu_shtt';
         } else if (q.moduleId === 'MODULE_LICENSING_ATTP' || q.moduleId === 'MODULE_LICENSING_CON') {
-          group = 'conditional_licensing';
+          group = 'giay_phep_con';
         } else if (q.moduleId === 'MODULE_LEGAL_CORP' || q.id === 'q_corp_capital_90d' || q.id === 'q_corp_amend_10d') {
-          group = 'legal';
+          group = 'phap_ly_von';
         } else if (
           q.id?.includes('inv') ||
           q.id?.includes('cashflow') ||
@@ -257,33 +257,33 @@ export class SurveyService {
           q.title?.toLowerCase().includes('doanh thu') ||
           q.id === 'q_tax_corp_3'
         ) {
-          group = 'revenue_invoices';
+          group = 'hoa_don_dong_tien';
         } else if (q.id?.startsWith('q_tax')) {
-          group = 'tax_accounting';
+          group = 'thue_ke_toan';
         } else if (q.branchType === 'labor_scale') {
-          group = 'hr_labor';
+          group = 'lao_dong_bhxh';
         } else if (q.branchType === 'company_type') {
-          group = 'legal';
+          group = 'phap_ly_von';
         } else {
-          group = 'operations';
+          group = 'nganh_nghe_van_hanh';
         }
 
         const moduleTag =
-          group === 'tax_accounting'
+          group === 'thue_ke_toan'
             ? 'Thuế Doanh Nghiệp'
-            : group === 'revenue_invoices'
+            : group === 'hoa_don_dong_tien'
             ? 'Hóa Đơn & Dòng Tiền'
-            : group === 'hr_labor'
+            : group === 'lao_dong_bhxh'
             ? 'Lao Động & BHXH'
-            : group === 'premises'
+            : group === 'dia_diem_pccc'
             ? 'Địa Điểm & PCCC'
-            : group === 'contracts'
+            : group === 'hop_dong'
             ? 'Hợp Đồng & Giao Kết'
-            : group === 'tech_data'
+            : group === 'du_lieu_shtt'
             ? 'Dữ Liệu & Sở Hữu Trí Tuệ'
-            : group === 'conditional_licensing'
+            : group === 'giay_phep_con'
             ? 'Giấy Phép Con'
-            : group === 'legal'
+            : group === 'phap_ly_von'
             ? 'Pháp Lý Doanh Nghiệp & Vốn'
             : q.branchLabel || q.branchCode || 'Khảo sát tình huống';
 

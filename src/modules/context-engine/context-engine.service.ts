@@ -1,3 +1,16 @@
+
+const LEGACY_GROUP_MAP: Record<string, any> = {
+  tax_accounting: 'thue_ke_toan',
+  legal: 'phap_ly_von',
+  operations: 'nganh_nghe_van_hanh',
+  revenue_invoices: 'hoa_don_dong_tien',
+  hr_labor: 'lao_dong_bhxh',
+  premises: 'dia_diem_pccc',
+  conditional_licensing: 'giay_phep_con',
+  contracts: 'hop_dong',
+  tech_data: 'du_lieu_shtt',
+};
+
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { WalletService } from '../wallet/wallet.service';
@@ -13,26 +26,54 @@ export class ContextEngineService {
     private readonly walletService: WalletService,
   ) {}
 
+  private enrichFactWithVietnamese(fact: any) {
+    if (!fact) return fact;
+    return {
+      ...fact,
+      khoa: fact.key,
+      nhan: fact.label,
+      nhom: fact.group,
+      giaTriHienTai: fact.currentValue,
+      nguon: fact.source,
+      trangThai: fact.status,
+      cacQuyTacLienQuan: fact.affectedRules,
+      chiTietXungDot: fact.conflictDetails,
+      taoLuc: fact.createdAt,
+      capNhatLuc: fact.updatedAt,
+    };
+  }
 
   async create(orgId: string, userId: string, dto: CreateContextFactDto) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const providedBy = user ? user.name : 'Hệ thống';
 
-    return this.prisma.contextFact.create({
+    const factKey = dto.khoa || dto.key || 'fact_key';
+    const factLabel = dto.nhan || dto.label || 'Dữ kiện';
+    let factGroup = dto.nhom || dto.group;
+    if (factGroup && LEGACY_GROUP_MAP[factGroup]) {
+      factGroup = LEGACY_GROUP_MAP[factGroup];
+    }
+    const factVal = dto.giaTriHienTai || dto.currentValue || '';
+    const factSource = dto.nguon || dto.source || 'Hệ thống';
+    const factStatus = dto.trangThai || dto.status || ContextStatus.unconfirmed;
+    const factRules = dto.cacQuyTacLienQuan || dto.affectedRules || [];
+    const factConflict = dto.chiTietXungDot || dto.conflictDetails;
+
+    const fact = await this.prisma.contextFact.create({
       data: {
         organizationId: orgId,
-        key: dto.key,
-        label: dto.label,
-        group: dto.group,
-        currentValue: dto.currentValue,
-        source: dto.source,
+        key: factKey,
+        label: factLabel,
+        group: factGroup,
+        currentValue: factVal,
+        source: factSource,
         providedBy,
-        status: dto.status || ContextStatus.unconfirmed,
-        affectedRules: dto.affectedRules || [],
-        conflictDetails: dto.conflictDetails,
+        status: factStatus,
+        affectedRules: factRules,
+        conflictDetails: factConflict,
         history: {
           create: {
-            value: dto.currentValue,
+            value: factVal,
             changedBy: providedBy,
             note: 'Khởi tạo dữ kiện ban đầu',
           },
@@ -42,6 +83,8 @@ export class ContextEngineService {
         history: true,
       },
     });
+
+    return this.enrichFactWithVietnamese(fact);
   }
 
   async findAll(orgId: string, userId?: string) {
@@ -65,7 +108,7 @@ export class ContextEngineService {
       return [];
     }
 
-    let facts = await this.prisma.contextFact.findMany({
+    const facts = await this.prisma.contextFact.findMany({
       where: { organizationId: targetOrgId },
       include: {
         history: {
@@ -76,7 +119,7 @@ export class ContextEngineService {
     });
 
     // Trả về danh sách thẻ bối cảnh thực tế (không tự động tạo dữ liệu giả khi trống)
-    return facts;
+    return facts.map((f) => this.enrichFactWithVietnamese(f));
   }
 
   async findOne(id: string) {
@@ -93,7 +136,7 @@ export class ContextEngineService {
       throw new NotFoundException('Không tìm thấy dữ kiện bối cảnh');
     }
 
-    return fact;
+    return this.enrichFactWithVietnamese(fact);
   }
 
   async update(id: string, userId: string, dto: UpdateContextFactDto) {
@@ -105,17 +148,22 @@ export class ContextEngineService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const changedBy = user ? `${user.name} (${user.roleTitle || user.role})` : 'Hệ thống';
 
-    return this.prisma.contextFact.update({
+    const factVal = dto.giaTriHienTai || dto.currentValue || '';
+    const factStatus = dto.trangThai || dto.status || fact.status;
+    const factConflict = dto.chiTietXungDot !== undefined ? dto.chiTietXungDot : (dto.conflictDetails !== undefined ? dto.conflictDetails : fact.conflictDetails);
+    const factNote = dto.ghiChu || dto.note || 'Cập nhật dữ kiện';
+
+    const updated = await this.prisma.contextFact.update({
       where: { id },
       data: {
-        currentValue: dto.currentValue,
-        status: dto.status || fact.status,
-        conflictDetails: dto.conflictDetails !== undefined ? dto.conflictDetails : fact.conflictDetails,
+        currentValue: factVal,
+        status: factStatus,
+        conflictDetails: factConflict,
         history: {
           create: {
-            value: dto.currentValue,
+            value: factVal,
             changedBy,
-            note: dto.note || 'Cập nhật dữ kiện',
+            note: factNote,
           },
         },
       },
@@ -125,6 +173,8 @@ export class ContextEngineService {
         },
       },
     });
+
+    return this.enrichFactWithVietnamese(updated);
   }
 
   async confirm(id: string, userId: string) {
@@ -136,7 +186,7 @@ export class ContextEngineService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const confirmedBy = user ? user.name : 'Hệ thống';
 
-    return this.prisma.contextFact.update({
+    const confirmed = await this.prisma.contextFact.update({
       where: { id },
       data: {
         status: ContextStatus.confirmed,
@@ -144,6 +194,8 @@ export class ContextEngineService {
         conflictDetails: null,
       },
     });
+
+    return this.enrichFactWithVietnamese(confirmed);
   }
 
   /**
