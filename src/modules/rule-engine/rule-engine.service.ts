@@ -81,14 +81,6 @@ export class RuleEngineService {
         category: 'Kỳ Cả Năm',
       },
       {
-        code: 'RULE-LABOR-REPORT-6M',
-        title: 'Báo cáo tình hình thay đổi lao động định kỳ 6 tháng (Hạn 05/06 & 05/12)',
-        conditionSummary: 'Người sử dụng lao động phải báo cáo tình hình thay đổi lao động định kỳ: 6 tháng đầu năm (trước 05/06) và cả năm (trước 05/12).',
-        legalReference: `Khoản 2 Điều 4 Nghị định 145/2020/NĐ-CP (${CORE_LEGAL_DOC_LINKS['145/2020']})`,
-        priority: Priority.high,
-        category: 'Kỳ 6 Tháng (Bán niên)',
-      },
-      {
         code: 'RULE-TAX-FCT-10D',
         title: 'Kê khai nộp thuế nhà thầu (FCT) khi thanh toán chi phí Ads quốc tế (10 ngày)',
         conditionSummary: 'Thanh toán tiền dịch vụ cho Facebook/Google/TikTok/phần mềm nước ngoài phải khai nộp thuế nhà thầu trong vòng 10 ngày.',
@@ -144,47 +136,6 @@ export class RuleEngineService {
         priority: Priority.high,
         category: 'Hóa Đơn & Dòng Tiền TMĐT',
       },
-      {
-        code: 'RULE-LABOR-10TO50',
-        title: 'Đăng ký Nội quy lao động trong vòng 10 ngày (áp dụng từ 10 nhân sự)',
-        conditionSummary: 'Doanh nghiệp sử dụng từ 10 người lao động trở lên bắt buộc phải ban hành và nộp hồ sơ đăng ký Nội quy lao động.',
-        legalReference: `Điều 118 & Điều 119 Bộ luật Lao động 2019 (${CORE_LEGAL_DOC_LINKS['45/2019']})`,
-        priority: Priority.urgent,
-        category: 'Đợt Phát Sinh 10 Ngày',
-      },
-      // 4 Đợt thủ tục Doanh nghiệp mới bổ sung:
-      {
-        code: 'RULE-CORP-SUSPEND-3D',
-        title: 'Thông báo tạm ngừng / tiếp tục kinh doanh trước 03 ngày làm việc',
-        conditionSummary: 'Doanh nghiệp phải gửi thông báo bằng văn bản đến Phòng ĐKKD chậm nhất 03 ngày làm việc trước khi tạm ngừng hoặc mở lại trước hạn.',
-        legalReference: `Khoản 1 Điều 66 Nghị định 01/2021/NĐ-CP & Điều 19 Nghị định 123/2020/NĐ-CP`,
-        priority: Priority.high,
-        category: 'Đợt 03 Ngày Làm Việc',
-      },
-      {
-        code: 'RULE-CORP-AMEND-10D',
-        title: 'Đăng ký thay đổi nội dung Giấy chứng nhận ĐKDN trong thời hạn 10 ngày làm việc',
-        conditionSummary: 'Khi thay đổi địa chỉ trụ sở, người đại diện pháp luật, ngành nghề, vốn... phải đăng ký với Sở KH&ĐT trong 10 ngày làm việc.',
-        legalReference: `Điều 30 Luật Doanh nghiệp 2020 & Khoản 2 Điều 36 Luật QLT 38/2019 (${CORE_LEGAL_DOC_LINKS['59/2020'] || 'https://dulieuphapluat.vn'})`,
-        priority: Priority.high,
-        category: 'Đợt 10 Ngày Làm Việc',
-      },
-      {
-        code: 'RULE-CORP-CAPITAL-90D',
-        title: 'Góp đủ 100% vốn điều lệ đã đăng ký cam kết trong vòng 90 ngày thành lập',
-        conditionSummary: 'Chủ sở hữu/thành viên phải góp đủ số vốn đăng ký trong 90 ngày kể từ ngày cấp GCN ĐKDN. Quá hạn bị phạt từ 30 đến 50 triệu.',
-        legalReference: `Khoản 2 Điều 47 & Khoản 2 Điều 75 Luật Doanh nghiệp 2020 (${CORE_LEGAL_DOC_LINKS['59/2020'] || 'https://dulieuphapluat.vn'})`,
-        priority: Priority.urgent,
-        category: 'Đợt 90 Ngày (Góp Vốn)',
-      },
-      {
-        code: 'RULE-CORP-CAPITAL-REDUCE-30D',
-        title: 'Thủ tục đăng ký điều chỉnh giảm vốn điều lệ trong thời hạn 30 ngày',
-        conditionSummary: 'Nếu sau 90 ngày chưa góp đủ vốn, trong 30 ngày tiếp theo phải thực hiện thủ tục đăng ký giảm vốn bằng số vốn thực tế đã góp.',
-        legalReference: `Khoản 3 Điều 47 & Khoản 3 Điều 75 Luật Doanh nghiệp 2020 (${CORE_LEGAL_DOC_LINKS['59/2020'] || 'https://dulieuphapluat.vn'})`,
-        priority: Priority.medium,
-        category: 'Đợt 30 Ngày (Giảm Vốn)',
-      },
     ];
 
     for (const r of statutoryRules) {
@@ -231,8 +182,6 @@ export class RuleEngineService {
     const isFnb = org.industry.includes('F&B') || org.industry.includes('ăn uống') || org.industry.includes('TAG_FNB');
     const isEcom = org.hasOnlineSales || org.industry.includes('ECOMMERCE') || org.industry.includes('bán lẻ') || org.industry.includes('TAG_ECOMMERCE');
     const isMonthlyRevenue = org.revenueStatus === 'over_50b';
-    const hasManyEmployees = org.employeeCount >= 10;
-    const isNewlyEstablished = org.revenueStatus === 'newly_established';
 
     for (const rule of rules) {
       // 1. Kiểm tra xem Task cho rule này trong Organization đã tồn tại chưa
@@ -260,9 +209,6 @@ export class RuleEngineService {
       } else if (rule.code === 'RULE-TAX-MB') {
         isMatched = true;
         cycleType = 'ANNUAL';
-      } else if (rule.code === 'RULE-LABOR-REPORT-6M') {
-        isMatched = org.employeeCount >= 1;
-        cycleType = 'BIANNUAL_6M';
       } else if (rule.code === 'RULE-TAX-FCT-10D') {
         isMatched = isEcom || isFnb;
         cycleType = 'EVENT_10D';
@@ -272,18 +218,6 @@ export class RuleEngineService {
       } else if (rule.code === 'RULE-TAX-DISSOLUTION-45D') {
         isMatched = true;
         cycleType = 'EVENT_45D';
-      } else if (rule.code === 'RULE-CORP-SUSPEND-3D') {
-        isMatched = true;
-        cycleType = 'EVENT_3D';
-      } else if (rule.code === 'RULE-CORP-AMEND-10D') {
-        isMatched = true;
-        cycleType = 'EVENT_10D_BIZ';
-      } else if (rule.code === 'RULE-CORP-CAPITAL-90D') {
-        isMatched = isNewlyEstablished;
-        cycleType = 'EVENT_90D';
-      } else if (rule.code === 'RULE-CORP-CAPITAL-REDUCE-30D') {
-        isMatched = isNewlyEstablished;
-        cycleType = 'EVENT_30D_CAPITAL';
       } else if (rule.code === 'RULE-TAX-POS-FNB') {
         isMatched = isFnb;
         cycleType = 'EVENT_10D';
@@ -296,41 +230,24 @@ export class RuleEngineService {
       } else if (rule.code === 'RULE-ECOM-COD-RECONCILE') {
         isMatched = isEcom;
         cycleType = 'MONTHLY';
-      } else if (rule.code === 'RULE-LABOR-10TO50') {
-        isMatched = hasManyEmployees;
-        cycleType = 'EVENT_10D';
-      } else if (rule.code === 'RULE-LABOR-UNDER10') {
-        isMatched = !hasManyEmployees;
-        cycleType = 'ANNUAL';
       } else if (rule.code === 'RULE-HD-01') {
         isMatched = isFnb || isEcom;
         cycleType = 'EVENT_10D';
-      } else if (rule.code === 'RULE-LD-02') {
-        isMatched = org.employeeCount >= 1;
-        cycleType = 'MONTHLY';
       } else if (rule.code === 'RULE-DT-03') {
         isMatched = isFnb || isEcom;
         cycleType = 'QUARTERLY';
       } else {
-        isMatched = true;
+        isMatched = false;
         cycleType = 'QUARTERLY';
       }
 
       if (isMatched) {
-        // 3. Tìm department tương ứng
+        // 3. Tìm department tương ứng (Mặc định phòng Kế toán thuế ACC)
         let targetDept = org.departments.find((d) => d.code === 'ACC');
         let assigneeRole: UserRole = UserRole.internal_accountant;
         let waitingOnRole: WaitingOnRole = WaitingOnRole.owner;
 
-        if (rule.code.includes('LABOR') || rule.code === 'RULE-LD-02') {
-          targetDept = org.departments.find((d) => d.code === 'HR') || targetDept;
-          assigneeRole = UserRole.hr_staff;
-          waitingOnRole = WaitingOnRole.owner;
-        } else if (rule.code.startsWith('RULE-CORP')) {
-          targetDept = org.departments.find((d) => d.code === 'OPS') || targetDept;
-          assigneeRole = UserRole.owner;
-          waitingOnRole = WaitingOnRole.service_accountant;
-        } else if (rule.code.includes('POS') || rule.code === 'RULE-FNB-04') {
+        if (rule.code.includes('POS') || rule.code === 'RULE-FNB-04') {
           targetDept = org.departments.find((d) => d.code === 'OPS') || targetDept;
           assigneeRole = UserRole.owner;
           waitingOnRole = WaitingOnRole.internal_accountant;

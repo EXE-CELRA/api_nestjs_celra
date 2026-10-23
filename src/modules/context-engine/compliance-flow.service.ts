@@ -172,7 +172,7 @@ export class ComplianceFlowService {
         rulesVersion,
         scope,
         status: AuditStatus.succeeded,
-        summary: `Rà soát ${evaluationResults.length} nghĩa vụ pháp lý trọng yếu`,
+        summary: `Rà soát ${evaluationResults.length} nghĩa vụ thuế doanh nghiệp trọng yếu`,
         totalFindings: evaluationResults.length,
         applicableCount: evaluationResults.filter((f) => f.applicableStatus === ApplicableStatus.applicable).length,
         verifiedAt: verifiedNow,
@@ -375,14 +375,13 @@ export class ComplianceFlowService {
   }
 
   /**
-   * Đánh giá 11 Đợt Luật Định và các quy định ngành đặc thù từ Hồ sơ Doanh nghiệp & ContextFacts
+   * Đánh giá các nghĩa vụ Thuế Doanh Nghiệp trọng yếu từ Hồ sơ Doanh nghiệp & ContextFacts
+   * Hệ thống tuân thủ định hướng chỉ xử lý rà soát chuyên sâu lĩnh vực Thuế Doanh Nghiệp.
    */
   private evaluateStatutoryObligations(org: any, facts: any[], verifiedNow: Date) {
     const isFnb = (org.industry || '').includes('F&B') || (org.industry || '').includes('ăn uống');
     const isEcom = org.hasOnlineSales || (org.industry || '').includes('ECOMMERCE') || (org.industry || '').includes('bán lẻ');
     const isMonthlyRevenue = org.revenueStatus === 'over_50b';
-    const hasEmployees = org.employeeCount >= 10;
-    const isNewlyEstablished = org.revenueStatus === 'newly_established';
 
     const findings: any[] = [];
 
@@ -454,28 +453,7 @@ export class ComplianceFlowService {
       suggestedPriority: Priority.high,
     });
 
-    // 4. RULE-LABOR-REPORT-6M: Báo cáo tình hình lao động định kỳ 6 tháng
-    findings.push({
-      factId: null,
-      ruleCode: 'RULE-LABOR-REPORT-6M',
-      obligationTitle: 'Báo cáo tình hình thay đổi lao động định kỳ 6 tháng (05/06 & 05/12)',
-      category: 'Kỳ 6 Tháng (Bán niên)',
-      applicableStatus: org.employeeCount >= 1 ? ApplicableStatus.applicable : ApplicableStatus.not_applicable,
-      actionRequired: 'Lập báo cáo tình hình thay đổi lao động gửi Sở LĐ-TB&XH qua Cổng Dịch vụ công Quốc gia.',
-      evidenceRequired: 'Giấy xác nhận nộp báo cáo lao động trực tuyến thành công.',
-      legalBasis: `Khoản 2 Điều 4 Nghị định 145/2020/NĐ-CP`,
-      legalDocNumber: '145/2020/NĐ-CP',
-      legalArticle: 'Khoản 2 Điều 4',
-      legalDocUrl: CORE_LEGAL_DOC_LINKS['145/2020'],
-      legalValidity: LegalValidity.in_force,
-      resultSource: ResultSource.rule_based,
-      cycleType: 'BIANNUAL_6M' as StatutoryCycleType,
-      calculationMethod: 'Trước ngày 05/06 đối với 6 tháng đầu năm và trước ngày 05/12 đối với cả năm.',
-      missingDataNotice: null,
-      suggestedPriority: Priority.high,
-    });
-
-    // 5. RULE-TAX-FCT-10D: Thuế nhà thầu Ads quốc tế (10 ngày)
+    // 4. RULE-TAX-FCT-10D: Thuế nhà thầu Ads quốc tế (10 ngày)
     findings.push({
       factId: null,
       ruleCode: 'RULE-TAX-FCT-10D',
@@ -496,70 +474,7 @@ export class ComplianceFlowService {
       suggestedPriority: Priority.high,
     });
 
-    // 6. RULE-CORP-SUSPEND-3D: Thông báo tạm ngừng kinh doanh trước 03 ngày làm việc
-    findings.push({
-      factId: null,
-      ruleCode: 'RULE-CORP-SUSPEND-3D',
-      obligationTitle: 'Thông báo tạm ngừng / tiếp tục kinh doanh trước 03 ngày làm việc',
-      category: 'Đợt 03 Ngày Làm Việc',
-      applicableStatus: ApplicableStatus.verification_required,
-      actionRequired: 'Gửi thông báo bằng văn bản đến Phòng ĐKKD - Sở KH&ĐT chậm nhất 03 ngày làm việc trước ngày tạm ngừng hoặc tiếp tục hoạt động.',
-      evidenceRequired: 'Giấy biên nhận hồ sơ của Phòng ĐKKD & Thông báo chấp thuận.',
-      legalBasis: `Khoản 1 Điều 66 Nghị định 01/2021/NĐ-CP & Điều 19 Nghị định 123/2020/NĐ-CP`,
-      legalDocNumber: '01/2021/NĐ-CP',
-      legalArticle: 'Khoản 1 Điều 66',
-      legalDocUrl: CORE_LEGAL_DOC_LINKS['59/2020'],
-      legalValidity: LegalValidity.in_force,
-      resultSource: ResultSource.rule_based,
-      cycleType: 'EVENT_3D' as StatutoryCycleType,
-      calculationMethod: 'Chậm nhất 03 ngày làm việc TRƯỚC ngày dự kiến tạm ngừng kinh doanh.',
-      missingDataNotice: 'Chỉ kích hoạt khi doanh nghiệp có kế hoạch tạm ngừng hoạt động.',
-      suggestedPriority: Priority.medium,
-    });
-
-    // 7. RULE-CORP-AMEND-10D: Đăng ký đổi ĐKKD trong 10 ngày làm việc
-    findings.push({
-      factId: null,
-      ruleCode: 'RULE-CORP-AMEND-10D',
-      obligationTitle: 'Đăng ký thay đổi nội dung Giấy chứng nhận ĐKDN trong thời hạn 10 ngày làm việc',
-      category: 'Đợt 10 Ngày Làm Việc',
-      applicableStatus: ApplicableStatus.applicable,
-      actionRequired: 'Thực hiện thủ tục đăng ký thay đổi địa chỉ, người đại diện, vốn, ngành nghề với Sở KH&ĐT trong 10 ngày làm việc.',
-      evidenceRequired: 'Giấy chứng nhận đăng ký doanh nghiệp mới được cấp.',
-      legalBasis: `Điều 30 Luật Doanh nghiệp 2020 & Khoản 2 Điều 36 Luật QLT 38/2019`,
-      legalDocNumber: '59/2020/QH14',
-      legalArticle: 'Điều 30',
-      legalDocUrl: CORE_LEGAL_DOC_LINKS['59/2020'],
-      legalValidity: LegalValidity.in_force,
-      resultSource: ResultSource.rule_based,
-      cycleType: 'EVENT_10D_BIZ' as StatutoryCycleType,
-      calculationMethod: '10 ngày làm việc kể từ ngày phát sinh thay đổi nội dung ĐKDN.',
-      missingDataNotice: 'Chờ bổ sung ngày ra biên bản họp / quyết định thay đổi ĐKDN.',
-      suggestedPriority: Priority.high,
-    });
-
-    // 8. RULE-CORP-CAPITAL-90D: Góp đủ vốn điều lệ trong 90 ngày
-    findings.push({
-      factId: null,
-      ruleCode: 'RULE-CORP-CAPITAL-90D',
-      obligationTitle: 'Góp đủ 100% vốn điều lệ đã đăng ký cam kết trong vòng 90 ngày thành lập',
-      category: 'Đợt 90 Ngày (Góp Vốn)',
-      applicableStatus: isNewlyEstablished ? ApplicableStatus.applicable : ApplicableStatus.not_applicable,
-      actionRequired: 'Chủ sở hữu hoặc thành viên chuyển tiền vào tài khoản vốn công ty đủ 100% số vốn đã đăng ký.',
-      evidenceRequired: 'Giấy báo Có / Sao kê tài khoản ngân hàng của doanh nghiệp thể hiện nội dung nộp vốn điều lệ.',
-      legalBasis: `Khoản 2 Điều 47 & Khoản 2 Điều 75 Luật Doanh nghiệp 2020`,
-      legalDocNumber: '59/2020/QH14',
-      legalArticle: 'Điều 47, Điều 75',
-      legalDocUrl: CORE_LEGAL_DOC_LINKS['59/2020'],
-      legalValidity: LegalValidity.in_force,
-      resultSource: ResultSource.rule_based,
-      cycleType: 'EVENT_90D' as StatutoryCycleType,
-      calculationMethod: 'Trong vòng 90 ngày kể từ ngày cấp GCN ĐKDN lần đầu.',
-      missingDataNotice: isNewlyEstablished ? 'Cần bổ sung ngày cấp GCN ĐKDN lần đầu để tính hạn chính xác.' : null,
-      suggestedPriority: Priority.urgent,
-    });
-
-    // 9. RULE-TAX-POS-FNB: Hóa đơn điện tử máy tính tiền F&B
+    // 5. RULE-TAX-POS-FNB: Hóa đơn điện tử máy tính tiền F&B
     if (isFnb) {
       findings.push({
         factId: null,
@@ -578,29 +493,6 @@ export class ComplianceFlowService {
         cycleType: 'EVENT_10D' as StatutoryCycleType,
         calculationMethod: 'Áp dụng liên tục tại thời điểm phát sinh cung cấp dịch vụ ăn uống.',
         missingDataNotice: null,
-        suggestedPriority: Priority.urgent,
-      });
-    }
-
-    // 10. RULE-LABOR-10TO50: Đăng ký Nội quy lao động khi từ 10 nhân sự
-    if (hasEmployees) {
-      findings.push({
-        factId: null,
-        ruleCode: 'RULE-LABOR-10TO50',
-        obligationTitle: 'Đăng ký Nội quy lao động trong vòng 10 ngày (Áp dụng từ 10 nhân sự)',
-        category: 'Đợt Phát Sinh 10 Ngày',
-        applicableStatus: ApplicableStatus.applicable,
-        actionRequired: 'Nộp hồ sơ đăng ký Nội quy lao động tại Phòng Lao động - Thương binh và Xã hội trong 10 ngày kể từ ngày ban hành.',
-        evidenceRequired: 'Biên nhận hồ sơ và Thông báo chấp thuận đăng ký Nội quy lao động.',
-        legalBasis: `Điều 118 & Điều 119 Bộ luật Lao động 2019`,
-        legalDocNumber: '45/2019/QH14',
-        legalArticle: 'Điều 118, Điều 119',
-        legalDocUrl: CORE_LEGAL_DOC_LINKS['45/2019'],
-        legalValidity: LegalValidity.in_force,
-        resultSource: ResultSource.rule_based,
-        cycleType: 'EVENT_10D' as StatutoryCycleType,
-        calculationMethod: 'Trong vòng 10 ngày kể từ ngày người sử dụng lao động ban hành nội quy lao động.',
-        missingDataNotice: 'Chờ bổ sung ngày ban hành nội quy lao động.',
         suggestedPriority: Priority.urgent,
       });
     }
