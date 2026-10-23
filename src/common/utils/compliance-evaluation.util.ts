@@ -1,16 +1,3 @@
-/**
- * CELRA Vietnamese Tax & Legal Compliance Evaluation Engine
- * 
- * Căn cứ pháp lý:
- * - Luật Quản lý thuế số 38/2019/QH14 (Điều 44, Điều 59)
- * - Nghị định 126/2020/NĐ-CP (Điều 8, Điều 9, Điều 18)
- * - Nghị định 91/2022/NĐ-CP (Khoản 3 Điều 1 - Tạm nộp 4 quý tối thiểu 80% TNDN cả năm)
- * - Nghị định 123/2020/NĐ-CP (Điều 11 - Hóa đơn điện tử máy tính tiền) & Thông tư 78/2021/TT-BTC
- * - Thông tư 96/2015/TT-BTC (Điều 4), Thông tư 219/2013/TT-BTC (Điều 15) & Luật Thuế GTGT số 48/2024/QH15 (Điều 14)
- * - Thông tư 111/2013/TT-BTC (Điều 9, Điều 25 - Thuế TNCN & Giảm trừ gia cảnh)
- * - Nghị định 139/2016/NĐ-CP & Nghị định 22/2020/NĐ-CP (Lệ phí môn bài)
- */
-
 export type ApplicabilityStatus = 'APPLICABLE' | 'POSSIBLE' | 'NEEDS_VERIFICATION' | 'NOT_APPLICABLE';
 export type ExecutionStatus = 'COMPLETED' | 'IN_PROGRESS' | 'OVERDUE' | 'NEEDS_VERIFICATION';
 export type UnifiedComplianceStatus = 'COMPLETED' | 'IN_PROGRESS' | 'OVERDUE' | 'NEEDS_VERIFICATION' | 'NOT_APPLICABLE';

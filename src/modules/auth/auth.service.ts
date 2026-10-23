@@ -12,15 +12,24 @@ import {
   LoginDto,
   ChangePasswordDto,
   UpdateProfileDto,
+  SendOtpDto,
+  ForgotPasswordSendOtpDto,
+  VerifyOtpDto,
+  ResetPasswordDto,
 } from './dto/auth.dto';
 import { UserRole } from '@prisma/client';
+import { EmailService } from './email.service';
 
 @Injectable()
 export class AuthService {
+  private otpStore = new Map<string, { code: string; expiresAt: Date }>();
+  private resetPasswordOtpStore = new Map<string, { code: string; expiresAt: Date; verified?: boolean }>();
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-  ) {}
+    private readonly emailService: EmailService,
+
+  ) { }
 
   private enrichUserWithVietnamese(user: any) {
     if (!user) return user;
@@ -34,8 +43,41 @@ export class AuthService {
       taoLuc: user.createdAt,
     };
   }
-
+  async sendRegisterOtp(dto: SendOtpDto) {
+    const email = dto.email.toLowerCase();
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+    });
+    if (existingUser) {
+      throw new BadRequestException('Email này đã được sử dụng trong hệ thống');
+    }
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    this.otpStore.set(email, { code: otpCode, expiresAt });
+    const sent = await this.emailService.sendOtpEmail(email, dto.name || 'Quý khách', otpCode);
+    if (!sent) {
+      throw new BadRequestException('Không thể gửi mã OTP, vui lòng thử lại sau');
+    }
+    return {
+      success: true,
+      message: 'Mã xác thực OTP đã được gửi về email của bạn',
+    };
+  }
   async register(dto: RegisterDto) {
+    const email = dto.email.toLowerCase();
+    const storedOtp = this.otpStore.get(email);
+    if (!storedOtp) {
+      throw new BadRequestException('Vui lòng lấy mã OTP xác thực trước khi đăng ký');
+    }
+    if (new Date() > storedOtp.expiresAt) {
+      this.otpStore.delete(email);
+      throw new BadRequestException('Mã OTP đã hết hạn, vui lòng lấy mã mới');
+    }
+    if (storedOtp.code !== dto.otp) {
+      throw new BadRequestException('Mã xác thực OTP không chính xác');
+    }
+    this.otpStore.delete(email);
+
     const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
     });
@@ -285,5 +327,90 @@ export class AuthService {
     };
 
     return this.jwtService.signAsync(payload);
+  }
+
+  async sendForgotPasswordOtp(dto: ForgotPasswordSendOtpDto) {
+    const email = dto.email.toLowerCase();
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+    if (!user) {
+      throw new BadRequestException('Email này chưa được đăng ký trong hệ thống');
+    }
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    this.resetPasswordOtpStore.set(email, { code: otpCode, expiresAt, verified: false });
+
+    const sent = await this.emailService.sendResetPasswordOtpEmail(email, user.name || 'Quý khách', otpCode);
+    if (!sent) {
+      throw new BadRequestException('Không thể gửi mã OTP khôi phục, vui lòng thử lại sau');
+    }
+
+    return {
+      success: true,
+      message: 'Mã xác thực OTP đã được gửi về email của bạn',
+    };
+  }
+
+  async verifyForgotPasswordOtp(dto: VerifyOtpDto) {
+    const email = dto.email.toLowerCase();
+    const storedOtp = this.resetPasswordOtpStore.get(email);
+    if (!storedOtp) {
+      throw new BadRequestException('Vui lòng gửi yêu cầu lấy mã OTP trước');
+    }
+    if (new Date() > storedOtp.expiresAt) {
+      this.resetPasswordOtpStore.delete(email);
+      throw new BadRequestException('Mã OTP đã hết hạn, vui lòng gửi lại mã mới');
+    }
+    if (storedOtp.code !== dto.otp) {
+      throw new BadRequestException('Mã xác thực OTP không chính xác');
+    }
+    storedOtp.verified = true;
+    return {
+      success: true,
+      message: 'Xác thực mã OTP thành công',
+    };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const email = dto.email.toLowerCase();
+    const storedOtp = this.resetPasswordOtpStore.get(email);
+    if (!storedOtp) {
+      throw new BadRequestException('Vui lòng xác thực mã OTP trước khi đặt lại mật khẩu');
+    }
+    if (new Date() > storedOtp.expiresAt) {
+      this.resetPasswordOtpStore.delete(email);
+      throw new BadRequestException('Mã OTP đã hết hạn, vui lòng gửi lại mã mới');
+    }
+    if (storedOtp.code !== dto.otp) {
+      throw new BadRequestException('Mã xác thực OTP không chính xác');
+    }
+
+    const rawPassword = dto.matKhauMoi || dto.newPassword;
+    if (!rawPassword) {
+      throw new BadRequestException('Mật khẩu mới không được để trống');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+    if (!user) {
+      throw new BadRequestException('Tài khoản không tồn tại trong hệ thống');
+    }
+
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(rawPassword, saltRounds);
+
+    await this.prisma.user.update({
+      where: { email },
+      data: { passwordHash },
+    });
+
+    this.resetPasswordOtpStore.delete(email);
+
+    return {
+      success: true,
+      message: 'Đặt lại mật khẩu thành công! Vui lòng đăng nhập với mật khẩu mới',
+    };
   }
 }
