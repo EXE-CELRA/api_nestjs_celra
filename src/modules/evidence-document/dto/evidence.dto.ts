@@ -25,15 +25,46 @@ export class VerifyEvidenceDto {
 }
 
 export class UploadEvidenceDto {
-  @ApiPropertyOptional({ example: 'Hợp đồng lao động mẫu' })
+  @ApiPropertyOptional({ example: 'Bảng kê Doanh thu & Chi phí Quý 1/2026' })
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @ApiPropertyOptional({ example: 'Bảng kê Doanh thu & Chi phí Quý 1/2026' })
+  @IsOptional()
+  @IsString()
+  tenTaiLieu?: string;
+
+  @ApiPropertyOptional({ example: 'Thuế Doanh Nghiệp' })
   @IsOptional()
   @IsString()
   category?: string;
 
-  @ApiPropertyOptional({ example: 'Hợp đồng lao động mẫu', description: 'Danh mục chứng từ tiếng Việt (camelCase)' })
+  @ApiPropertyOptional({ example: 'Thuế Doanh Nghiệp', description: 'Danh mục chứng từ tiếng Việt (camelCase)' })
   @IsOptional()
   @IsString()
   danhMuc?: string;
+
+  @ApiPropertyOptional({ example: 'Bảng kê thu - chi' })
+  @IsOptional()
+  @IsString()
+  tag?: string;
+
+  @ApiPropertyOptional({ example: '1' })
+  @IsOptional()
+  quarter?: string | number;
+
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  quy?: string | number;
+
+  @ApiPropertyOptional({ example: 2026 })
+  @IsOptional()
+  year?: string | number;
+
+  @ApiPropertyOptional({ example: 2026 })
+  @IsOptional()
+  nam?: string | number;
 
   @ApiPropertyOptional({ description: 'ID Tác vụ liên kết' })
   @IsOptional()
@@ -44,4 +75,8 @@ export class UploadEvidenceDto {
   @IsOptional()
   @IsString()
   maNhiemVu?: string;
+
+  @ApiPropertyOptional({ description: 'Dữ liệu JSON metadata đính kèm' })
+  @IsOptional()
+  metadata?: string;
 }

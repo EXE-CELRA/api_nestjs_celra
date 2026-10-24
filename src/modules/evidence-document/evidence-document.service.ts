@@ -13,6 +13,11 @@ export class EvidenceDocumentService {
     file: Express.Multer.File,
     category?: string,
     taskId?: string,
+    tag?: string,
+    quarter?: string | number,
+    year?: string | number,
+    metadata?: any,
+    title?: string,
   ) {
     if (!file) {
       throw new BadRequestException('Vui lòng chọn file cần tải lên');
@@ -22,14 +27,37 @@ export class EvidenceDocumentService {
     const uploadedBy = user ? user.name : 'Người dùng';
     const uploadedRole = user ? user.role : UserRole.owner;
 
+    let targetOrgId = orgId;
+    if (!targetOrgId && userId) {
+      const userOrg = await this.prisma.membership.findFirst({ where: { userId } });
+      if (userOrg) targetOrgId = userOrg.organizationId;
+    }
+
     const fileSizeFormatted = `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
+
+    // Chuẩn bị dữ liệu phân loại Tag, Quý, Năm lưu vào JSON OCR Metadata
+    const ocrData: any = {};
+    if (tag) ocrData.tag = tag;
+    if (quarter) ocrData.quarter = quarter === 'ALL' ? 'ALL' : Number(quarter);
+    if (year) ocrData.year = Number(year);
+    if (quarter && year) {
+      ocrData.period = quarter === 'ALL' ? `Cả năm ${year}` : `Quý ${quarter}/${year}`;
+    }
+    if (metadata) {
+      try {
+        const parsed = typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
+        Object.assign(ocrData, parsed);
+      } catch {}
+    }
+
+    const docName = title || file.originalname;
 
     const doc = await this.prisma.evidenceDocument.create({
       data: {
-        organizationId: orgId,
+        organizationId: targetOrgId,
         linkedTaskId: taskId,
-        name: file.originalname,
-        category: category || 'Chứng từ tuân thủ',
+        name: docName,
+        category: category || tag || 'Chứng từ tuân thủ',
         fileType: file.mimetype,
         fileSize: fileSizeFormatted,
         filePath: file.path,
@@ -37,6 +65,7 @@ export class EvidenceDocumentService {
         uploadedBy,
         uploadedRole,
         status: EvidenceStatus.unverified,
+        ocrExtractedData: ocrData,
       },
     });
 
@@ -51,7 +80,7 @@ export class EvidenceDocumentService {
           timeline: {
             create: {
               title: 'Tải lên bằng chứng mới',
-              description: `Đã đính kèm tệp ${file.originalname} (${fileSizeFormatted}). Chờ kế toán dịch vụ đối chiếu`,
+              description: `Đã đính kèm tệp ${docName} (${fileSizeFormatted}). Chờ kế toán dịch vụ đối chiếu`,
               actorId: userId,
               actorName: uploadedBy,
               actorRole: uploadedRole,
@@ -62,12 +91,35 @@ export class EvidenceDocumentService {
       });
     }
 
-    return doc;
+    return {
+      ...doc,
+      title: doc.name,
+      fileName: file.originalname,
+      tag: ocrData.tag || doc.category,
+      quarter: ocrData.quarter,
+      year: ocrData.year,
+      period: ocrData.period,
+    };
   }
 
-  async findAll(orgId: string) {
-    return this.prisma.evidenceDocument.findMany({
-      where: { organizationId: orgId },
+  async findAll(orgId?: string, userId?: string) {
+    let targetOrgId = orgId;
+    if (!targetOrgId && userId) {
+      const userOrg = await this.prisma.membership.findFirst({
+        where: { userId },
+      });
+      if (userOrg) {
+        targetOrgId = userOrg.organizationId;
+      }
+    }
+
+    const whereClause: any = {};
+    if (targetOrgId) {
+      whereClause.organizationId = targetOrgId;
+    }
+
+    const docs = await this.prisma.evidenceDocument.findMany({
+      where: whereClause,
       include: {
         task: {
           select: {
@@ -79,6 +131,27 @@ export class EvidenceDocumentService {
         },
       },
       orderBy: { uploadedAt: 'desc' },
+    });
+
+    return docs.map((doc) => {
+      const ocr = (doc.ocrExtractedData as any) || {};
+      const quarterVal = ocr.quarter;
+      const yearVal = ocr.year;
+      const periodVal = ocr.period || (quarterVal && yearVal ? (quarterVal === 'ALL' ? `Cả năm ${yearVal}` : `Quý ${quarterVal}/${yearVal}`) : undefined);
+
+      return {
+        ...doc,
+        title: doc.name,
+        fileName: doc.name,
+        documentType: ocr.documentType || doc.category,
+        category: doc.category,
+        tag: ocr.tag || doc.category,
+        quarter: quarterVal,
+        year: yearVal,
+        period: periodVal,
+        verificationStatus: doc.status === 'accepted' ? 'VERIFIED' : (doc.status === 'rejected' ? 'REJECTED' : 'PENDING'),
+        createdAt: doc.uploadedAt,
+      };
     });
   }
 
