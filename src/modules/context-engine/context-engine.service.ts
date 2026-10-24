@@ -101,8 +101,20 @@ export class ContextEngineService {
       return [];
     }
 
+    await this.prisma.contextFact.deleteMany({
+      where: {
+        organizationId: targetOrgId,
+        key: { in: ['tax_filing_cycle', 'annual_revenue', 'employee_count'] },
+      },
+    }).catch(() => {});
+
     const facts = await this.prisma.contextFact.findMany({
-      where: { organizationId: targetOrgId },
+      where: {
+        organizationId: targetOrgId,
+        key: {
+          notIn: ['tax_filing_cycle', 'annual_revenue', 'employee_count'],
+        },
+      },
       include: {
         history: {
           orderBy: { changedAt: 'desc' },

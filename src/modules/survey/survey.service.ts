@@ -142,18 +142,25 @@ export class SurveyService {
         });
       }
 
+      await this.prisma.contextFact.deleteMany({
+        where: {
+          organizationId: targetOrgId,
+          key: { in: ['tax_filing_cycle', 'annual_revenue', 'employee_count'] },
+        },
+      }).catch(() => {});
+
       const baseFacts = [
         {
           key: 'tax_code',
-          label: 'Mã số thuế & Định danh',
+          label: 'Mã số thuế & Định danh pháp lý',
           group: 'phap_ly_von',
-          currentValue: p.taxCode || '',
+          currentValue: p.taxCode ? `${p.taxCode} - ${p.companyName || 'Công ty'}` : '',
           source: 'Khảo sát nền tảng Bước 1',
           affectedRules: ['RULE_TAX_REGISTRATION'],
         },
         {
           key: 'company_type_tag',
-          label: 'Loại hình doanh nghiệp',
+          label: 'Hình thức kinh doanh & Loại hình doanh nghiệp',
           group: 'phap_ly_von',
           currentValue: p.companyTypeTag === 'TAG_HKD'
             ? 'Hộ kinh doanh cá thể'
@@ -166,52 +173,24 @@ export class SurveyService {
           affectedRules: ['RULE_CORPORATE_STRUCTURE'],
         },
         {
-          key: 'employee_scale',
-          label: 'Quy mô nhân sự',
-          group: 'phap_ly_von',
-          currentValue: p.employeeScale === 'under_10' 
-            ? 'Dưới 10 nhân viên' 
-            : p.employeeScale === '10_to_50' 
-            ? 'Từ 10 đến 50 nhân viên (Cần đăng ký Nội quy lao động)' 
-            : 'Trên 50 nhân viên (Cần NQLĐ & Ban ATVSLĐ)',
-          source: 'Khảo sát nền tảng Bước 1',
-          affectedRules: p.requiresLaborRuleBook ? ['RULE_LABOR_MANDATORY_REGISTRATION'] : ['RULE_LABOR_GENERAL'],
-        },
-        {
-          key: 'employee_count',
-          label: 'Số lượng nhân sự thực tế',
-          group: 'lao_dong_bhxh',
-          currentValue: String(p.employeeCount || (p.employeeScale === 'under_10' ? 8 : p.employeeScale === '10_to_50' ? 25 : 60)),
-          source: 'Khảo sát nền tảng Bước 1',
-          affectedRules: ['RULE_LABOR_GENERAL'],
-        },
-        {
-          key: 'annual_revenue',
-          label: 'Doanh thu năm trước liền kề',
-          group: 'thue_ke_toan',
-          currentValue: p.isNewlyEstablished ? '0 (Mới thành lập)' : String(p.annualRevenue || 0),
-          source: 'Khảo sát nền tảng Bước 1',
-          affectedRules: ['RULE-TAX-GTGT', 'RULE-TAX-TNDN-80'],
-        },
-        {
           key: 'charter_capital',
-          label: 'Vốn điều lệ đăng ký',
+          label: 'Vốn điều lệ đăng ký trên ĐKKD',
           group: 'phap_ly_von',
-          currentValue: String(p.charterCapital || 0),
+          currentValue: `${Number(p.charterCapital || 0).toLocaleString('vi-VN')} VNĐ (${Number(p.charterCapital || 0) > 10000000000 ? 'Bậc 1: Lệ phí môn bài 3.000.000đ/năm' : 'Bậc 2: Lệ phí môn bài 2.000.000đ/năm'})`,
           source: 'Khảo sát nền tảng Bước 1',
           affectedRules: ['RULE-TAX-MONBAI'],
         },
         {
-          key: 'tax_filing_cycle',
-          label: 'Kỳ kê khai thuế GTGT & TNCN',
-          group: 'thue_ke_toan',
-          currentValue: isQuarterly ? 'THEO_QUY' : 'THEO_THANG',
-          source: 'Khảo sát nền tảng Bước 1 (Tự động xác định theo NĐ 126/2020)',
-          affectedRules: ['RULE-TAX-GTGT'],
+          key: 'employee_scale',
+          label: 'Quy mô lao động & Nghĩa vụ Nội quy lao động (NQLĐ)',
+          group: 'phap_ly_von',
+          currentValue: `${p.employeeCount || (p.employeeScale === 'under_10' ? 8 : p.employeeScale === '10_to_50' ? 25 : 60)} nhân sự thực tế (Quy mô: ${p.employeeScale === 'under_10' ? 'Dưới 10 người - Miễn thủ tục NQLĐ bằng văn bản theo Điều 218 BLLĐ 2019' : 'Từ 10 người trở lên - Bắt buộc ban hành và đăng ký NQLĐ bằng văn bản theo Điều 119 BLLĐ 2019'})`,
+          source: 'Khảo sát nền tảng Bước 1',
+          affectedRules: p.requiresLaborRuleBook ? ['RULE_LABOR_MANDATORY_REGISTRATION'] : ['RULE_LABOR_GENERAL'],
         },
         {
           key: 'industry_tags',
-          label: 'Ngành nghề & Hoạt động thực tế',
+          label: 'Ngành nghề & Hoạt động kinh doanh thực tế',
           group: 'nganh_nghe_van_hanh',
           currentValue: Array.isArray(p.industryTags) ? p.industryTags.join(', ') : '',
           source: 'Khảo sát nền tảng Bước 1',
