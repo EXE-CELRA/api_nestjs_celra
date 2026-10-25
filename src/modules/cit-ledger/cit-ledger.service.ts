@@ -56,12 +56,12 @@ export class CitLedgerService {
       };
     }
 
-    // 2. Hóa đơn từ 20 triệu trở lên thanh toán tiền mặt
-    if (amount >= 20000000 && isCash) {
+    // 2. Hóa đơn từ 5 triệu trở lên thanh toán tiền mặt (Áp dụng ngưỡng theo Luật Thuế GTGT 48/2024/QH15 & TT 96/2015/TT-BTC)
+    if (amount >= 5000000 && isCash) {
       return {
         isDisallowedB4: true,
-        disallowedReason: 'Hóa đơn ≥ 20 triệu thanh toán tiền mặt (thiếu chứng từ ngân hàng).',
-        legalBasis: 'Điều 4 Thông tư 96/2015/TT-BTC & Điều 15 TT 219/2013/TT-BTC',
+        disallowedReason: 'Hóa đơn ≥ 5 triệu thanh toán tiền mặt (thiếu chứng từ ngân hàng).',
+        legalBasis: 'Luật Thuế GTGT 48/2024/QH15 & Điều 4 Thông tư 96/2015/TT-BTC',
       };
     }
 
@@ -671,13 +671,14 @@ export class CitLedgerService {
               checklistId: checklist.id,
               checklistItemId: item.id,
               dueDate: cfg.dueDate,
-              status: task.status || TaskStatus.need_info,
+              status: TaskStatus.need_info,
+              createdAt: new Date(),
               description,
               calculationBasisJson: calculationBasis,
               timeline: {
                 create: {
-                  title: `Cập nhật số liệu từ Excel Quý ${quarter}/${year}`,
-                  description: `Số thuế tạm nộp mới: ${formattedAmount} VNĐ`,
+                  title: `Khởi tạo lại Checklist Quý ${quarter}/${year}`,
+                  description: `Đã cập nhật số liệu và đưa lên đầu danh sách: ${formattedAmount} VNĐ`,
                   actorName: 'Hệ thống CELRA Tax Engine',
                   actorRole: UserRole.owner,
                   type: TimelineEventType.status_change,

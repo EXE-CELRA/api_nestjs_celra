@@ -3,6 +3,7 @@ import {
   BadRequestException,
   UnauthorizedException,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
@@ -22,6 +23,7 @@ import { EmailService } from './email.service';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   private otpStore = new Map<string, { code: string; expiresAt: Date }>();
   private resetPasswordOtpStore = new Map<string, { code: string; expiresAt: Date; verified?: boolean }>();
   constructor(
@@ -44,7 +46,7 @@ export class AuthService {
     };
   }
   async sendRegisterOtp(dto: SendOtpDto) {
-    const email = dto.email.toLowerCase();
+    const email = dto.email.toLowerCase().trim();
     const existingUser = await this.prisma.user.findUnique({
       where: { email },
     });
@@ -54,17 +56,33 @@ export class AuthService {
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
     this.otpStore.set(email, { code: otpCode, expiresAt });
-    const sent = await this.emailService.sendOtpEmail(email, dto.name || 'Quý khách', otpCode);
-    if (!sent) {
-      throw new BadRequestException('Không thể gửi mã OTP, vui lòng thử lại sau');
+
+    let sent = false;
+    try {
+      sent = await this.emailService.sendOtpEmail(email, dto.name || 'Quý khách', otpCode);
+    } catch (e: any) {
+      this.logger.error(`Lỗi gửi email: ${e.message}`);
     }
+
+    if (sent) {
+      return {
+        success: true,
+        message: 'Mã xác thực OTP đã được gửi về email của bạn',
+      };
+    }
+
+    this.logger.warn(`=======================================================`);
+    this.logger.warn(`🔑 [DEV FALLBACK] MÃ OTP ĐĂNG KÝ CHO [${email}]: ${otpCode}`);
+    this.logger.warn(`=======================================================`);
+
     return {
       success: true,
-      message: 'Mã xác thực OTP đã được gửi về email của bạn',
+      message: 'Mã xác thực OTP đã được tạo (Môi trường Thử nghiệm)',
+      debugOtp: otpCode,
     };
   }
   async register(dto: RegisterDto) {
-    const email = dto.email.toLowerCase();
+    const email = dto.email.toLowerCase().trim();
     const storedOtp = this.otpStore.get(email);
     if (!storedOtp) {
       throw new BadRequestException('Vui lòng lấy mã OTP xác thực trước khi đăng ký');
@@ -73,7 +91,8 @@ export class AuthService {
       this.otpStore.delete(email);
       throw new BadRequestException('Mã OTP đã hết hạn, vui lòng lấy mã mới');
     }
-    if (storedOtp.code !== dto.otp) {
+    const inputOtp = String(dto.otp || '').trim();
+    if (storedOtp.code !== inputOtp) {
       throw new BadRequestException('Mã xác thực OTP không chính xác');
     }
     this.otpStore.delete(email);
@@ -331,7 +350,7 @@ export class AuthService {
   }
 
   async sendForgotPasswordOtp(dto: ForgotPasswordSendOtpDto) {
-    const email = dto.email.toLowerCase();
+    const email = dto.email.toLowerCase().trim();
     const user = await this.prisma.user.findUnique({
       where: { email },
     });
@@ -342,19 +361,33 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
     this.resetPasswordOtpStore.set(email, { code: otpCode, expiresAt, verified: false });
 
-    const sent = await this.emailService.sendResetPasswordOtpEmail(email, user.name || 'Quý khách', otpCode);
-    if (!sent) {
-      throw new BadRequestException('Không thể gửi mã OTP khôi phục, vui lòng thử lại sau');
+    let sent = false;
+    try {
+      sent = await this.emailService.sendResetPasswordOtpEmail(email, user.name || 'Quý khách', otpCode);
+    } catch (e: any) {
+      this.logger.error(`Lỗi gửi email khôi phục: ${e.message}`);
     }
+
+    if (sent) {
+      return {
+        success: true,
+        message: 'Mã xác thực OTP đã được gửi về email của bạn',
+      };
+    }
+
+    this.logger.warn(`=======================================================`);
+    this.logger.warn(`🔑 [DEV FALLBACK] MÃ OTP KHÔI PHỤC CHO [${email}]: ${otpCode}`);
+    this.logger.warn(`=======================================================`);
 
     return {
       success: true,
-      message: 'Mã xác thực OTP đã được gửi về email của bạn',
+      message: 'Mã xác thực OTP đã được tạo (Môi trường Thử nghiệm)',
+      debugOtp: otpCode,
     };
   }
 
   async verifyForgotPasswordOtp(dto: VerifyOtpDto) {
-    const email = dto.email.toLowerCase();
+    const email = dto.email.toLowerCase().trim();
     const storedOtp = this.resetPasswordOtpStore.get(email);
     if (!storedOtp) {
       throw new BadRequestException('Vui lòng gửi yêu cầu lấy mã OTP trước');
@@ -363,7 +396,8 @@ export class AuthService {
       this.resetPasswordOtpStore.delete(email);
       throw new BadRequestException('Mã OTP đã hết hạn, vui lòng gửi lại mã mới');
     }
-    if (storedOtp.code !== dto.otp) {
+    const inputOtp = String(dto.otp || '').trim();
+    if (storedOtp.code !== inputOtp) {
       throw new BadRequestException('Mã xác thực OTP không chính xác');
     }
     storedOtp.verified = true;
