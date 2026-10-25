@@ -284,6 +284,7 @@ export class ComplianceFlowService {
             assigneeId: itemDto.assigneeId,
             assigneeName: itemDto.assigneeName || actorName,
             assigneeRole: itemDto.assigneeRole || actorRole,
+
             defaultPriority: itemDto.priority || Priority.medium,
             legalBasis: itemDto.legalBasis || 'Quy chuẩn pháp luật hiện hành',
             legalDocUrl: itemDto.legalDocUrl,
@@ -298,7 +299,7 @@ export class ComplianceFlowService {
         // 3. Khởi tạo Task thực thi cho kỳ/đợt hiện tại
         // CHỐNG TRÙNG TUYỆT ĐỐI: Dùng upsert dựa trên unique constraint [organizationId, ruleCode, periodKey]
         const taskCode = `TASK-${itemDto.ruleCode.replace('RULE-', '')}-${deadlineInfo.periodKey}`;
-        const taskStatus = deadlineInfo.requiresEventDate ? TaskStatus.need_info : TaskStatus.in_progress;
+        const taskStatus = TaskStatus.need_info;
         const taskDueDate = deadlineInfo.dueDate || new Date(Date.now() + 15 * 86400000);
 
         const task = await tx.task.upsert({
@@ -310,9 +311,12 @@ export class ComplianceFlowService {
             },
           },
           update: {
-            // Nếu đã tồn tại task cho kỳ này, chỉ cập nhật người phụ trách nếu chưa completed
             assigneeName: itemDto.assigneeName || actorName,
             assigneeRole: itemDto.assigneeRole || actorRole,
+            status: TaskStatus.need_info,
+            createdAt: new Date(),
+            checklistId: checklist.id,
+            checklistItemId: checklistItem.id,
           },
           create: {
             organizationId: org.id,
@@ -328,6 +332,7 @@ export class ComplianceFlowService {
             assigneeId: itemDto.assigneeId,
             assigneeName: itemDto.assigneeName || actorName,
             assigneeRole: itemDto.assigneeRole || actorRole,
+
             waitingOnRole: WaitingOnRole.none,
             dueDate: taskDueDate,
             status: taskStatus,

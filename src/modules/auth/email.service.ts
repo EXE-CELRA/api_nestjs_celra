@@ -12,6 +12,14 @@ export class EmailService {
     const senderEmail = this.configService.get<string>('BREVO_SENDER_EMAIL');
     const senderName = this.configService.get<string>('BREVO_SENDER_NAME') || 'CELRA Compliance';
 
+    if (!apiKey || !senderEmail) {
+      this.logger.warn(`BREVO_API_KEY hoặc BREVO_SENDER_EMAIL chưa được cấu hình.`);
+      this.logger.warn(`=======================================================`);
+      this.logger.warn(`🔑 [DEV FALLBACK] MÃ OTP ĐĂNG KÝ CHO [${toEmail}]: >>> ${otpCode} <<<`);
+      this.logger.warn(`=======================================================`);
+      return false;
+    }
+
     const url = 'https://api.brevo.com/v3/smtp/email';
 
     const payload = {
@@ -73,6 +81,14 @@ export class EmailService {
     const apiKey = this.configService.get<string>('BREVO_API_KEY');
     const senderEmail = this.configService.get<string>('BREVO_SENDER_EMAIL');
     const senderName = this.configService.get<string>('BREVO_SENDER_NAME') || 'CELRA Compliance';
+
+    if (!apiKey || !senderEmail) {
+      this.logger.warn(`BREVO_API_KEY hoặc BREVO_SENDER_EMAIL chưa được cấu hình.`);
+      this.logger.warn(`=======================================================`);
+      this.logger.warn(`🔑 [DEV FALLBACK] MÃ OTP KHÔI PHỤC MẬT KHẨU CHO [${toEmail}]: >>> ${otpCode} <<<`);
+      this.logger.warn(`=======================================================`);
+      return false;
+    }
 
     const url = 'https://api.brevo.com/v3/smtp/email';
 
