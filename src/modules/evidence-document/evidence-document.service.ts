@@ -2,6 +2,8 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../database/prisma.service';
 import { VerifyEvidenceDto } from './dto/evidence.dto';
 import { EvidenceStatus, TaskStatus, TimelineEventType, UserRole, WaitingOnRole, ContextGroup, ContextStatus } from '@prisma/client';
+import { existsSync } from 'fs';
+import { extname, resolve, basename } from 'path';
 
 @Injectable()
 export class EvidenceDocumentService {
@@ -166,6 +168,34 @@ export class EvidenceDocumentService {
     }
 
     return doc;
+  }
+
+  async getFileForDownload(id: string) {
+    const doc = await this.prisma.evidenceDocument.findUnique({
+      where: { id },
+    });
+    if (!doc) {
+      throw new NotFoundException('Không tìm thấy tài liệu bằng chứng');
+    }
+
+    const ext = extname(doc.filePath || '');
+    let resolvedPath = doc.filePath;
+    if (!existsSync(resolvedPath)) {
+      resolvedPath = resolve(process.cwd(), doc.filePath);
+    }
+    if (!existsSync(resolvedPath)) {
+      resolvedPath = resolve(process.cwd(), 'uploads', 'evidence', basename(doc.filePath));
+    }
+    if (!existsSync(resolvedPath)) {
+      throw new NotFoundException('Tệp vật lý không tồn tại trên hệ thống lưu trữ');
+    }
+
+    const safeName = doc.name.endsWith(ext) ? doc.name : `${doc.name}${ext}`;
+    return {
+      absolutePath: resolvedPath,
+      fileName: safeName,
+      mimeType: doc.fileType || 'application/octet-stream',
+    };
   }
 
   async verify(id: string, userId: string, dto: VerifyEvidenceDto) {

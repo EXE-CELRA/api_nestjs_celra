@@ -297,6 +297,7 @@ export class AuthService {
         ...(targetName !== undefined && { name: targetName.trim() }),
         ...(targetPhone !== undefined && { phone: targetPhone.trim() }),
         ...(dto.email !== undefined && { email: dto.email.trim().toLowerCase() }),
+        ...(dto.avatar !== undefined && { avatar: dto.avatar }),
       },
       select: {
         id: true,

@@ -201,3 +201,28 @@ export class BatchImportExpensesDto {
     note?: string;
   }>;
 }
+
+export class SyncCitComplianceChecklistDto {
+  @IsNotEmpty()
+  @Type(() => Number)
+  year: number;
+
+  @IsNotEmpty()
+  quarter: number | string; // 1, 2, 3, 4 ho?c 'ALL'
+
+  @IsOptional()
+  @Type(() => Number)
+  estimatedTaxAmount?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  revenueCount?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  expenseCount?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  disallowedExpenseAmount?: number;
+}

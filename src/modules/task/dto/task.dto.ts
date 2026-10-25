@@ -51,6 +51,16 @@ export class CreateTaskDto {
   @IsEnum(Priority)
   doUuTien?: Priority;
 
+  @ApiPropertyOptional({ enum: TaskStatus, default: TaskStatus.need_info })
+  @IsOptional()
+  @IsEnum(TaskStatus)
+  status?: TaskStatus;
+
+  @ApiPropertyOptional({ enum: TaskStatus, description: 'Trạng thái tiếng Việt (camelCase)' })
+  @IsOptional()
+  @IsEnum(TaskStatus)
+  trangThai?: TaskStatus;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -321,3 +331,16 @@ export class UpdateCalendarNoteDto {
   @IsBoolean()
   daHoanThanh?: boolean;
 }
+
+export class UpdateTaskPriorityDto {
+  @ApiProperty({ example: 'high', description: 'Mức độ ưu tiên vận hành (urgent, high, medium, low)' })
+  @IsNotEmpty()
+  @IsString()
+  priority!: string;
+
+  @ApiPropertyOptional({ example: 'Ưu tiên xử lý trước hạn', description: 'Lý do thay đổi mức ưu tiên vận hành' })
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
