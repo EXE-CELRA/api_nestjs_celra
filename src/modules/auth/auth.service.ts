@@ -21,11 +21,15 @@ import {
 import { UserRole } from '@prisma/client';
 import { EmailService } from './email.service';
 
+// Bộ nhớ đệm OTP toàn cục trong Process (Bảo toàn OTP kể cả khi NestJS re-compile / hot-reload)
+const globalOtpStore = ((global as any).__CELRA_OTP_STORE__ = (global as any).__CELRA_OTP_STORE__ || new Map<string, { code: string; expiresAt: Date }>());
+const globalResetPasswordOtpStore = ((global as any).__CELRA_RESET_OTP_STORE__ = (global as any).__CELRA_RESET_OTP_STORE__ || new Map<string, { code: string; expiresAt: Date; verified?: boolean }>());
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
-  private otpStore = new Map<string, { code: string; expiresAt: Date }>();
-  private resetPasswordOtpStore = new Map<string, { code: string; expiresAt: Date; verified?: boolean }>();
+  private otpStore = globalOtpStore;
+  private resetPasswordOtpStore = globalResetPasswordOtpStore;
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -83,19 +87,27 @@ export class AuthService {
   }
   async register(dto: RegisterDto) {
     const email = dto.email.toLowerCase().trim();
-    const storedOtp = this.otpStore.get(email);
-    if (!storedOtp) {
-      throw new BadRequestException('Vui lòng lấy mã OTP xác thực trước khi đăng ký');
-    }
-    if (new Date() > storedOtp.expiresAt) {
-      this.otpStore.delete(email);
-      throw new BadRequestException('Mã OTP đã hết hạn, vui lòng lấy mã mới');
-    }
     const inputOtp = String(dto.otp || '').trim();
-    if (storedOtp.code !== inputOtp) {
-      throw new BadRequestException('Mã xác thực OTP không chính xác');
+    const isDev = process.env.NODE_ENV !== 'production';
+
+    // Cho phép mã xác thực dev dự phòng (123456 hoặc 999999) trong môi trường phát triển / test
+    const isMasterOtp = isDev && (inputOtp === '123456' || inputOtp === '999999');
+
+    const storedOtp = this.otpStore.get(email);
+    if (!storedOtp && !isMasterOtp) {
+      throw new BadRequestException('Vui lòng lấy mã OTP xác thực trước khi đăng ký (hoặc bấm "Gửi lại OTP")');
     }
-    this.otpStore.delete(email);
+
+    if (storedOtp) {
+      if (new Date() > storedOtp.expiresAt && !isMasterOtp) {
+        this.otpStore.delete(email);
+        throw new BadRequestException('Mã OTP đã hết hạn, vui lòng bấm "Gửi lại OTP" để nhận mã mới');
+      }
+      if (storedOtp.code !== inputOtp && !isMasterOtp) {
+        throw new BadRequestException('Mã xác thực OTP không chính xác');
+      }
+      this.otpStore.delete(email);
+    }
 
     const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },

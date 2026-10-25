@@ -90,6 +90,25 @@ export class CitLedgerService {
    * 1. TÍNH TOÁN KPI TỔNG HỢP TOÀN KỲ TẠI BACKEND (GRAND TOTAL)
    */
   async getSummary(orgId: string, query: QueryCitSummaryDto) {
+    if (!orgId) {
+      return {
+        year: Number(query.year) || new Date().getFullYear(),
+        quarter: query.quarter || 1,
+        totalRevenue: 0,
+        revenueCount: 0,
+        totalAccountingExpense: 0,
+        expenseCount: 0,
+        totalDisallowedExpense: 0,
+        disallowedCount: 0,
+        totalDeductibleExpense: 0,
+        assessableIncome: 0,
+        taxRate: 0.20,
+        estimatedTaxAmount: 0,
+        statutoryPrepayment80: 0,
+        accountingProfitBeforeTax: 0,
+        netProfitAfterTax: 0,
+      };
+    }
     const year = Number(query.year);
     const isAll = query.quarter === 'ALL' || String(query.quarter).toUpperCase() === 'ALL';
     const quarterFilter = isAll ? {} : { quarter: Number(query.quarter) };
@@ -161,6 +180,15 @@ export class CitLedgerService {
    * 2. PHÂN TRANG & TÌM KIẾM BẢNG DOANH THU (SERVER-SIDE)
    */
   async getRevenues(orgId: string, query: QueryCitRevenueDto) {
+    if (!orgId) {
+      return {
+        data: [],
+        total: 0,
+        page: 1,
+        limit: Number(query.limit || 20),
+        totalPages: 0,
+      };
+    }
     const year = Number(query.year);
     const isAll = query.quarter === 'ALL' || String(query.quarter).toUpperCase() === 'ALL';
     const page = Math.max(1, Number(query.page || 1));
@@ -204,6 +232,15 @@ export class CitLedgerService {
    * 3. PHÂN TRANG, TÌM KIẾM & BỘ LỌC B4 BẢNG CHI PHÍ (SERVER-SIDE)
    */
   async getExpenses(orgId: string, query: QueryCitExpenseDto) {
+    if (!orgId) {
+      return {
+        data: [],
+        total: 0,
+        page: 1,
+        limit: Number(query.limit || 20),
+        totalPages: 0,
+      };
+    }
     const year = Number(query.year);
     const isAll = query.quarter === 'ALL' || String(query.quarter).toUpperCase() === 'ALL';
     const page = Math.max(1, Number(query.page || 1));

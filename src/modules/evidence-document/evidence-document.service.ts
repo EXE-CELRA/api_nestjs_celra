@@ -29,10 +29,21 @@ export class EvidenceDocumentService {
     const uploadedBy = user ? user.name : 'Người dùng';
     const uploadedRole = user ? user.role : UserRole.owner;
 
-    let targetOrgId = orgId;
+    let targetOrgId: string | undefined = orgId;
+    if (targetOrgId && userId) {
+      const membership = await this.prisma.membership.findFirst({
+        where: { organizationId: targetOrgId, userId },
+      });
+      if (!membership) {
+        targetOrgId = undefined;
+      }
+    }
     if (!targetOrgId && userId) {
       const userOrg = await this.prisma.membership.findFirst({ where: { userId } });
       if (userOrg) targetOrgId = userOrg.organizationId;
+    }
+    if (!targetOrgId) {
+      throw new BadRequestException('Không tìm thấy doanh nghiệp hợp lệ để lưu trữ bằng chứng');
     }
 
     const fileSizeFormatted = `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
@@ -105,7 +116,15 @@ export class EvidenceDocumentService {
   }
 
   async findAll(orgId?: string, userId?: string) {
-    let targetOrgId = orgId;
+    let targetOrgId: string | undefined = orgId;
+    if (targetOrgId && userId) {
+      const membership = await this.prisma.membership.findFirst({
+        where: { organizationId: targetOrgId, userId },
+      });
+      if (!membership) {
+        targetOrgId = undefined;
+      }
+    }
     if (!targetOrgId && userId) {
       const userOrg = await this.prisma.membership.findFirst({
         where: { userId },
@@ -115,10 +134,11 @@ export class EvidenceDocumentService {
       }
     }
 
-    const whereClause: any = {};
-    if (targetOrgId) {
-      whereClause.organizationId = targetOrgId;
+    if (!targetOrgId) {
+      return []; // KHÔNG QUERY DB NẾU THIẾU ORG HỢP LỆ!
     }
+
+    const whereClause: any = { organizationId: targetOrgId };
 
     const docs = await this.prisma.evidenceDocument.findMany({
       where: whereClause,

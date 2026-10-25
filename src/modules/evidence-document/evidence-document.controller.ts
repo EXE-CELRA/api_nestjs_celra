@@ -20,11 +20,12 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader, ApiConsumes } from '@n
 import { EvidenceDocumentService } from './evidence-document.service';
 import { VerifyEvidenceDto, UploadEvidenceDto } from './dto/evidence.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OrganizationMembershipGuard } from '../../common/guards/organization-membership.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Evidence & Documents (Bằng chứng số & Thẩm tra)')
 @Controller('evidence-documents')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, OrganizationMembershipGuard)
 @ApiBearerAuth()
 export class EvidenceDocumentController {
   constructor(private readonly evidenceService: EvidenceDocumentService) {}

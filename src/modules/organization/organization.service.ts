@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateOrganizationDto, UpdateOrganizationDto } from './dto/organization.dto';
@@ -43,7 +44,9 @@ export class OrganizationService {
     });
 
     if (existingOrg) {
-      throw new BadRequestException('Mã số thuế này đã được đăng ký trên hệ thống');
+      throw new ConflictException(
+        `Mã số thuế "${taxCode}" đã được đăng ký trên hệ thống CELRA bởi doanh nghiệp "${existingOrg.name}". Mỗi doanh nghiệp chỉ được sử dụng một mã số thuế duy nhất.`,
+      );
     }
 
     const companyName = dto.tenDoanhNghiep || dto.name || dto.legalName || 'Doanh nghiệp mới';
