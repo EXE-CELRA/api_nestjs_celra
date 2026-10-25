@@ -4,6 +4,7 @@ import {
   Body,
   Get,
   Patch,
+  Delete,
   Param,
   UseGuards,
 } from '@nestjs/common';
@@ -58,5 +59,15 @@ export class OrganizationController {
     @Body() dto: UpdateOrganizationDto,
   ) {
     return this.orgService.update(id, dto);
+  }
+
+  @Delete(':id/reset-demo')
+  @Roles(UserRole.owner, UserRole.admin)
+  @ApiOperation({ summary: 'Xóa hoàn toàn doanh nghiệp để phục vụ demo lại từ đầu' })
+  async resetDemo(
+    @CurrentUser('sub') userId: string,
+    @Param('id') orgId: string,
+  ) {
+    return this.orgService.resetDemo(userId, orgId);
   }
 }

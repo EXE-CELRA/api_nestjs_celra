@@ -3,6 +3,7 @@ import { PrismaService } from '../../database/prisma.service';
 import {
   CreateTaskDto,
   UpdateTaskStatusDto,
+  UpdateTaskPriorityDto,
   AddTaskCommentDto,
   SelfCertifyTaskDto,
   CreateCalendarNoteDto,
@@ -14,6 +15,7 @@ import {
   UserRole,
   WaitingOnRole,
   StatutoryCycleType,
+  Priority,
 } from '@prisma/client';
 
 @Injectable()
@@ -22,12 +24,24 @@ export class TaskService {
 
   private enrichTaskWithVietnamese(task: any) {
     if (!task) return task;
+    const basis = (task.calculationBasisJson as Record<string, any>) || {};
+    const customPriority = basis.customPriority || null;
+    const statutoryPriority = task.priority;
+    const effectivePriority = customPriority || statutoryPriority;
+
     return {
       ...task,
+      priority: effectivePriority,
+      doUuTien: effectivePriority,
+      customPriority,
+      statutoryPriority,
+      legalRisk: statutoryPriority,
+      customPriorityReason: basis.customPriorityReason || null,
+      customPriorityUpdatedAt: basis.customPriorityUpdatedAt || null,
+      customPriorityUpdatedBy: basis.customPriorityUpdatedBy || null,
       maNhiemVu: task.code,
       tieuDe: task.title,
       danhMuc: task.category,
-      doUuTien: task.priority,
       trangThai: task.status,
       hanChot: task.dueDate,
       moTa: task.description,
@@ -67,7 +81,9 @@ export class TaskService {
     const code = dto.maNhiemVu || dto.code || `TASK-${Date.now()}`;
     const title = dto.tieuDe || dto.title || 'Nhiệm vụ mới';
     const category = dto.danhMuc || dto.category || 'Chung';
-    const priority = dto.doUuTien || dto.priority || 'medium';
+    const rawPriority = String(dto.doUuTien || dto.priority || 'medium').toLowerCase();
+    const priority = (rawPriority === 'critical' ? 'urgent' : rawPriority) as Priority;
+    const status = dto.trangThai || dto.status || TaskStatus.need_info;
     const assigneeId = dto.maNguoiXuLy || dto.assigneeId;
     const assigneeName = dto.tenNguoiXuLy || dto.assigneeName || 'Người dùng';
     const assigneeRole = dto.vaiTroNguoiXuLy || dto.assigneeRole || UserRole.owner;
@@ -85,6 +101,7 @@ export class TaskService {
         title,
         category,
         priority,
+        status,
         departmentId,
         departmentName,
         assigneeId,
@@ -127,6 +144,7 @@ export class TaskService {
       checklistId?: string;
     },
   ) {
+    if (!orgId) return [];
     const where: Record<string, unknown> = { organizationId: orgId };
 
     if (query?.status) where.status = query.status;
@@ -149,7 +167,7 @@ export class TaskService {
           orderBy: { timestamp: 'desc' },
         },
       },
-      orderBy: [{ priority: 'desc' }, { dueDate: 'asc' }],
+      orderBy: [{ createdAt: 'desc' }],
     });
 
     return tasks.map((t) => this.enrichTaskWithVietnamese(t));
@@ -212,6 +230,66 @@ export class TaskService {
       },
       include: {
         documents: true,
+        timeline: { orderBy: { timestamp: 'asc' } },
+      },
+    });
+
+    return this.enrichTaskWithVietnamese(updated);
+  }
+
+  /**
+   * Cập nhật Mức độ ưu tiên vận hành (Custom Priority)
+   * Tách bạch giữa Rủi ro luật định (Legal Risk / Statutory Priority) và Ưu tiên xử lý của Chủ DN
+   */
+  async updatePriority(id: string, userId: string, dto: UpdateTaskPriorityDto) {
+    const task = await this.prisma.task.findUnique({ where: { id } });
+    if (!task) {
+      throw new NotFoundException('Không tìm thấy tác vụ');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const actorName = user ? user.name : 'Người dùng';
+    const actorRole = user ? user.role : UserRole.owner;
+
+    const existingBasis = (task.calculationBasisJson as Record<string, any>) || {};
+    const statutoryPriority = task.priority;
+    const rawPriority = (dto.priority || 'medium').toLowerCase();
+    const newPriority = rawPriority === 'critical' ? 'urgent' : rawPriority;
+    const reason = dto.reason?.trim() || '';
+
+    const updatedBasis = {
+      ...existingBasis,
+      customPriority: newPriority,
+      customPriorityReason: reason,
+      customPriorityUpdatedAt: new Date().toISOString(),
+      customPriorityUpdatedBy: actorName,
+    };
+
+    const isDifferentFromStatutory = newPriority !== statutoryPriority;
+    const noteText = isDifferentFromStatutory
+      ? `Ưu tiên vận hành điều chỉnh thành: ${newPriority.toUpperCase()} (Rủi ro luật định gốc: ${statutoryPriority.toUpperCase()}).${reason ? ' Lý do: ' + reason : ''}`
+      : `Khôi phục mức ưu tiên theo rủi ro luật định: ${statutoryPriority.toUpperCase()}.${reason ? ' Lý do: ' + reason : ''}`;
+
+    const updated = await this.prisma.task.update({
+      where: { id },
+      data: {
+        calculationBasisJson: updatedBasis,
+        timeline: {
+          create: {
+            title: `Cập nhật mức ưu tiên vận hành: ${newPriority.toUpperCase()}`,
+            description: noteText,
+            actorId: userId,
+            actorName,
+            actorRole,
+            type: TimelineEventType.status_change,
+          },
+        },
+      },
+      include: {
+        documents: true,
+        checklist: true,
+        checklistItem: true,
+        comments: { orderBy: { createdAt: 'asc' } },
         timeline: { orderBy: { timestamp: 'asc' } },
       },
     });

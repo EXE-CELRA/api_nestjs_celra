@@ -73,7 +73,7 @@ export class ContextEngineService {
         conflictDetails: factConflict,
         history: {
           create: {
-            value: factVal,
+            value: factKey === 'cit_financial_records' ? '[Sổ thu chi TNDN - Lưu trữ tối ưu]' : factVal,
             changedBy: providedBy,
             note: 'Khởi tạo dữ kiện ban đầu',
           },
@@ -98,18 +98,23 @@ export class ContextEngineService {
       }
     }
     if (!targetOrgId) {
-      const firstOrg = await this.prisma.organization.findFirst();
-      if (firstOrg) {
-        targetOrgId = firstOrg.id;
-      }
-    }
-
-    if (!targetOrgId) {
       return [];
     }
 
+    await this.prisma.contextFact.deleteMany({
+      where: {
+        organizationId: targetOrgId,
+        key: { in: ['tax_filing_cycle', 'annual_revenue', 'employee_count'] },
+      },
+    }).catch(() => {});
+
     const facts = await this.prisma.contextFact.findMany({
-      where: { organizationId: targetOrgId },
+      where: {
+        organizationId: targetOrgId,
+        key: {
+          notIn: ['tax_filing_cycle', 'annual_revenue', 'employee_count'],
+        },
+      },
       include: {
         history: {
           orderBy: { changedAt: 'desc' },
@@ -152,6 +157,7 @@ export class ContextEngineService {
     const factStatus = dto.trangThai || dto.status || fact.status;
     const factConflict = dto.chiTietXungDot !== undefined ? dto.chiTietXungDot : (dto.conflictDetails !== undefined ? dto.conflictDetails : fact.conflictDetails);
     const factNote = dto.ghiChu || dto.note || 'Cập nhật dữ kiện';
+    const historyVal = fact.key === 'cit_financial_records' ? '[Sổ thu chi TNDN - Lưu trữ tối ưu]' : factVal;
 
     const updated = await this.prisma.contextFact.update({
       where: { id },
@@ -161,7 +167,7 @@ export class ContextEngineService {
         conflictDetails: factConflict,
         history: {
           create: {
-            value: factVal,
+            value: fact.key === 'cit_financial_records' ? '[Sổ thu chi TNDN - Lưu trữ tối ưu]' : factVal,
             changedBy,
             note: factNote,
           },

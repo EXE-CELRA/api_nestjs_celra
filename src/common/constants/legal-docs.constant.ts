@@ -1,7 +1,3 @@
-// ============================================================================
-// BẢN ĐỒ ĐƯỜNG DẪN TRỰC TIẾP ĐẾN TOÀN VĂN VĂN BẢN PHÁP LUẬT CHÍNH THỨC (dulieuphapluat.vn)
-// Bao quát 5 lĩnh vực vận hành trọng yếu của Doanh nghiệp (Đặc biệt là SME & F&B)
-// ============================================================================
 export const CORE_LEGAL_DOC_LINKS: Record<string, string> = {
   // --------------------------------------------------------------------------
   // NHÓM 1: THUẾ & QUẢN LÝ THUẾ DOANH NGHIỆP

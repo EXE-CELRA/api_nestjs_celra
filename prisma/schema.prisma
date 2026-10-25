@@ -222,6 +222,8 @@ model Organization {
   checklists         Checklist[]
   notifications      ComplianceNotification[]
   calendarNotes      CalendarNote[]
+  citRevenues        CitRevenue[]
+  citExpenses        CitExpense[]
 
   @@map("doanh_nghiep")
 }
@@ -615,4 +617,48 @@ model CalendarNote {
 
   @@index([organizationId, date])
   @@map("ghi_chu_lich")
+}
+
+// ===================== SỔ THU CHI THUẾ TNDN =====================
+
+model CitRevenue {
+  id             String       @id @default(uuid())
+  organizationId String       @map("id_doanh_nghiep")
+  year           Int          @map("nam_tai_chinh")
+  quarter        Int          @map("quy")
+  date           String       @map("ngay_ghi_nhan")
+  invoiceNo      String?      @map("so_hoa_don")
+  description    String       @map("dien_giai_khach_hang")
+  amount         Float        @map("so_tien")
+  createdAt      DateTime     @default(now()) @map("ngay_tao")
+  updatedAt      DateTime     @updatedAt @map("ngay_cap_nhat")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, year, quarter])
+  @@map("so_doanh_thu_tndn")
+}
+
+model CitExpense {
+  id               String       @id @default(uuid())
+  organizationId   String       @map("id_doanh_nghiep")
+  year             Int          @map("nam_tai_chinh")
+  quarter          Int          @map("quy")
+  date             String       @map("ngay_chi")
+  category         String       @map("khoan_muc_chi")
+  amount           Float        @map("so_tien")
+  paymentMethod    String       @map("hinh_thuc_thanh_toan")
+  hasInvoice       String       @map("tinh_trang_hoa_don")
+  note             String?      @map("ghi_chu")
+  isDisallowedB4   Boolean      @default(false) @map("bi_loai_b4")
+  disallowedReason String?      @map("ly_do_loai_b4")
+  legalBasis       String?      @map("can_cu_phap_ly")
+  createdAt        DateTime     @default(now()) @map("ngay_tao")
+  updatedAt        DateTime     @updatedAt @map("ngay_cap_nhat")
+
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, year, quarter])
+  @@index([organizationId, year, quarter, isDisallowedB4])
+  @@map("so_chi_phi_tndn")
 }

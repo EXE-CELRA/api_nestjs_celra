@@ -16,6 +16,7 @@ import { ComplianceNotificationService } from './compliance-notification.service
 import {
   CreateTaskDto,
   UpdateTaskStatusDto,
+  UpdateTaskPriorityDto,
   AddTaskCommentDto,
   SelfCertifyTaskDto,
   CreateCalendarNoteDto,
@@ -176,6 +177,16 @@ export class TaskController {
     @Body() dto: UpdateTaskStatusDto,
   ) {
     return this.taskService.updateStatus(id, userId, dto);
+  }
+
+  @Patch(':id/priority')
+  @ApiOperation({ summary: 'Chủ DN tùy biến mức độ ưu tiên vận hành (Tách bạch rủi ro luật định)' })
+  async updatePriority(
+    @Param('id') id: string,
+    @CurrentUser('sub') userId: string,
+    @Body() dto: UpdateTaskPriorityDto,
+  ) {
+    return this.taskService.updatePriority(id, userId, dto);
   }
 
   @Post(':id/comments')

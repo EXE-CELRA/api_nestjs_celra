@@ -15,10 +15,6 @@ export { StatutoryCycleType };
 
 // Múi giờ chuẩn Việt Nam (UTC+7)
 export const VN_TIMEZONE = 'Asia/Ho_Chi_Minh';
-
-/**
- * Cộng thêm số ngày làm việc (bỏ qua thứ 7 và Chủ nhật)
- */
 export function addBusinessDays(startDate: Date, businessDays: number): Date {
   const result = new Date(startDate);
   let added = 0;

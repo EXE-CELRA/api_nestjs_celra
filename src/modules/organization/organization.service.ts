@@ -331,4 +331,20 @@ export class OrganizationService {
 
     return this.enrichOrgWithVietnamese(updated);
   }
+
+  async resetDemo(userId: string, orgId: string) {
+    const membership = await this.prisma.membership.findFirst({
+      where: { organizationId: orgId, userId, role: { in: [UserRole.owner, UserRole.admin] } },
+    });
+
+    if (!membership) {
+      throw new BadRequestException('Bạn không có quyền quản trị để xóa dữ liệu doanh nghiệp này');
+    }
+
+    await this.prisma.organization.delete({
+      where: { id: orgId },
+    });
+
+    return { success: true, message: 'Đã xóa sạch dữ liệu doanh nghiệp để chuẩn bị demo lại' };
+  }
 }

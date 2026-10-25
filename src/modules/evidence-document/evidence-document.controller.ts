@@ -9,7 +9,9 @@ import {
   Headers,
   UseInterceptors,
   UploadedFile,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -58,20 +60,51 @@ export class EvidenceDocumentController {
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadEvidenceDto,
   ) {
-    return this.evidenceService.saveFile(orgId, userId, file, dto.category, dto.taskId);
+    const finalCategory = dto.category || dto.danhMuc || 'Chứng từ tuân thủ';
+    const finalTaskId = dto.taskId || dto.maNhiemVu;
+    const finalTag = dto.tag || (dto.category?.includes('Thuế') ? 'Thuế TNDN' : 'Tài liệu chung');
+    const finalQuarter = dto.quarter !== undefined ? dto.quarter : dto.quy;
+    const finalYear = dto.year !== undefined ? dto.year : dto.nam;
+    const finalTitle = dto.title || dto.tenTaiLieu;
+
+    return this.evidenceService.saveFile(
+      orgId,
+      userId,
+      file,
+      finalCategory,
+      finalTaskId,
+      finalTag,
+      finalQuarter,
+      finalYear,
+      dto.metadata,
+      finalTitle,
+    );
   }
 
   @Get()
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Lấy kho lưu trữ tất cả bằng chứng số của Doanh nghiệp' })
-  async findAll(@Headers('x-organization-id') orgId: string) {
-    return this.evidenceService.findAll(orgId);
+  async findAll(
+    @Headers('x-organization-id') orgId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.evidenceService.findAll(orgId, userId);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Lấy chi tiết bằng chứng số theo ID' })
   async findOne(@Param('id') id: string) {
     return this.evidenceService.findOne(id);
+  }
+
+  @Get(':id/download')
+  @ApiOperation({ summary: 'Tải về tệp bằng chứng số' })
+  async downloadFile(
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const fileInfo = await this.evidenceService.getFileForDownload(id);
+    return res.download(fileInfo.absolutePath, fileInfo.fileName);
   }
 
   @Patch(':id/verify')
