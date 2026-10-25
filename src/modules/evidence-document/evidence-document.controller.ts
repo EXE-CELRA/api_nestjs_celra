@@ -9,7 +9,9 @@ import {
   Headers,
   UseInterceptors,
   UploadedFile,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -93,6 +95,16 @@ export class EvidenceDocumentController {
   @ApiOperation({ summary: 'Lấy chi tiết bằng chứng số theo ID' })
   async findOne(@Param('id') id: string) {
     return this.evidenceService.findOne(id);
+  }
+
+  @Get(':id/download')
+  @ApiOperation({ summary: 'Tải về tệp bằng chứng số' })
+  async downloadFile(
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const fileInfo = await this.evidenceService.getFileForDownload(id);
+    return res.download(fileInfo.absolutePath, fileInfo.fileName);
   }
 
   @Patch(':id/verify')

@@ -153,6 +153,11 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsEmail({}, { message: 'Email không đúng định dạng' })
   email?: string;
+
+  @ApiPropertyOptional({ description: 'Ảnh đại diện (URL hoặc Base64)' })
+  @IsOptional()
+  @IsString()
+  avatar?: string;
 }
 export class SendOtpDto {
   @ApiProperty({ example: 'ceo@gmail.com', description: 'Email nhận mã OTP' })

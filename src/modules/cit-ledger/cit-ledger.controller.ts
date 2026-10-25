@@ -22,6 +22,7 @@ import {
   UpdateCitExpenseDto,
   BatchImportRevenuesDto,
   BatchImportExpensesDto,
+  SyncCitComplianceChecklistDto,
 } from './dto/cit-ledger.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OrganizationMembershipGuard } from '../../common/guards/organization-membership.guard';
@@ -41,6 +42,16 @@ export class CitLedgerController {
     @Query() query: QueryCitSummaryDto,
   ) {
     return this.citService.getSummary(orgId, query);
+  }
+
+  @Post('sync-compliance-checklist')
+  @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
+  @ApiOperation({ summary: 'Tạo hoặc đồng bộ Checklist Hạn Nộp Thuế TNDN 4 Quý & Quyết Toán Năm' })
+  async syncComplianceChecklist(
+    @Headers('x-organization-id') orgId: string,
+    @Body() dto: SyncCitComplianceChecklistDto,
+  ) {
+    return this.citService.syncComplianceChecklist(orgId, dto);
   }
 
   // ===================== DOANH THU =====================

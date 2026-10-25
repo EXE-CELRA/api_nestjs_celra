@@ -1,6 +1,13 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import {
+  StatutoryCycleType,
+  Priority,
+  UserRole,
+  TaskStatus,
+  TimelineEventType,
+} from '@prisma/client';
+import {
   QueryCitSummaryDto,
   QueryCitRevenueDto,
   CreateCitRevenueDto,
@@ -10,6 +17,7 @@ import {
   UpdateCitExpenseDto,
   BatchImportRevenuesDto,
   BatchImportExpensesDto,
+  SyncCitComplianceChecklistDto,
 } from './dto/cit-ledger.dto';
 
 export interface CitB4Evaluation {
@@ -446,5 +454,274 @@ export class CitLedgerService {
       await this.prisma.citExpense.deleteMany({ where });
     }
     return { success: true, message: `Đã dọn dẹp dữ liệu Quý ${quarter}/${year}` };
+  }
+
+  /**
+   * Tính toán ngày hạn chót luật định cho thuế TNDN (Luật số 38/2019/QH14 & NĐ 126/2020/NĐ-CP)
+   * Tự động chuyển dời nếu trùng ngày nghỉ lễ/cuối tuần sang ngày làm việc tiếp theo.
+   */
+  public getStatutoryDueDate(quarter: number | string, year: number): Date {
+    const qStr = String(quarter);
+    let d: Date;
+
+    if (qStr === '1') {
+      // 30/04 & 01/05 luôn là ngày nghỉ lễ toàn quốc.
+      // Theo Điều 8 NĐ 126/2020/NĐ-CP, hạn nộp chuyển sang ngày làm việc tiếp theo (sớm nhất là 02/05)
+      d = new Date(year, 4, 2, 23, 59, 59);
+    } else if (qStr === '2') {
+      // Quý 2: 31/07
+      d = new Date(year, 6, 31, 23, 59, 59);
+    } else if (qStr === '3') {
+      // Quý 3: 31/10
+      d = new Date(year, 9, 31, 23, 59, 59);
+    } else if (qStr === '4') {
+      // Quý 4: 31/01 năm kế tiếp
+      d = new Date(year + 1, 0, 31, 23, 59, 59);
+    } else {
+      // Quyết toán năm (ALL): 31/03 năm kế tiếp
+      d = new Date(year + 1, 2, 31, 23, 59, 59);
+    }
+
+    // Nếu rơi vào Thứ Bảy (6) hoặc Chủ Nhật (0), chuyển sang Thứ Hai làm việc tiếp theo
+    const day = d.getDay();
+    if (day === 6) {
+      d.setDate(d.getDate() + 2);
+    } else if (day === 0) {
+      d.setDate(d.getDate() + 1);
+    }
+
+    return d;
+  }
+
+  /**
+   * Tạo hoặc đồng bộ Checklist & Task Tuân thủ Hạn Nộp Thuế TNDN 4 Quý + Quyết toán năm
+   */
+  async syncComplianceChecklist(orgId: string, dto: SyncCitComplianceChecklistDto) {
+    const {
+      year,
+      quarter,
+      estimatedTaxAmount = 0,
+      revenueCount = 0,
+      expenseCount = 0,
+      disallowedExpenseAmount = 0,
+    } = dto;
+
+    const org = await this.prisma.organization.findUnique({
+      where: { id: orgId },
+      include: { memberships: true },
+    });
+    if (!org) {
+      throw new NotFoundException('Không tìm thấy tổ chức doanh nghiệp');
+    }
+
+    // 1. Tìm hoặc khởi tạo Checklist khung năm
+    const checklistCode = `CIT_COMPLIANCE_${year}`;
+    let checklist = await this.prisma.checklist.findFirst({
+      where: { organizationId: orgId, code: checklistCode },
+      include: { items: true, tasks: true },
+    });
+
+    if (!checklist) {
+      checklist = await this.prisma.checklist.create({
+        data: {
+          organizationId: orgId,
+          code: checklistCode,
+          title: `Lộ trình Tuân thủ & Hạn Nộp Thuế TNDN Năm ${year}`,
+          category: 'Thuế & Kế Toán',
+          status: 'active',
+        },
+        include: { items: true, tasks: true },
+      });
+    }
+
+    // 2. Cấu hình 5 mốc nhiệm vụ chuẩn (Q1, Q2, Q3, Q4, Quyết toán năm)
+    const quartersConfig = [
+      {
+        q: 1,
+        code: `CIT_${year}_Q1`,
+        title: `Tạm nộp thuế TNDN Quý 1/${year}`,
+        cycleType: StatutoryCycleType.QUARTERLY,
+        ruleCode: 'CIT_PREPAY_Q1',
+        legalBasis:
+          'Khoản 1 Điều 55 Luật QLT số 38/2019/QH14 & Khoản 3 Điều 1 NĐ 91/2022/NĐ-CP (Hạn chót: 30/04)',
+        dueDate: this.getStatutoryDueDate(1, year),
+      },
+      {
+        q: 2,
+        code: `CIT_${year}_Q2`,
+        title: `Tạm nộp thuế TNDN Quý 2/${year}`,
+        cycleType: StatutoryCycleType.QUARTERLY,
+        ruleCode: 'CIT_PREPAY_Q2',
+        legalBasis:
+          'Khoản 1 Điều 55 Luật QLT số 38/2019/QH14 & Khoản 3 Điều 1 NĐ 91/2022/NĐ-CP (Hạn chót: 31/07)',
+        dueDate: this.getStatutoryDueDate(2, year),
+      },
+      {
+        q: 3,
+        code: `CIT_${year}_Q3`,
+        title: `Tạm nộp thuế TNDN Quý 3/${year}`,
+        cycleType: StatutoryCycleType.QUARTERLY,
+        ruleCode: 'CIT_PREPAY_Q3',
+        legalBasis:
+          'Khoản 1 Điều 55 Luật QLT số 38/2019/QH14 & Khoản 3 Điều 1 NĐ 91/2022/NĐ-CP (Hạn chót: 31/10)',
+        dueDate: this.getStatutoryDueDate(3, year),
+      },
+      {
+        q: 4,
+        code: `CIT_${year}_Q4`,
+        title: `Tạm nộp thuế TNDN Quý 4/${year}`,
+        cycleType: StatutoryCycleType.QUARTERLY,
+        ruleCode: 'CIT_PREPAY_Q4',
+        legalBasis:
+          'Khoản 1 Điều 55 Luật QLT số 38/2019/QH14 & NĐ 91/2022/NĐ-CP (Tổng 4 quý ≥ 80%, hạn chót: 31/01)',
+        dueDate: this.getStatutoryDueDate(4, year),
+      },
+      {
+        q: 'ALL',
+        code: `CIT_${year}_ANNUAL`,
+        title: `Quyết toán thuế TNDN & BCTC Năm ${year}`,
+        cycleType: StatutoryCycleType.ANNUAL,
+        ruleCode: 'CIT_ANNUAL_FINALIZE',
+        legalBasis:
+          'Điểm a Khoản 2 Điều 44 Luật Quản lý Thuế số 38/2019/QH14 (Hạn chót: 31/03 năm kế tiếp)',
+        dueDate: this.getStatutoryDueDate('ALL', year),
+      },
+    ];
+
+    const syncedTasks = [];
+
+    for (const cfg of quartersConfig) {
+      // 2.1. Đảm bảo ChecklistItem tồn tại
+      let item = checklist.items.find((it) => it.ruleCode === cfg.ruleCode);
+      if (!item) {
+        item = await this.prisma.checklistItem.create({
+          data: {
+            checklistId: checklist.id,
+            organizationId: orgId,
+            ruleCode: cfg.ruleCode,
+            title: cfg.title,
+            cycleType: cfg.cycleType,
+            legalBasis: cfg.legalBasis,
+            evidenceRequirement: 'Giấy nộp tiền vào Ngân sách Nhà nước (Tiểu mục 1052)',
+            nextDueDate: cfg.dueDate,
+            isActive: true,
+          },
+        });
+      }
+
+      // 2.2. Tìm hoặc tạo Task tương ứng
+      let task = await this.prisma.task.findFirst({
+        where: {
+          organizationId: orgId,
+          code: cfg.code,
+        },
+      });
+
+      const isCurrentQuarter = String(cfg.q) === String(quarter);
+
+      if (isCurrentQuarter) {
+        // Quý vừa import Excel: Cập nhật số tiền thực tế và chuyển sang in_progress (Chờ nộp)
+        const formattedAmount = Number(estimatedTaxAmount || 0).toLocaleString('vi-VN');
+        const formattedDisallowed = Number(disallowedExpenseAmount || 0).toLocaleString('vi-VN');
+        const formattedDate = cfg.dueDate.toLocaleDateString('vi-VN');
+        const description = `Thuế TNDN tạm nộp ước tính: ${formattedAmount} VNĐ (Từ file Excel: ${revenueCount} khoản thu, ${expenseCount} khoản chi; Chi phí loại trừ B4: ${formattedDisallowed} VNĐ). Cần nộp qua Cổng eTax trước ngày ${formattedDate}.`;
+
+        const calculationBasis = {
+          estimatedTaxAmount,
+          revenueCount,
+          expenseCount,
+          disallowedExpenseAmount,
+          updatedAt: new Date().toISOString(),
+        };
+
+        if (!task) {
+          task = await this.prisma.task.create({
+            data: {
+              organizationId: orgId,
+              checklistId: checklist.id,
+              checklistItemId: item.id,
+              code: cfg.code,
+              title: cfg.title,
+              category: 'Thuế TNDN',
+              priority: Priority.high,
+              assigneeName: 'Kế toán trưởng / Người phụ trách thuế',
+              assigneeRole: UserRole.owner,
+              dueDate: cfg.dueDate,
+              status: TaskStatus.need_info,
+              description,
+              ruleCode: cfg.ruleCode,
+              legalBasis: cfg.legalBasis,
+              periodCycle: cfg.cycleType,
+              calculationBasisJson: calculationBasis,
+              timeline: {
+                create: {
+                  title: `Khởi tạo từ Import Excel Quý ${quarter}/${year}`,
+                  description: `Đã nạp số liệu tính thuế: ${formattedAmount} VNĐ`,
+                  actorName: 'Hệ thống CELRA Tax Engine',
+                  actorRole: UserRole.owner,
+                  type: TimelineEventType.status_change,
+                },
+              },
+            },
+          });
+        } else {
+          task = await this.prisma.task.update({
+            where: { id: task.id },
+            data: {
+              checklistId: checklist.id,
+              checklistItemId: item.id,
+              dueDate: cfg.dueDate,
+              status: task.status || TaskStatus.need_info,
+              description,
+              calculationBasisJson: calculationBasis,
+              timeline: {
+                create: {
+                  title: `Cập nhật số liệu từ Excel Quý ${quarter}/${year}`,
+                  description: `Số thuế tạm nộp mới: ${formattedAmount} VNĐ`,
+                  actorName: 'Hệ thống CELRA Tax Engine',
+                  actorRole: UserRole.owner,
+                  type: TimelineEventType.status_change,
+                },
+              },
+            },
+          });
+        }
+      } else {
+        // Quý khác: Nếu chưa có Task thì tạo ở trạng thái need_info (Chờ nạp số liệu)
+        if (!task) {
+          task = await this.prisma.task.create({
+            data: {
+              organizationId: orgId,
+              checklistId: checklist.id,
+              checklistItemId: item.id,
+              code: cfg.code,
+              title: cfg.title,
+              category: 'Thuế TNDN',
+              priority: Priority.medium,
+              assigneeName: 'Kế toán trưởng / Người phụ trách thuế',
+              assigneeRole: UserRole.owner,
+              dueDate: cfg.dueDate,
+              status: TaskStatus.need_info,
+              description: `Kỳ tính thuế ${cfg.title}. Chưa có số liệu Excel thực tế (Hạn chót: ${cfg.dueDate.toLocaleDateString('vi-VN')}). Vui lòng nạp file Excel khi đến kỳ.`,
+              ruleCode: cfg.ruleCode,
+              legalBasis: cfg.legalBasis,
+              periodCycle: cfg.cycleType,
+            },
+          });
+        }
+      }
+
+      syncedTasks.push(task);
+    }
+
+    return {
+      success: true,
+      checklistId: checklist.id,
+      checklistCode: checklist.code,
+      year,
+      quarter,
+      tasks: syncedTasks,
+      message: `Đã đồng bộ thành công Checklist Hạn nộp thuế Năm ${year} cho Quý ${quarter}!`,
+    };
   }
 }
