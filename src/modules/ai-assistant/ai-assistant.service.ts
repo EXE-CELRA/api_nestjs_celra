@@ -682,18 +682,21 @@ export class AIAssistantService implements OnModuleInit {
                     if (isEnterpriseQuery) {
                       prompt +=
                         `### DỮ KIỆN NGỮ CẢNH CỦA DOANH NGHIỆP TRONG HỆ THỐNG:\n${denseContext}\n\n` +
-                        `## HƯỚNG DẪN BẮT BUỘC (MỤC 9 - CẤU TRÚC OUTPUT RÀ SOÁT TỔNG THỂ DOANH NGHIỆP - 10 PHẦN CHUẨN MỰC):\n` +
-                        `Trình bày câu trả lời đầy đủ và rõ ràng theo đúng 10 phần sau:\n` +
+                        `## HƯỚNG DẪN BẮT BUỘC (MỤC 9 - CẤU TRÚC OUTPUT RÀ SOÁT TỔNG THỂ DOANH NGHIỆP - CHUẨN BẢNG ĐỐI SOÁT 3-TRONG-1):\n` +
+                        `Trình bày câu trả lời đầy đủ, mạch lạc theo đúng các phần sau:\n` +
                         `1. **Tổng quan**: Trình bày rõ số nghĩa vụ hoàn thành, chưa hoàn thành, cần xác minh (đồng bộ với dữ liệu hệ thống ghi nhận, không bịa số liệu).\n` +
                         `2. **Kết luận**: Nêu rõ vấn đề đã xác nhận và vấn đề chưa đủ dữ liệu.\n` +
-                        `3. **Nghĩa vụ áp dụng**: Vì sao áp dụng, điều kiện áp dụng, mức độ chắc chắn. Nêu rõ bằng ngôn ngữ tiếng Việt tự nhiên: "Đã xác định nghĩa vụ áp dụng", "Có khả năng áp dụng nhưng chưa đủ dữ liệu", "Cần xác minh thông tin hoặc căn cứ", "Đã có căn cứ xác định không áp dụng".\n` +
-                        `4. **Căn cứ pháp lý**: Trích dẫn chính xác tên văn bản, điều khoản, hiệu lực, nguồn kiểm chứng tra cứu chính thức.\n` +
-                        `5. **Dữ liệu đầu vào**: Nêu rõ dữ liệu doanh nghiệp làm căn cứ, nguồn dữ liệu và ngày cập nhật (phân biệt rõ thông tin thực tế hệ thống đang ghi nhận với tình huống giả sử người dùng đưa ra tham khảo tư vấn; câu hỏi giả sử không tự ý biến thành dữ liệu doanh nghiệp).\n` +
-                        `6. **Kỳ và thời hạn**: Kỳ tính thuế, hạn nộp, căn cứ xác định hạn (LƯU Ý: TNDN 80% áp dụng cho tổng 4 quý trước ngày 31/01 năm sau; không mặc định hạn 30/10; TNCN theo tháng/quý tuỳ kỳ GTGT).\n` +
-                        `7. **Bằng chứng còn thiếu**: Tên hồ sơ, kỳ liên quan, bằng chứng đã có trong hệ thống (chưa có chứng từ KHÔNG đồng nghĩa với vi phạm).\n` +
-                        `8. **Rủi ro**: Điều kiện phát sinh, hậu quả có thể xảy ra theo quy định pháp luật (chỉ nêu rủi ro có căn cứ; KHÔNG tự tính số tiền phạt hay tiền chậm nộp khi thiếu dữ liệu đầu vào; thanh toán tiền mặt thì chuyển khoản sau không mặc định khắc phục).\n` +
-                        `9. **Hành động tiếp theo**: Thứ tự ưu tiên, người phụ trách, hạn xử lý, điều kiện hoàn tất.\n` +
-                        `10. **Câu hỏi xác minh**: Một câu hỏi cụ thể, trọng tâm nhất để giải quyết điểm chưa rõ nhất cho chủ doanh nghiệp.\n`;
+                        `3. **Bảng đối soát Nghĩa vụ, Căn cứ pháp lý & Dữ liệu đầu vào** (Tích hợp 3-trong-1):\n` +
+                        `   - Phần mở đầu bảng: Nêu ngắn gọn dữ liệu nguồn hệ thống (ngành nghề, quy mô, mô hình, ngày cập nhật dữ liệu) kèm lưu ý phân biệt thông tin thực tế với tình huống giả sử người dùng đưa ra tham khảo (câu hỏi giả sử không tự ý biến thành dữ liệu doanh nghiệp).\n` +
+                        `   - Trình bày một Bảng Markdown gồm 4 cột: [STT] | [Nghĩa vụ tuân thủ] | [Hiện trạng & Dữ liệu đầu vào đối soát] | [Căn cứ pháp lý & Hiệu lực].\n` +
+                        `   - Cột Hiện trạng: Bắt buộc dùng trạng thái tiếng Việt tự nhiên ("Đã xác định nghĩa vụ áp dụng", "Có khả năng áp dụng nhưng chưa đủ dữ liệu", "Cần xác minh thông tin hoặc căn cứ", "Đã có căn cứ xác định không áp dụng") kèm dữ kiện hồ sơ đối soát.\n` +
+                        `   - Cột Căn cứ pháp lý: Trích dẫn chính xác tên văn bản, số hiệu, điều/khoản/điểm cụ thể và tình trạng [Còn hiệu lực].\n` +
+                        `   - TUYỆT ĐỐI KHÔNG tách rời thành 3 mục riêng lẻ gây trùng lặp danh sách nghĩa vụ.\n` +
+                        `4. **Kỳ và thời hạn**: Kỳ tính thuế, hạn nộp, căn cứ xác định hạn (LƯU Ý: TNDN 80% áp dụng cho tổng 4 quý trước ngày 31/01 năm sau; không mặc định hạn 30/10; TNCN theo tháng/quý tuỳ kỳ GTGT).\n` +
+                        `5. **Bằng chứng còn thiếu**: Tên hồ sơ, kỳ liên quan, bằng chứng đã có trong hệ thống (chưa có chứng từ KHÔNG đồng nghĩa với vi phạm).\n` +
+                        `6. **Rủi ro**: Điều kiện phát sinh, hậu quả có thể xảy ra theo quy định pháp luật (chỉ nêu rủi ro có căn cứ; KHÔNG tự tính số tiền phạt hay tiền chậm nộp khi thiếu dữ liệu đầu vào; thanh toán tiền mặt thì chuyển khoản sau không mặc định khắc phục).\n` +
+                        `7. **Hành động tiếp theo**: Thứ tự ưu tiên, người phụ trách, hạn xử lý, điều kiện hoàn tất.\n` +
+                        `8. **Câu hỏi xác minh**: Một câu hỏi cụ thể, trọng tâm nhất để giải quyết điểm chưa rõ nhất cho chủ doanh nghiệp.\n`;
                     } else {
                       prompt +=
                         `## HƯỚNG DẪN BẮT BUỘC (MỤC 10 - QUY TẮC KHI TRẢ LỜI CÂU HỎI NGẮN / LUẬT CHUNG):\n` +
