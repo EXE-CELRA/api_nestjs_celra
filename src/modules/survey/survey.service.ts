@@ -10,7 +10,19 @@ export class SurveyService {
   constructor(private readonly prisma: PrismaService) {}
 
   async submitAnswers(orgId: string, userId: string, dto: SubmitSurveyDto) {
-    let targetOrgId = orgId;
+    let targetOrgId: string | undefined = orgId;
+
+    // BẢO VỆ ĐA DOANH NGHIỆP: Xác minh userId có thực sự thuộc về targetOrgId hay không
+    if (targetOrgId && userId) {
+      const membership = await this.prisma.membership.findFirst({
+        where: { organizationId: targetOrgId, userId },
+      });
+      if (!membership) {
+        this.logger.warn(`User ${userId} không phải thành viên của organization ${targetOrgId}. Bỏ qua header x-organization-id để tránh ghi đè dữ liệu chéo.`);
+        targetOrgId = undefined;
+      }
+    }
+
     if (!targetOrgId && userId) {
       const userOrg = await this.prisma.membership.findFirst({
         where: { userId },
