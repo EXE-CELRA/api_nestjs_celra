@@ -1,4 +1,4 @@
-import { Injectable, Logger, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SubmitSurveyDto } from './dto/survey.dto';
 import { ContextGroup, UserRole, MembershipStatus } from '@prisma/client';
@@ -32,6 +32,20 @@ export class SurveyService {
       }
 
       if (existingOrg) {
+        // Ràng buộc bảo mật cô lập đa tài khoản: Nếu MST đã tồn tại mà user chưa phải thành viên thì không được tự ý gán vào
+        const existingMembership = await this.prisma.membership.findUnique({
+          where: {
+            organizationId_userId: {
+              organizationId: existingOrg.id,
+              userId,
+            },
+          },
+        });
+        if (!existingMembership) {
+          throw new BadRequestException(
+            `Mã số thuế ${cleanTaxCode} đã được đăng ký bởi doanh nghiệp "${existingOrg.name}" trên hệ thống CELRA. Nguyên tắc: 1 Mã số thuế = 1 Doanh nghiệp duy nhất!`,
+          );
+        }
         targetOrgId = existingOrg.id;
       } else {
         const newOrg = await this.prisma.organization.create({

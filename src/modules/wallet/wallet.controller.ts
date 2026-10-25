@@ -11,6 +11,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader } from '@nestjs/swagger
 import { WalletService } from './wallet.service';
 import { DepositDto, BuyPackageDto, SandboxPaymentDto } from './dto/wallet.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OrganizationMembershipGuard } from '../../common/guards/organization-membership.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -19,7 +20,7 @@ import { UserRole } from '@prisma/client';
 
 @ApiTags('Wallet & Escrow (Ví Doanh nghiệp & Ký quỹ)')
 @Controller('wallets')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, OrganizationMembershipGuard)
 @ApiBearerAuth()
 export class WalletController {
   constructor(private readonly walletService: WalletService) {}

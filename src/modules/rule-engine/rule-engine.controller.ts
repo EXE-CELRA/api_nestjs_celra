@@ -3,13 +3,14 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader } from '@nestjs/swagger
 import { RuleEngineService } from './rule-engine.service';
 import { CreateRuleDto } from './dto/rule.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OrganizationMembershipGuard } from '../../common/guards/organization-membership.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 
 @ApiTags('Rule Engine (Động cơ Quy tắc Tuân thủ)')
 @Controller('rules')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, OrganizationMembershipGuard)
 @ApiBearerAuth()
 export class RuleEngineController {
   constructor(private readonly ruleService: RuleEngineService) {}

@@ -12,12 +12,13 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader, ApiParam } from '@nest
 import { AIAssistantService } from './ai-assistant.service';
 import { AIChatMessageDto, AcceptProposalDto, UpdateLegalRuleDto } from './dto/ai-chat.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OrganizationMembershipGuard } from '../../common/guards/organization-membership.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 
 @ApiTags('AI Compliance Assistant (Trợ lý AI Tuân thủ OpenCode)')
 @Controller('ai-assistant')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, OrganizationMembershipGuard)
 @ApiBearerAuth()
 export class AIAssistantController {
   constructor(private readonly aiService: AIAssistantService) {}

@@ -43,7 +43,7 @@ export class OrganizationService {
     });
 
     if (existingOrg) {
-      throw new BadRequestException('Mã số thuế này đã được đăng ký trên hệ thống');
+      throw new BadRequestException(`Mã số thuế ${taxCode} đã được đăng ký bởi doanh nghiệp "${existingOrg.name}" trên hệ thống CELRA. Nguyên tắc: 1 Mã số thuế = 1 Doanh nghiệp duy nhất!`);
     }
 
     const companyName = dto.tenDoanhNghiep || dto.name || dto.legalName || 'Doanh nghiệp mới';

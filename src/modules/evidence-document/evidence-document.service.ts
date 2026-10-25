@@ -35,6 +35,10 @@ export class EvidenceDocumentService {
       if (userOrg) targetOrgId = userOrg.organizationId;
     }
 
+    if (!targetOrgId) {
+      throw new BadRequestException('Vui lòng chọn doanh nghiệp trước khi tải lên tài liệu minh chứng');
+    }
+
     const fileSizeFormatted = `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
 
     // Chuẩn bị dữ liệu phân loại Tag, Quý, Năm lưu vào JSON OCR Metadata
@@ -115,10 +119,11 @@ export class EvidenceDocumentService {
       }
     }
 
-    const whereClause: any = {};
-    if (targetOrgId) {
-      whereClause.organizationId = targetOrgId;
+    if (!targetOrgId) {
+      return [];
     }
+
+    const whereClause: any = { organizationId: targetOrgId };
 
     const docs = await this.prisma.evidenceDocument.findMany({
       where: whereClause,

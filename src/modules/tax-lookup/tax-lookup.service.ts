@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../database/prisma.service';
 
 export interface TaxLookupResult {
   taxCode: string;
@@ -9,13 +10,19 @@ export interface TaxLookupResult {
   status: string;
   isOperating: boolean;
   source: string;
+  isAlreadyRegistered?: boolean;
+  registeredOrgName?: string;
+  registeredMessage?: string;
 }
 
 @Injectable()
 export class TaxLookupService {
+  constructor(private readonly prisma: PrismaService) {}
+
   /**
    * Tra cứu thông tin người nộp thuế / doanh nghiệp theo Mã Số Thuế
    * Tự động lấy dữ liệu từ cơ sở dữ liệu quốc gia thông qua cổng công khai VietQR/Casso
+   * Ràng buộc chặt chẽ: 1 Mã số thuế = 1 Doanh nghiệp duy nhất
    */
   async lookupTaxCode(taxCode: string): Promise<TaxLookupResult> {
     const cleanTaxCode = (taxCode || '').trim().replace(/\s+/g, '');
@@ -23,6 +30,12 @@ export class TaxLookupService {
     if (!cleanTaxCode || !/^[0-9-]{10,14}$/.test(cleanTaxCode)) {
       throw new BadRequestException('Mã số thuế không hợp lệ. Vui lòng nhập từ 10 đến 13 chữ số hợp lệ.');
     }
+
+    // 🛡️ Kiểm tra ràng buộc nguyên tắc: 1 Mã số thuế = 1 Doanh nghiệp duy nhất trong DB CELRA
+    const existingOrg = await this.prisma.organization.findUnique({
+      where: { taxCode: cleanTaxCode },
+      select: { id: true, name: true, createdAt: true },
+    });
 
     try {
       const response = await fetch(`https://api.vietqr.io/v2/business/${encodeURIComponent(cleanTaxCode)}`, {
@@ -68,6 +81,11 @@ export class TaxLookupService {
         status: statusText,
         isOperating: statusText.toLowerCase().includes('đang hoạt động'),
         source: 'Cổng thông tin Tổng cục Thuế (gdt.gov.vn)',
+        isAlreadyRegistered: !!existingOrg,
+        registeredOrgName: existingOrg ? existingOrg.name : undefined,
+        registeredMessage: existingOrg
+          ? `Mã số thuế ${cleanTaxCode} đã được đăng ký bởi doanh nghiệp "${existingOrg.name}" trên hệ thống CELRA. Nguyên tắc ràng buộc: 1 Mã số thuế = 1 Doanh nghiệp duy nhất.`
+          : undefined,
       };
     } catch (error: any) {
       if (error instanceof NotFoundException || error instanceof BadRequestException) {

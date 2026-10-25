@@ -64,20 +64,15 @@ export class AuthService {
       this.logger.error(`Lỗi gửi email: ${e.message}`);
     }
 
-    if (sent) {
-      return {
-        success: true,
-        message: 'Mã xác thực OTP đã được gửi về email của bạn',
-      };
-    }
-
     this.logger.warn(`=======================================================`);
-    this.logger.warn(`🔑 [DEV FALLBACK] MÃ OTP ĐĂNG KÝ CHO [${email}]: ${otpCode}`);
+    this.logger.warn(`🔑 [OTP ĐĂNG KÝ] EMAIL [${email}]: >>> ${otpCode} <<<`);
     this.logger.warn(`=======================================================`);
 
     return {
       success: true,
-      message: 'Mã xác thực OTP đã được tạo (Môi trường Thử nghiệm)',
+      message: sent
+        ? 'Mã xác thực OTP đã được gửi về email của bạn'
+        : 'Mã xác thực OTP đã được tạo (Môi trường Thử nghiệm)',
       debugOtp: otpCode,
     };
   }
