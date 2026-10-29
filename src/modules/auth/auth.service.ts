@@ -127,9 +127,10 @@ export class AuthService {
 
     const userName = dto.hoVaTen || dto.name || dto.fullName || 'Người dùng';
     const userPhone = dto.soDienThoai || dto.phone || dto.phoneNumber;
-    const userRole = dto.vaiTro || dto.role || UserRole.owner;
+    const requestedRole = dto.vaiTro || dto.role || UserRole.owner;
+    // Chặn leo thang đặc quyền: Không cho phép tự đăng ký tài khoản có quyền admin
+    const userRole = requestedRole === UserRole.admin ? UserRole.owner : requestedRole;
     const userRoleTitle = dto.chucDanh || dto.roleTitle || 'Chủ doanh nghiệp';
-
     const user = await this.prisma.user.create({
       data: {
         email: dto.email.toLowerCase(),
@@ -161,19 +162,18 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@gmail.com').toLowerCase();
-    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123!@#';
+    const envAdminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+    const envAdminPassword = process.env.ADMIN_PASSWORD?.trim();
     const rawPassword = dto.matKhau || dto.password || dto.passwordHash;
 
-    // Kiểm tra tài khoản ảo Super Admin (In-Memory, không chạm vào DB)
-    if (dto.email.toLowerCase() === adminEmail) {
-      if (rawPassword !== adminPassword) {
+    // Chỉ cho phép đăng nhập Super Admin khi ĐÃ CẤU HÌNH rõ ràng trong .env (Tuyệt đối không dùng fallback gán cứng)
+    if (envAdminEmail && envAdminPassword && dto.email.toLowerCase() === envAdminEmail) {
+      if (rawPassword !== envAdminPassword) {
         throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
       }
-
       const virtualAdmin = {
         id: 'admin-virtual-system-id',
-        email: adminEmail,
+        email: envAdminEmail,
         name: process.env.ADMIN_DEFAULT_NAME || 'Quản Trị Viên Hệ Thống CELRA',
         role: UserRole.admin,
         roleTitle: 'Super Administrator',
@@ -298,7 +298,7 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new NotFoundException('Không tìm thấy thông tin người dùng');
+      throw new UnauthorizedException('Tài khoản không tồn tại hoặc đã bị xóa khỏi hệ thống');
     }
 
     return this.enrichUserWithVietnamese(user);

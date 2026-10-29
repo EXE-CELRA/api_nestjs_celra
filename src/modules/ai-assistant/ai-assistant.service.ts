@@ -55,6 +55,18 @@ export class AIAssistantService implements OnModuleInit {
     this.initBiWeeklySyncSchedule();
   }
 
+  /**
+   * 🛡️ LRU Cache Setter an toàn bộ nhớ: tự động loại bỏ phần tử cũ nhất khi chạm ngưỡng max
+   */
+  private setLruCache<T>(cacheMap: Map<string, T>, key: string, value: T, maxLimit = 500) {
+    if (cacheMap.has(key)) {
+      cacheMap.delete(key);
+    } else if (cacheMap.size >= maxLimit) {
+      const oldestKey = cacheMap.keys().next().value;
+      if (oldestKey) cacheMap.delete(oldestKey);
+    }
+    cacheMap.set(key, value);
+  }
   // ============================================================================
   // LUỒNG CHÍNH 1: TIẾP NHẬN & PHÂN TÍCH CÂU HỎI TƯ VẤN PHÁP LÝ (TOP-DOWN PIPELINE)
   // Đọc từ trên xuống dưới:
@@ -458,6 +470,16 @@ export class AIAssistantService implements OnModuleInit {
     }
 
     const today = new Date().toISOString().slice(0, 10);
+
+    // Tự động dọn dẹp các key rate-limit của ngày cũ để tránh tích tụ bộ nhớ
+    if (this.dailyQueryTracker.size > 200) {
+      for (const [k, v] of this.dailyQueryTracker.entries()) {
+        if (v.date !== today) {
+          this.dailyQueryTracker.delete(k);
+        }
+      }
+    }
+
     const trackerKey = `${orgId}::${today}`;
     const current = this.dailyQueryTracker.get(trackerKey);
     if (current && current.count >= 15 && current.date === today) {
@@ -472,7 +494,6 @@ export class AIAssistantService implements OnModuleInit {
       };
     }
     this.dailyQueryTracker.set(trackerKey, { count: (current?.count || 0) + 1, date: today });
-    // ------------------------------------------------------------------------
     // BƯỚC 2: TRA CỨU TRONG KHO LUẬT SẴN CÓ CỦA DATABASE (LOCAL RULES - 0 API)
     // ------------------------------------------------------------------------
     const localDbRules = await this.prisma.rule.findMany();
@@ -931,7 +952,7 @@ export class AIAssistantService implements OnModuleInit {
 
     // Chỉ lưu vào Cache khi câu trả lời thực sự đến từ AI hoặc tra cứu hợp lệ
     if (shouldCache) {
-      this.queryCache.set(cacheKey, resultPayload);
+      this.setLruCache(this.queryCache, cacheKey, resultPayload, 500);
     }
 
     return {
@@ -1183,7 +1204,7 @@ export class AIAssistantService implements OnModuleInit {
           issuedDate: String(doc.issued_date || ''),
           sourceUrl: cleanDLPLUrl(doc.source_url as string) || matchCoreLegalDocUrl(doc.code as string) || `https://dulieuphapluat.vn/van-ban/tim-kiem.html?q=${encodeURIComponent(doc.code as string)}`,
         }));
-        this.dlplDocsCache.set(normalizedQuery, { data: mapped, timestamp: Date.now() });
+        this.setLruCache(this.dlplDocsCache, normalizedQuery, { data: mapped, timestamp: Date.now() }, 300);
         return mapped;
       }
     } else if (res.status === 429) {
@@ -1209,7 +1230,7 @@ export class AIAssistantService implements OnModuleInit {
     if (res.ok) {
       const json: Record<string, unknown> = await res.json();
       if (json.success && Array.isArray(json.data)) {
-        this.dlplPenaltiesCache.set(normalizedQuery, { data: json.data, timestamp: Date.now() });
+        this.setLruCache(this.dlplPenaltiesCache, normalizedQuery, { data: json.data, timestamp: Date.now() }, 300);
         return json.data;
       }
     }

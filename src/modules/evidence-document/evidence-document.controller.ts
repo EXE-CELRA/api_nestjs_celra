@@ -93,28 +93,36 @@ export class EvidenceDocumentController {
   }
 
   @Get(':id')
+  @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Lấy chi tiết bằng chứng số theo ID' })
-  async findOne(@Param('id') id: string) {
-    return this.evidenceService.findOne(id);
+  async findOne(
+    @Param('id') id: string,
+    @Headers('x-organization-id') orgId?: string,
+  ) {
+    return this.evidenceService.findOne(id, orgId);
   }
 
   @Get(':id/download')
+  @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Tải về tệp bằng chứng số' })
   async downloadFile(
     @Param('id') id: string,
     @Res() res: Response,
+    @Headers('x-organization-id') orgId?: string,
   ) {
-    const fileInfo = await this.evidenceService.getFileForDownload(id);
+    const fileInfo = await this.evidenceService.getFileForDownload(id, orgId);
     return res.download(fileInfo.absolutePath, fileInfo.fileName);
   }
 
   @Patch(':id/verify')
+  @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Thẩm tra bằng chứng (Xác nhận ĐẠT hoặc TỪ CHỐI kèm lý do)' })
   async verify(
     @Param('id') id: string,
     @CurrentUser('sub') userId: string,
     @Body() dto: VerifyEvidenceDto,
+    @Headers('x-organization-id') orgId?: string,
   ) {
-    return this.evidenceService.verify(id, userId, dto);
+    return this.evidenceService.verify(id, userId, dto, orgId);
   }
 }

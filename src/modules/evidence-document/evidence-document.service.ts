@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { VerifyEvidenceDto } from './dto/evidence.dto';
 import { EvidenceStatus, TaskStatus, TimelineEventType, UserRole, WaitingOnRole, ContextGroup, ContextStatus } from '@prisma/client';
@@ -177,7 +177,7 @@ export class EvidenceDocumentService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, orgId?: string) {
     const doc = await this.prisma.evidenceDocument.findUnique({
       where: { id },
       include: { task: true },
@@ -187,10 +187,14 @@ export class EvidenceDocumentService {
       throw new NotFoundException('Không tìm thấy bằng chứng');
     }
 
+    if (orgId && doc.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền truy cập vào chứng từ của doanh nghiệp khác.');
+    }
+
     return doc;
   }
 
-  async getFileForDownload(id: string) {
+  async getFileForDownload(id: string, orgId?: string) {
     const doc = await this.prisma.evidenceDocument.findUnique({
       where: { id },
     });
@@ -198,6 +202,9 @@ export class EvidenceDocumentService {
       throw new NotFoundException('Không tìm thấy tài liệu bằng chứng');
     }
 
+    if (orgId && doc.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền tải chứng từ của doanh nghiệp khác.');
+    }
     const ext = extname(doc.filePath || '');
     let resolvedPath = doc.filePath;
     if (!existsSync(resolvedPath)) {
@@ -218,12 +225,15 @@ export class EvidenceDocumentService {
     };
   }
 
-  async verify(id: string, userId: string, dto: VerifyEvidenceDto) {
+  async verify(id: string, userId: string, dto: VerifyEvidenceDto, orgId?: string) {
     const doc = await this.prisma.evidenceDocument.findUnique({ where: { id } });
     if (!doc) {
       throw new NotFoundException('Không tìm thấy bằng chứng');
     }
 
+    if (orgId && doc.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền thẩm tra chứng từ của doanh nghiệp khác.');
+    }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const actorName = user ? user.name : 'Người thẩm định';
     const actorRole = user ? user.role : UserRole.service_accountant;
