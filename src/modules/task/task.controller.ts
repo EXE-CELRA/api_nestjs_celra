@@ -164,48 +164,60 @@ export class TaskController {
   }
 
   @Get(':id')
+  @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Lấy chi tiết tác vụ (Bằng chứng, Bình luận, Timeline)' })
-  async findOne(@Param('id') id: string) {
-    return this.taskService.findOne(id);
+  async findOne(
+    @Param('id') id: string,
+    @Headers('x-organization-id') orgId?: string,
+  ) {
+    return this.taskService.findOne(id, orgId);
   }
 
   @Patch(':id/status')
+  @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Cập nhật trạng thái tác vụ & Ai đang chờ ai' })
   async updateStatus(
     @Param('id') id: string,
     @CurrentUser('sub') userId: string,
     @Body() dto: UpdateTaskStatusDto,
+    @Headers('x-organization-id') orgId?: string,
   ) {
-    return this.taskService.updateStatus(id, userId, dto);
+    return this.taskService.updateStatus(id, userId, dto, orgId);
   }
 
   @Patch(':id/priority')
+  @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Chủ DN tùy biến mức độ ưu tiên vận hành (Tách bạch rủi ro luật định)' })
   async updatePriority(
     @Param('id') id: string,
     @CurrentUser('sub') userId: string,
     @Body() dto: UpdateTaskPriorityDto,
+    @Headers('x-organization-id') orgId?: string,
   ) {
-    return this.taskService.updatePriority(id, userId, dto);
+    return this.taskService.updatePriority(id, userId, dto, orgId);
   }
 
   @Post(':id/comments')
+  @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Thêm bình luận trao đổi vào tác vụ' })
   async addComment(
     @Param('id') id: string,
     @CurrentUser('sub') userId: string,
     @Body() dto: AddTaskCommentDto,
+    @Headers('x-organization-id') orgId?: string,
   ) {
-    return this.taskService.addComment(id, userId, dto);
+    return this.taskService.addComment(id, userId, dto, orgId);
   }
 
   @Post(':id/self-certify')
+  @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Xác nhận tự chịu trách nhiệm (Không tải bằng chứng)' })
   async selfCertify(
     @Param('id') id: string,
     @CurrentUser('sub') userId: string,
     @Body() dto: SelfCertifyTaskDto,
+    @Headers('x-organization-id') orgId?: string,
   ) {
-    return this.taskService.selfCertify(id, userId, dto);
+    return this.taskService.selfCertify(id, userId, dto, orgId);
   }
 }
