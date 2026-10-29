@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import {
   CreateTaskDto,
@@ -173,7 +173,7 @@ export class TaskService {
     return tasks.map((t) => this.enrichTaskWithVietnamese(t));
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, orgId?: string) {
     const task = await this.prisma.task.findUnique({
       where: { id },
       include: {
@@ -193,13 +193,21 @@ export class TaskService {
       throw new NotFoundException('Không tìm thấy tác vụ');
     }
 
+    if (orgId && task.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền truy cập tác vụ của doanh nghiệp khác.');
+    }
+
     return this.enrichTaskWithVietnamese(task);
   }
 
-  async updateStatus(id: string, userId: string, dto: UpdateTaskStatusDto) {
+  async updateStatus(id: string, userId: string, dto: UpdateTaskStatusDto, orgId?: string) {
     const task = await this.prisma.task.findUnique({ where: { id } });
     if (!task) {
       throw new NotFoundException('Không tìm thấy tác vụ');
+    }
+
+    if (orgId && task.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền thao tác trên tác vụ của doanh nghiệp khác.');
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -241,12 +249,15 @@ export class TaskService {
    * Cập nhật Mức độ ưu tiên vận hành (Custom Priority)
    * Tách bạch giữa Rủi ro luật định (Legal Risk / Statutory Priority) và Ưu tiên xử lý của Chủ DN
    */
-  async updatePriority(id: string, userId: string, dto: UpdateTaskPriorityDto) {
+  async updatePriority(id: string, userId: string, dto: UpdateTaskPriorityDto, orgId?: string) {
     const task = await this.prisma.task.findUnique({ where: { id } });
     if (!task) {
       throw new NotFoundException('Không tìm thấy tác vụ');
     }
 
+    if (orgId && task.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền thao tác trên tác vụ của doanh nghiệp khác.');
+    }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const actorName = user ? user.name : 'Người dùng';
     const actorRole = user ? user.role : UserRole.owner;
@@ -297,12 +308,15 @@ export class TaskService {
     return this.enrichTaskWithVietnamese(updated);
   }
 
-  async addComment(taskId: string, userId: string, dto: AddTaskCommentDto) {
+  async addComment(taskId: string, userId: string, dto: AddTaskCommentDto, orgId?: string) {
     const task = await this.prisma.task.findUnique({ where: { id: taskId } });
     if (!task) {
       throw new NotFoundException('Không tìm thấy tác vụ');
     }
 
+    if (orgId && task.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền thao tác trên tác vụ của doanh nghiệp khác.');
+    }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const authorName = user ? user.name : 'Người dùng';
     const authorRole = user ? user.role : UserRole.owner;
@@ -344,12 +358,15 @@ export class TaskService {
     };
   }
 
-  async selfCertify(taskId: string, userId: string, dto: SelfCertifyTaskDto) {
+  async selfCertify(taskId: string, userId: string, dto: SelfCertifyTaskDto, orgId?: string) {
     const task = await this.prisma.task.findUnique({ where: { id: taskId } });
     if (!task) {
       throw new NotFoundException('Không tìm thấy tác vụ');
     }
 
+    if (orgId && task.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền thao tác trên tác vụ của doanh nghiệp khác.');
+    }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const actorName = user ? user.name : 'Chủ doanh nghiệp';
     const reason = dto.lyDo || dto.reason;

@@ -298,7 +298,7 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new NotFoundException('Không tìm thấy thông tin người dùng');
+      throw new UnauthorizedException('Tài khoản không tồn tại hoặc đã bị xóa khỏi hệ thống');
     }
 
     return this.enrichUserWithVietnamese(user);
