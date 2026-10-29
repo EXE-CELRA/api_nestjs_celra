@@ -21,18 +21,36 @@ export class OrganizationMembershipGuard implements CanActivate {
     }
 
     // Lấy organizationId từ params (:orgId), query, body hoặc header 'x-organization-id'
-    const targetOrgId: string | undefined =
+    let targetOrgId: string | undefined =
       request.params?.orgId ||
       request.params?.organizationId ||
       request.body?.organizationId ||
       request.query?.orgId ||
       request.headers['x-organization-id'];
 
+    // Nếu request không truyền orgId, tự động đối soát doanh nghiệp hợp lệ của người dùng
     if (!targetOrgId) {
-      // Nếu không có orgId trên request, cho qua nếu route không yêu cầu scoped org
-      return true;
-    }
+      if (user.role === UserRole.admin) {
+        request.activeMembership = { role: UserRole.admin, status: MembershipStatus.active };
+        return true;
+      }
 
+      const activeMembership = await this.prisma.membership.findFirst({
+        where: {
+          userId: user.sub,
+          status: MembershipStatus.active,
+        },
+      });
+
+      if (!activeMembership) {
+        throw new ForbiddenException(
+          'Yêu cầu xác định doanh nghiệp (Header x-organization-id). Bạn chưa có tư cách thành viên hợp lệ trong doanh nghiệp nào.',
+        );
+      }
+
+      targetOrgId = activeMembership.organizationId;
+      request.headers['x-organization-id'] = targetOrgId;
+    }
     // Nếu người dùng là admin toàn hệ thống thì có quyền quản trị
     if (user.role === UserRole.admin) {
       request.activeMembership = { role: UserRole.admin, status: MembershipStatus.active };
