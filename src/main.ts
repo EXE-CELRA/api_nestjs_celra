@@ -38,8 +38,8 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  logger.log(`🚀 Server Backend CELRA đang chạy tại: http://localhost:${port}/api/v1`);
-  logger.log(`📚 Tài liệu Swagger API tại: http://localhost:${port}/api/docs`);
+  logger.log(`Server Backend CELRA đang chạy tại: http://localhost:${port}/api/v1`);
+  logger.log(`Tài liệu Swagger API tại: http://localhost:${port}/api/docs`);
 }
 
 void bootstrap();
