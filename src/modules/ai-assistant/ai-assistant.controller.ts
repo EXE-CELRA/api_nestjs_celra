@@ -7,14 +7,20 @@ import {
   Body,
   UseGuards,
   Headers,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader, ApiParam } from '@nestjs/swagger';
 import { AIAssistantService } from './ai-assistant.service';
 import { AIChatMessageDto, AcceptProposalDto, UpdateLegalRuleDto } from './dto/ai-chat.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OrganizationMembershipGuard } from '../../common/guards/organization-membership.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 
+interface AuthenticatedOrgRequest extends Request {
+  validatedOrgId?: string;
+}
 @ApiTags('AI Compliance Assistant (Trợ lý AI Tuân thủ OpenCode)')
 @Controller('ai-assistant')
 @UseGuards(JwtAuthGuard)
@@ -23,24 +29,30 @@ export class AIAssistantController {
   constructor(private readonly aiService: AIAssistantService) {}
 
   @Post('chat')
+  @UseGuards(OrganizationMembershipGuard)
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Gửi câu hỏi tuân thủ đến Trợ lý AI (kèm nạp bối cảnh Context Facts)' })
   async chat(
+    @Req() req: AuthenticatedOrgRequest,
     @Headers('x-organization-id') orgId: string,
     @Body() dto: AIChatMessageDto,
   ) {
-    return this.aiService.chat(orgId, dto);
+    const targetOrgId = req.validatedOrgId || orgId;
+    return this.aiService.chat(targetOrgId, dto);
   }
 
   @Post('accept-proposal')
+  @UseGuards(OrganizationMembershipGuard)
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Chấp nhận đề xuất của AI để tự động tạo Checklist và Task vào DB' })
   async acceptProposal(
+    @Req() req: AuthenticatedOrgRequest,
     @Headers('x-organization-id') orgId: string,
     @CurrentUser('sub') userId: string,
     @Body() dto: AcceptProposalDto,
   ) {
-    return this.aiService.acceptProposal(orgId, userId, dto);
+    const targetOrgId = req.validatedOrgId || orgId;
+    return this.aiService.acceptProposal(targetOrgId, userId, dto);
   }
 
   @Public()
