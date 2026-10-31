@@ -22,6 +22,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { TaxLookupModule } from './modules/tax-lookup/tax-lookup.module';
 import { CitLedgerModule } from './modules/cit-ledger/cit-ledger.module';
 import { HealthModule } from './modules/health/health.module';
+import { SubscriptionModule } from './modules/subscription/subscription.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -52,6 +53,7 @@ import { AppService } from './app.service';
     AdminModule,
     TaxLookupModule,
     CitLedgerModule,
+    SubscriptionModule,
     HealthModule,
   ],
   controllers: [AppController],
