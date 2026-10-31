@@ -43,6 +43,16 @@ describe('AIAssistantService Intent & Prompt Conditioning', () => {
     task: {
       count: jest.fn().mockResolvedValue(0),
     },
+    aiSystem: {
+      findFirst: jest.fn().mockResolvedValue({
+        id: 'cfg-test',
+        provider: 'OPENCODE',
+        apiKey: 'test-key',
+        apiUrl: 'https://mock.opencode.ai/v1',
+        model: 'deepseek-v4.1-flash',
+      }),
+      create: jest.fn().mockResolvedValue({}),
+    },
   };
   const mockConfig = {
     get: jest.fn((key: string, defaultValue?: string) => {

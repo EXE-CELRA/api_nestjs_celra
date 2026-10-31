@@ -117,7 +117,7 @@ export class AuthService {
       throw new BadRequestException('Email này đã được sử dụng trong hệ thống');
     }
 
-    const rawPassword = dto.matKhau || dto.password || dto.passwordHash;
+    const rawPassword = dto.password;
     if (!rawPassword) {
       throw new BadRequestException('Mật khẩu không được để trống');
     }
@@ -125,12 +125,12 @@ export class AuthService {
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(rawPassword, saltRounds);
 
-    const userName = dto.hoVaTen || dto.name || dto.fullName || 'Người dùng';
-    const userPhone = dto.soDienThoai || dto.phone || dto.phoneNumber;
-    const requestedRole = dto.vaiTro || dto.role || UserRole.owner;
+    const userName = dto.name || 'Người dùng';
+    const userPhone = dto.phone;
+    const requestedRole = dto.role || UserRole.owner;
     // Chặn leo thang đặc quyền: Không cho phép tự đăng ký tài khoản có quyền admin
     const userRole = requestedRole === UserRole.admin ? UserRole.owner : requestedRole;
-    const userRoleTitle = dto.chucDanh || dto.roleTitle || 'Chủ doanh nghiệp';
+    const userRoleTitle = dto.roleTitle || 'Chủ doanh nghiệp';
     const user = await this.prisma.user.create({
       data: {
         email: dto.email.toLowerCase(),
@@ -164,7 +164,7 @@ export class AuthService {
   async login(dto: LoginDto) {
     const envAdminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
     const envAdminPassword = process.env.ADMIN_PASSWORD?.trim();
-    const rawPassword = dto.matKhau || dto.password || dto.passwordHash;
+    const rawPassword = dto.password;
 
     // Chỉ cho phép đăng nhập Super Admin khi ĐÃ CẤU HÌNH rõ ràng trong .env (Tuyệt đối không dùng fallback gán cứng)
     if (envAdminEmail && envAdminPassword && dto.email.toLowerCase() === envAdminEmail) {
@@ -231,9 +231,8 @@ export class AuthService {
     if (!user) {
       throw new NotFoundException('Không tìm thấy người dùng');
     }
-
-    const oldPassword = dto.matKhauCu || dto.oldPassword;
-    const newPassword = dto.matKhauMoi || dto.newPassword;
+    const oldPassword = dto.oldPassword;
+    const newPassword = dto.newPassword;
 
     if (!oldPassword || !newPassword) {
       throw new BadRequestException('Mật khẩu cũ và mật khẩu mới không được để trống');
@@ -319,8 +318,8 @@ export class AuthService {
       }
     }
 
-    const targetName = dto.hoVaTen || dto.name;
-    const targetPhone = dto.soDienThoai || dto.phone;
+    const targetName = dto.name;
+    const targetPhone = dto.phone;
 
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },

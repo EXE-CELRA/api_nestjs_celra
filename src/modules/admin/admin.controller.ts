@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Param,
   Body,
   Query,
@@ -15,6 +16,8 @@ import {
   AdjustCreditDto,
   UpdatePlatformSettingsDto,
   UpdatePackageDto,
+  TestAIKeyDto,
+  UpdateAIConfigDto,
 } from './dto/admin.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AdminOnlyGuard } from '../../common/guards/admin-only.guard';
@@ -67,9 +70,39 @@ export class AdminController {
   }
 
   @Get('ai/status')
-  @ApiOperation({ summary: 'Giám sát sức khỏe & thống kê sử dụng AI Copilot (OpenCode Go / DeepSeek)' })
+  @ApiOperation({ summary: 'Giám sát sức khỏe & thống kê sử dụng AI Copilot (OpenCode Go / Gemini)' })
   async getAIServiceStatus() {
     return this.adminService.getAIServiceStatus();
+  }
+
+  @Get('ai/analytics')
+  @ApiOperation({ summary: 'Lấy dữ liệu thống kê biểu đồ theo tháng và phân bổ theo từng doanh nghiệp' })
+  async getAIAnalytics() {
+    return this.adminService.getAIAnalytics();
+  }
+
+  @Get('ai/config')
+  @ApiOperation({ summary: 'Lấy cấu hình hiện tại của nhà cung cấp AI (Provider, Model, Endpoint)' })
+  async getAIConfig() {
+    return this.adminService.getActiveAIConfig();
+  }
+
+  @Post('ai/test-key')
+  @ApiOperation({ summary: 'Kiểm tra kết nối API Key và lấy danh sách Models hỗ trợ' })
+  async testAIKey(@Body() dto: TestAIKeyDto) {
+    return this.adminService.testAIKeyAndFetchModels(dto);
+  }
+
+  @Patch('ai/config')
+  @ApiOperation({ summary: 'Cập nhật nhà cung cấp, API Key và Model AI đang sử dụng' })
+  async updateAIConfig(@Body() dto: UpdateAIConfigDto) {
+    return this.adminService.updateAIConfig(dto);
+  }
+
+  @Delete('ai/config')
+  @ApiOperation({ summary: 'Ngắt kết nối và xóa toàn bộ API Key AI đã lưu (đưa về trạng thái DISCONNECTED)' })
+  async resetAIConfig() {
+    return this.adminService.resetAIKeyConfig();
   }
 
   // 4. TÀI CHÍNH & SỔ CÁI

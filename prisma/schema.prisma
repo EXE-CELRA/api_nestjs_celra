@@ -224,7 +224,7 @@ model Organization {
   calendarNotes      CalendarNote[]
   citRevenues        CitRevenue[]
   citExpenses        CitExpense[]
-
+  aiLogs             AiSystem[]
   @@map("doanh_nghiep")
 }
 
@@ -661,4 +661,35 @@ model CitExpense {
   @@index([organizationId, year, quarter])
   @@index([organizationId, year, quarter, isDisallowedB4])
   @@map("so_chi_phi_tndn")
+}
+
+// ===================== CẤU HÌNH & NHẬT KÝ LƯU LƯỢNG AI =====================
+
+model AiSystem {
+  id               String        @id @default(uuid())
+  // 1. CẤU HÌNH API KEY DO ADMIN CÀI ĐẶT DÙNG CHUNG TOÀN SÀN
+  provider         String        @default("GEMINI") @map("nha_cung_cap")
+  apiKey           String?       @map("khoa_api_key")
+  apiUrl           String?       @map("duong_dan_api_url")
+  model            String?       @map("mo_hinh_ai")
+  availableModels  Json?         @default("[]") @map("danh_sach_models")
+  lastTestedAt     DateTime?     @map("thoi_gian_kiem_tra_gan_nhat")
+
+  // 2. LƯỢT DÙNG VÀ TOKEN THỰC TẾ THEO TỪNG DOANH NGHIỆP
+  organizationId   String?       @map("id_doanh_nghiep")
+  userId           String?       @map("id_nguoi_dung")
+  promptTokens     Int           @default(0) @map("token_dau_vao")
+  completionTokens Int           @default(0) @map("token_dau_ra")
+  totalTokens      Int           @default(0) @map("tong_token")
+  questionSnippet  String?       @map("cau_hoi_ngan")
+
+  // 3. THỜI GIAN CHÍNH XÁC (CHO BIỂU ĐỒ VÀ TRUY VẾT)
+  createdAt        DateTime      @default(now()) @map("ngay_gio_tao")
+  updatedAt        DateTime      @updatedAt @map("ngay_cap_nhat")
+
+  organization     Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([createdAt])
+  @@map("cau_hinh_va_luu_luong_ai")
 }
