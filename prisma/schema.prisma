@@ -211,6 +211,17 @@ model Organization {
   createdAt          DateTime     @default(now()) @map("ngay_tao")
   updatedAt          DateTime     @updatedAt @map("ngay_cap_nhat")
 
+  // Subscription & Hạn Mức Gói Dịch Vụ
+  subscriptionPlan          String       @default("STARTER") @map("goi_dich_vu")
+  subscriptionStatus        String       @default("ACTIVE") @map("trang_thai_goi")
+  subscriptionStartedAt     DateTime?    @map("ngay_bat_dau_goi")
+  subscriptionExpiresAt     DateTime?    @map("ngay_het_han_goi")
+  subscriptionNextBillingAt DateTime?    @map("ngay_thanh_toan_tiep_theo")
+  aiQueriesUsedThisMonth    Int          @default(0) @map("luot_ai_da_dung_thang")
+  docAnalysesUsedThisMonth  Int          @default(0) @map("luot_ho_so_da_dung_thang")
+  currentBillingCycleStart  DateTime?    @map("ngay_dau_chu_ky_thang")
+  autoRenew                 Boolean      @default(true) @map("tu_dong_gia_han")
+
   createdBy          User?        @relation("CreatedByUser", fields: [createdById], references: [id])
   departments        Department[]
   memberships        Membership[]
@@ -224,6 +235,8 @@ model Organization {
   calendarNotes      CalendarNote[]
   citRevenues        CitRevenue[]
   citExpenses        CitExpense[]
+  aiLogs             AiSystem[]
+  subscriptionInvoices SubscriptionInvoice[]
 
   @@map("doanh_nghiep")
 }
@@ -619,6 +632,30 @@ model CalendarNote {
   @@map("ghi_chu_lich")
 }
 
+// ===================== HÓA ĐƠN GÓI DỊCH VỤ SUBSCRIPTION =====================
+model SubscriptionInvoice {
+  id             String       @id @default(uuid())
+  organizationId String       @map("id_doanh_nghiep")
+  code           String       @unique @map("ma_hoa_don")
+  planCode       String       @map("ma_goi")
+  planName       String       @map("ten_goi")
+  amountVnd      Float        @map("so_tien")
+  billingMonths  Int          @default(1) @map("so_thang")
+  paymentMethod  String       @default("VietQR") @map("phuong_thuc_thanh_toan")
+  status         String       @default("SUCCESS") @map("trang_thai")
+  paidAt         DateTime     @default(now()) @map("thoi_gian_thanh_toan")
+  periodStart    DateTime     @map("ngay_bat_dau_chu_ky")
+  periodEnd      DateTime     @map("ngay_ket_thuc_chu_ky")
+  taxNote        String?      @map("ghi_chu_thue")
+  createdAt      DateTime     @default(now()) @map("ngay_tao")
+  updatedAt      DateTime     @updatedAt @map("ngay_cap_nhat")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@map("hoa_don_thue_bao")
+}
+
 // ===================== SỔ THU CHI THUẾ TNDN =====================
 
 model CitRevenue {
@@ -661,4 +698,35 @@ model CitExpense {
   @@index([organizationId, year, quarter])
   @@index([organizationId, year, quarter, isDisallowedB4])
   @@map("so_chi_phi_tndn")
+}
+
+// ===================== CẤU HÌNH & NHẬT KÝ LƯU LƯỢNG AI =====================
+
+model AiSystem {
+  id               String        @id @default(uuid())
+  // 1. CẤU HÌNH API KEY DO ADMIN CÀI ĐẶT DÙNG CHUNG TOÀN SÀN
+  provider         String        @default("GEMINI") @map("nha_cung_cap")
+  apiKey           String?       @map("khoa_api_key")
+  apiUrl           String?       @map("duong_dan_api_url")
+  model            String?       @map("mo_hinh_ai")
+  availableModels  Json?         @default("[]") @map("danh_sach_models")
+  lastTestedAt     DateTime?     @map("thoi_gian_kiem_tra_gan_nhat")
+
+  // 2. LƯỢT DÙNG VÀ TOKEN THỰC TẾ THEO TỪNG DOANH NGHIỆP
+  organizationId   String?       @map("id_doanh_nghiep")
+  userId           String?       @map("id_nguoi_dung")
+  promptTokens     Int           @default(0) @map("token_dau_vao")
+  completionTokens Int           @default(0) @map("token_dau_ra")
+  totalTokens      Int           @default(0) @map("tong_token")
+  questionSnippet  String?       @map("cau_hoi_ngan")
+
+  // 3. THỜI GIAN CHÍNH XÁC (CHO BIỂU ĐỒ VÀ TRUY VẾT)
+  createdAt        DateTime      @default(now()) @map("ngay_gio_tao")
+  updatedAt        DateTime      @updatedAt @map("ngay_cap_nhat")
+
+  organization     Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([createdAt])
+  @@map("cau_hinh_va_luu_luong_ai")
 }

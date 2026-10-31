@@ -117,7 +117,7 @@ export class AuthService {
       throw new BadRequestException('Email này đã được sử dụng trong hệ thống');
     }
 
-    const rawPassword = dto.matKhau || dto.password || dto.passwordHash;
+    const rawPassword = dto.password;
     if (!rawPassword) {
       throw new BadRequestException('Mật khẩu không được để trống');
     }
@@ -231,9 +231,8 @@ export class AuthService {
     if (!user) {
       throw new NotFoundException('Không tìm thấy người dùng');
     }
-
-    const oldPassword = dto.matKhauCu || dto.oldPassword;
-    const newPassword = dto.matKhauMoi || dto.newPassword;
+    const oldPassword = dto.oldPassword;
+    const newPassword = dto.newPassword;
 
     if (!oldPassword || !newPassword) {
       throw new BadRequestException('Mật khẩu cũ và mật khẩu mới không được để trống');
@@ -319,8 +318,8 @@ export class AuthService {
       }
     }
 
-    const targetName = dto.hoVaTen || dto.name;
-    const targetPhone = dto.soDienThoai || dto.phone;
+    const targetName = dto.name;
+    const targetPhone = dto.phone;
 
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },

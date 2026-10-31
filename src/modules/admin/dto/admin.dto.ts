@@ -94,3 +94,45 @@ export class UpdatePackageDto {
   @IsOptional()
   badge?: string;
 }
+
+export enum AIProviderType {
+  GEMINI = 'GEMINI',
+  OPENCODE = 'OPENCODE',
+  CUSTOM = 'CUSTOM',
+}
+
+export class TestAIKeyDto {
+  @ApiProperty({ enum: AIProviderType, example: AIProviderType.GEMINI })
+  @IsEnum(AIProviderType)
+  provider: AIProviderType;
+
+  @ApiPropertyOptional({ example: 'AIzaSy...' })
+  @IsString()
+  @IsOptional()
+  apiKey?: string;
+  @ApiPropertyOptional({ example: 'https://generativelanguage.googleapis.com/v1beta/openai' })
+  @IsString()
+  @IsOptional()
+  apiUrl?: string;
+}
+
+export class UpdateAIConfigDto {
+  @ApiProperty({ enum: AIProviderType, example: AIProviderType.GEMINI })
+  @IsEnum(AIProviderType)
+  provider: AIProviderType;
+
+  @ApiPropertyOptional({ example: 'AIzaSy...' })
+  @IsString()
+  @IsOptional()
+  apiKey?: string;
+
+  @ApiPropertyOptional({ example: 'https://generativelanguage.googleapis.com/v1beta/openai' })
+  @IsString()
+  @IsOptional()
+  apiUrl?: string;
+
+  @ApiProperty({ example: 'gemini-2.5-flash' })
+  @IsString()
+  @IsNotEmpty()
+  model: string;
+}

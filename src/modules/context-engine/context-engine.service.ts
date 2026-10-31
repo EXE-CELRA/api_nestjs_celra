@@ -228,9 +228,11 @@ export class ContextEngineService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const userName = user ? user.name : 'Chủ doanh nghiệp';
 
-    // 1. Khấu trừ phí rà soát 50.000 VNĐ từ Ví
-    const updatedWallet = await this.walletService.deductAuditFee(targetOrgId, fact.label, userName);
-
+    // 1. Ghi nhận lượt phân tích thẻ bối cảnh theo gói thuê bao
+    await this.prisma.organization.update({
+      where: { id: targetOrgId },
+      data: { docAnalysesUsedThisMonth: { increment: 1 } },
+    }).catch(() => {});
     // 2. Tra cứu Căn cứ pháp lý chính thức từ Database (đồng bộ từ DLPL API)
     const ruleCodeMap: Record<string, string> = {
       tax_code: 'RULE-TAX-MB',
@@ -331,7 +333,7 @@ export class ContextEngineService {
         proposedStatus,
         legalCitation: matchedLegal,
         proposedChecklist,
-        walletBalance: updatedWallet.balance,
+        isSubscriptionActive: true,
       },
     };
   }
