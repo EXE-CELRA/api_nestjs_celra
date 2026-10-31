@@ -125,12 +125,12 @@ export class AuthService {
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(rawPassword, saltRounds);
 
-    const userName = dto.name || 'Người dùng';
-    const userPhone = dto.phone;
-    const requestedRole = dto.role || UserRole.owner;
+    const userName = dto.hoVaTen || dto.name || dto.fullName || 'Người dùng';
+    const userPhone = dto.soDienThoai || dto.phone || dto.phoneNumber;
+    const requestedRole = dto.vaiTro || dto.role || UserRole.owner;
     // Chặn leo thang đặc quyền: Không cho phép tự đăng ký tài khoản có quyền admin
     const userRole = requestedRole === UserRole.admin ? UserRole.owner : requestedRole;
-    const userRoleTitle = dto.roleTitle || 'Chủ doanh nghiệp';
+    const userRoleTitle = dto.chucDanh || dto.roleTitle || 'Chủ doanh nghiệp';
     const user = await this.prisma.user.create({
       data: {
         email: dto.email.toLowerCase(),
@@ -164,7 +164,7 @@ export class AuthService {
   async login(dto: LoginDto) {
     const envAdminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
     const envAdminPassword = process.env.ADMIN_PASSWORD?.trim();
-    const rawPassword = dto.password;
+    const rawPassword = dto.matKhau || dto.password || dto.passwordHash;
 
     // Chỉ cho phép đăng nhập Super Admin khi ĐÃ CẤU HÌNH rõ ràng trong .env (Tuyệt đối không dùng fallback gán cứng)
     if (envAdminEmail && envAdminPassword && dto.email.toLowerCase() === envAdminEmail) {
