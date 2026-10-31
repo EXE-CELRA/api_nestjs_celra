@@ -118,11 +118,43 @@ export class AIAssistantService implements OnModuleInit {
     }
     const org = await this.prisma.organization.findUnique({
       where: { id: orgId },
-      include: { contextFacts: true },
+      include: {
+        contextFacts: true,
+        evidenceDocuments: true,
+      },
     });
     if (!org) {
       throw new NotFoundException('Không tìm thấy doanh nghiệp hợp lệ trong hệ thống');
     }
+
+    // ------------------------------------------------------------------------
+    // BƯỚC 1.0: TRÍCH XUẤT ĐỒNG BỘ TOÀN DIỆN DỮ LIỆU TÀI CHÍNH, HỒ SƠ & TÁC VỤ
+    // ------------------------------------------------------------------------
+    const currentYear = new Date().getFullYear();
+    const [citRevenues, citExpenses, tasks] = await Promise.all([
+      this.prisma.citRevenue?.findMany
+        ? this.prisma.citRevenue.findMany({ where: { organizationId: orgId, year: currentYear } }).catch(() => [])
+        : Promise.resolve([]),
+      this.prisma.citExpense?.findMany
+        ? this.prisma.citExpense.findMany({ where: { organizationId: orgId, year: currentYear } }).catch(() => [])
+        : Promise.resolve([]),
+      this.prisma.task?.findMany
+        ? this.prisma.task.findMany({
+            where: { organizationId: orgId },
+            select: { code: true, title: true, status: true, dueDate: true, priority: true },
+            take: 20,
+          }).catch(() => [])
+        : Promise.resolve([]),
+    ]);
+
+    const totalRevenue = citRevenues.reduce((acc, r) => acc + (r.amount || 0), 0);
+    const totalExpense = citExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
+    const disallowedExpenses = citExpenses.filter((e) => e.isDisallowedB4);
+    const totalDisallowed = disallowedExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
+    const deductibleExpense = Math.max(0, totalExpense - totalDisallowed);
+    const taxableIncome = Math.max(0, totalRevenue - deductibleExpense);
+    const estimatedCit = Math.round(taxableIncome * 0.2);
+    const prepayment80 = Math.round(estimatedCit * 0.8);
 
     const rawMessage = (dto.message || dto.question || '').trim();
     if (!rawMessage) {
@@ -338,7 +370,8 @@ export class AIAssistantService implements OnModuleInit {
       };
     }
 
-    const cacheKey = crypto.createHash('sha256').update(`${orgId}::${normalized}`).digest('hex');
+    const orgTimestamp = org.updatedAt ? new Date(org.updatedAt).getTime() : 0;
+    const cacheKey = crypto.createHash('sha256').update(`${orgId}::${orgTimestamp}::${normalized}`).digest('hex');
     const factScores = (org.contextFacts || []).map((f) => {
       let score = 0;
       const nLabel = this.normalizeText(f.label);
@@ -365,6 +398,8 @@ export class AIAssistantService implements OnModuleInit {
     // ------------------------------------------------------------------------
     const isDocAuditQuery = /(thieu tai lieu|thieu ho so|thieu chung tu|thieu gi|can bo sung gi|con thieu|chua lam|chua hoan thanh|can bo sung tai lieu|chua nop|chua thuc hien)/i.test(normalized);
 
+    const isSelfOrgSubject = /(toi|minh|chung toi|cua toi|cong ty|doanh nghiep|dn)/i.test(normalized);
+
     const isExplicitEnterpriseRef = /(doanh nghiep|cong ty|don vi|ben|tiem|quan|shop|ho kinh doanh)\s*(toi|em|minh|chung toi|cua toi|cua em|nay)/i.test(normalized) ||
       /(cho toi|cho em|giup toi|giup em)\s*.*(cong ty|doanh nghiep)/i.test(normalized) ||
       /(cong ty|doanh nghiep)\s*.*(cua toi|cua em|cua chung toi)/i.test(normalized);
@@ -373,8 +408,8 @@ export class AIAssistantService implements OnModuleInit {
       /(doanh nghiep can lam gi|cong ty can lam gi|doanh nghiep phai lam gi|cong ty phai lam gi|toi phai lam gi de tuan thu|toi can lam gi de tuan thu|toi co con thieu|co con thieu)/i.test(normalized) ||
       isDocAuditQuery;
 
-    const isEnterpriseQuery = isExplicitEnterpriseRef || isComplianceAuditIntent;
-
+    const isFinancialRef = /(doanh thu|chi phi|chi phí|tndn|tam nop|tạm nộp|muc b4|mục b4|xuat toan|xuất toán|tien mat|tiền mặt|chung tu|chứng từ|hoa don|hoá đơn|bằng chứng|bang chung)/i.test(normalized);
+    const isEnterpriseQuery = isExplicitEnterpriseRef || isComplianceAuditIntent || (isSelfOrgSubject && isFinancialRef);
     // Chỉ nạp các thẻ thuế trọng tâm khi người dùng hỏi tổng thể/tuân thủ/thiếu tài liệu, không hỏi một sắc thuế lẻ loi
     const isSpecificTaxQuery = !isDocAuditQuery && /(gtgt|vat|tndn|tam nop|20 trieu|tien mat|luong|tncn|hoa don|may tinh tien|pos|mon bai)/i.test(normalized);
 
@@ -416,6 +451,42 @@ export class AIAssistantService implements OnModuleInit {
         (o.missingDataQuestion ? `\n  - Câu hỏi xác minh thêm: "${o.missingDataQuestion}"` : '');
     }).join('\n\n');
 
+    const revenueFormatted = totalRevenue.toLocaleString('vi-VN');
+    const expenseFormatted = totalExpense.toLocaleString('vi-VN');
+    const disallowedFormatted = totalDisallowed.toLocaleString('vi-VN');
+    const estimatedTaxFormatted = estimatedCit.toLocaleString('vi-VN');
+    const prepay80Formatted = prepayment80.toLocaleString('vi-VN');
+
+    let financialSection = `SỐ LIỆU SỔ KÊ KHAI THU CHI & THUẾ TNDN NĂM ${currentYear} (DỮ LIỆU THỰC TẾ):\n` +
+      `- Tổng doanh thu ghi nhận: ${revenueFormatted} VNĐ (${citRevenues.length} khoản thu)\n` +
+      `- Tổng chi phí kế toán: ${expenseFormatted} VNĐ (${citExpenses.length} khoản chi)\n` +
+      `- Chi phí loại trừ Mục B4 (không được trừ khi tính thuế TNDN): ${disallowedFormatted} VNĐ (${disallowedExpenses.length} khoản rủi ro)\n` +
+      `- Thu nhập chịu thuế ước tính: ${taxableIncome.toLocaleString('vi-VN')} VNĐ\n` +
+      `- Thuế TNDN tạm tính năm (20%): ${estimatedTaxFormatted} VNĐ\n` +
+      `- Nghĩa vụ tạm nộp 4 quý tối thiểu 80% (NĐ 91/2022): ${prepay80Formatted} VNĐ\n`;
+
+    if (disallowedExpenses.length > 0) {
+      financialSection += `DANH SÁCH CHI PHÍ RỦI RO BỊ XUẤT TOÁN MỤC B4:\n` +
+        disallowedExpenses.slice(0, 5).map((e, idx) =>
+          `  ${idx + 1}. [${e.category}] ${e.amount.toLocaleString('vi-VN')} VNĐ (${e.date}, TT: ${e.paymentMethod}, HĐ: ${e.hasInvoice}): ${e.disallowedReason || 'Vi phạm điều kiện được trừ'} [${e.legalBasis || 'TT 96/2015'}]`
+        ).join('\n') + '\n';
+    }
+
+    const acceptedEvidences = (org.evidenceDocuments || []).filter((e) => e.status === 'accepted');
+    const evidenceSection = `HỒ SƠ BẰNG CHỨNG SỐ TRONG KHO HỆ THỐNG:\n` +
+      `- Tổng số chứng từ lưu trữ: ${(org.evidenceDocuments || []).length} hồ sơ\n` +
+      `- Chứng từ đã được xác nhận hợp lệ: ${acceptedEvidences.length} hồ sơ` +
+      (acceptedEvidences.length > 0 ? ` (${acceptedEvidences.map((e) => e.name).join(', ')})` : '') + '\n';
+
+    const completedTasks = tasks.filter((t) => t.status === TaskStatus.completed);
+    const pendingTasks = tasks.filter((t) => t.status !== TaskStatus.completed && t.status !== TaskStatus.cancelled);
+    const overdueTasks = tasks.filter((t) => t.status !== TaskStatus.completed && t.dueDate && new Date(t.dueDate).getTime() < Date.now());
+    const taskSection = `TIẾN ĐỘ THỰC HIỆN NHIỆM VỤ TUÂN THỦ:\n` +
+      `- Tổng số nhiệm vụ theo dõi: ${tasks.length}\n` +
+      `- Đã hoàn thành: ${completedTasks.length} nhiệm vụ\n` +
+      `- Đang thực hiện / Cần hoàn thiện hồ sơ: ${pendingTasks.length} nhiệm vụ\n` +
+      `- Quá hạn: ${overdueTasks.length} nhiệm vụ\n`;
+
     const denseContext = `THÔNG TIN ĐỊNH DANH DOANH NGHIỆP:\n` +
       `- Tên doanh nghiệp: ${org.name}\n` +
       `- Mã số thuế: ${org.taxCode}\n` +
@@ -423,6 +494,9 @@ export class AIAssistantService implements OnModuleInit {
       `- Quy mô nhân sự: ${org.employeeCount || 0} người\n` +
       `- Hình thức pháp lý: ${org.legalType || 'Doanh nghiệp'}\n` +
       `- Mô hình vận hành: ${org.businessModel || 'Tiêu chuẩn'}\n\n` +
+      `${financialSection}\n` +
+      `${evidenceSection}\n` +
+      `${taskSection}\n` +
       `BẢNG TỔNG HỢP TÌNH TRẠNG TUÂN THỦ (ĐỒNG BỘ 100% TỪ TẬP NGHĨA VỤ CHI TIẾT):\n` +
       `- ${auditReport.summary.summaryText}\n` +
       `- Đã hoàn thành (COMPLETED có minh chứng): ${auditReport.summary.completed}\n` +
@@ -441,7 +515,7 @@ export class AIAssistantService implements OnModuleInit {
     // Nhận diện linh hoạt câu hỏi tra cứu thông tin định danh:
     // 1. Trường hợp có chủ ngữ: "doanh nghiệp tôi tên gì", "mst của tôi", "công ty bao nhiêu người"...
     // 2. Trường hợp KHÔNG có chủ ngữ (ngắn gọn): "mã số thuế", "mst", "tên công ty", "tên doanh nghiệp", "địa chỉ", "quy mô nhân sự"...
-    const isSelfOrgSubject = /(toi|minh|chung toi|cua toi|cong ty|doanh nghiep|dn)/i.test(normalized);
+    // Đã khai báo isSelfOrgSubject ở trên
     const isComplianceOrTaxAsk = /(thue|tuan thu|can lam gi|lam gi|ra soat|nghia vu|chung tu|phat sinh|huong dan|can nop)/i.test(normalized);
 
     const isNameQuery = !isComplianceOrTaxAsk && ((isSelfOrgSubject && /(ten gi|la gi|ten la gi|ten cong ty|ten doanh nghiep|ten dn)/i.test(normalized)) ||
@@ -462,6 +536,66 @@ export class AIAssistantService implements OnModuleInit {
 
     const isGeneralProfileQuery = !isComplianceOrTaxAsk && ((isSelfOrgSubject && /(thong tin|ho so)/i.test(normalized)) ||
       /^(thong tin|ho so|thong tin dn|ho so dn|thong tin cong ty|thong tin doanh nghiep)$/i.test(normalized));
+
+    const isRevenueQuery = !isComplianceOrTaxAsk && isSelfOrgSubject && /(doanh thu|thu nhap|tong thu|da thu)/i.test(normalized);
+    const isExpenseQuery = !isComplianceOrTaxAsk && isSelfOrgSubject && /(chi phi|khoan chi|tong chi|da chi|muc b4|xuat toan)/i.test(normalized);
+    const isTaxEstimateQuery = !isComplianceOrTaxAsk && isSelfOrgSubject && /(thue tndn|tam nop 80|tien thue phai nop|tam tinh thue)/i.test(normalized);
+
+    if (isRevenueQuery) {
+      const revenueAnswer = `Doanh thu năm ${currentYear} của **${org.name}** ghi nhận trên hệ thống CELRA hiện tại là: **${totalRevenue.toLocaleString('vi-VN')} VNĐ** (Tổng cộng ${citRevenues.length} khoản thu đã kê khai trong Sổ Doanh thu).`;
+      return {
+        messageId: `msg-${Date.now()}`,
+        sender: 'assistant',
+        content: revenueAnswer,
+        answer: revenueAnswer,
+        actionType: 'info',
+        citations: [],
+        confidenceLevel: 'high',
+        confidenceReason: 'Trích xuất trực tiếp từ Sổ Kê khai Doanh thu Thuế TNDN trong hệ thống (0 API, 0 LLM)',
+        proposedChecklists: [],
+        createdAt: new Date().toISOString(),
+      };
+    }
+
+    if (isExpenseQuery) {
+      const expenseAnswer = `Tổng chi phí năm ${currentYear} của **${org.name}** ghi nhận là: **${totalExpense.toLocaleString('vi-VN')} VNĐ** (${citExpenses.length} khoản chi).\n\n` +
+        `- **Chi phí hợp lệ được trừ**: ${deductibleExpense.toLocaleString('vi-VN')} VNĐ\n` +
+        `- **Chi phí loại trừ Mục B4 (rủi ro thuế)**: **${totalDisallowed.toLocaleString('vi-VN')} VNĐ** (${disallowedExpenses.length} khoản)` +
+        (disallowedExpenses.length > 0 ? `:\n` + disallowedExpenses.slice(0, 3).map((e, idx) => `  ${idx + 1}. ${e.category}: ${e.amount.toLocaleString('vi-VN')} VNĐ (${e.disallowedReason || 'Chưa đủ điều kiện khấu trừ'})`).join('\n') : '.');
+      return {
+        messageId: `msg-${Date.now()}`,
+        sender: 'assistant',
+        content: expenseAnswer,
+        answer: expenseAnswer,
+        actionType: 'info',
+        citations: [],
+        confidenceLevel: 'high',
+        confidenceReason: 'Trích xuất trực tiếp từ Sổ Kê khai Chi phí & Rà soát Mục B4 trong hệ thống (0 API, 0 LLM)',
+        proposedChecklists: [],
+        createdAt: new Date().toISOString(),
+      };
+    }
+
+    if (isTaxEstimateQuery) {
+      const taxAnswer = `Nghĩa vụ Thuế TNDN năm ${currentYear} của **${org.name}** ước tính từ số liệu sổ sách:\n\n` +
+        `- **Doanh thu ghi nhận**: ${totalRevenue.toLocaleString('vi-VN')} VNĐ\n` +
+        `- **Chi phí được trừ**: ${deductibleExpense.toLocaleString('vi-VN')} VNĐ\n` +
+        `- **Thu nhập tính thuế**: ${taxableIncome.toLocaleString('vi-VN')} VNĐ\n` +
+        `- **Thuế TNDN dự kiến (20%)**: **${estimatedCit.toLocaleString('vi-VN')} VNĐ**\n` +
+        `- **Nghĩa vụ tạm nộp 4 quý tối thiểu 80% (NĐ 91/2022)**: **${prepayment80.toLocaleString('vi-VN')} VNĐ** (Hạn chốt 31/01 năm sau).`;
+      return {
+        messageId: `msg-${Date.now()}`,
+        sender: 'assistant',
+        content: taxAnswer,
+        answer: taxAnswer,
+        actionType: 'info',
+        citations: [],
+        confidenceLevel: 'high',
+        confidenceReason: 'Tính toán tự động từ Sổ thu chi TNDN theo quy định Nghị định 91/2022/NĐ-CP (0 API, 0 LLM)',
+        proposedChecklists: [],
+        createdAt: new Date().toISOString(),
+      };
+    }
 
     if (isNameQuery || isTaxCodeQuery || isStaffQuery || isAddressQuery || isIndustryQuery || isGeneralProfileQuery) {
       let directAnswer = '';
@@ -544,7 +678,7 @@ export class AIAssistantService implements OnModuleInit {
       }
     }
 
-    if (matchedLocalRule) {
+    if (matchedLocalRule && !isEnterpriseQuery) {
       const cond = matchedLocalRule.conditionsJson as { content?: string; answer?: string; citations?: Array<{ title: string; docNumber: string; articleNumber?: string; sourceUrl?: string }>; proposedChecklist?: unknown } | null;
       this.logger.log(`[LOCAL RULE HIT] Câu hỏi khớp với quy định trong kho luật: ${matchedLocalRule.code} - ${matchedLocalRule.title}`);
       return {
@@ -750,18 +884,21 @@ export class AIAssistantService implements OnModuleInit {
                     if (isEnterpriseQuery) {
                       prompt +=
                         `### DỮ KIỆN NGỮ CẢNH CỦA DOANH NGHIỆP TRONG HỆ THỐNG:\n${denseContext}\n\n` +
-                        `## HƯỚNG DẪN BẮT BUỘC (MỤC 9 - CẤU TRÚC OUTPUT RÀ SOÁT TỔNG THỂ DOANH NGHIỆP - 10 PHẦN CHUẨN MỰC):\n` +
-                        `Trình bày câu trả lời đầy đủ và rõ ràng theo đúng 10 phần sau:\n` +
+                        `## HƯỚNG DẪN BẮT BUỘC (MỤC 9 - CẤU TRÚC OUTPUT RÀ SOÁT TỔNG THỂ DOANH NGHIỆP - CHUẨN BẢNG ĐỐI SOÁT 3-TRONG-1):\n` +
+                        `Trình bày câu trả lời đầy đủ, mạch lạc theo đúng các phần sau:\n` +
                         `1. **Tổng quan**: Trình bày rõ số nghĩa vụ hoàn thành, chưa hoàn thành, cần xác minh (đồng bộ với dữ liệu hệ thống ghi nhận, không bịa số liệu).\n` +
                         `2. **Kết luận**: Nêu rõ vấn đề đã xác nhận và vấn đề chưa đủ dữ liệu.\n` +
-                        `3. **Nghĩa vụ áp dụng**: Vì sao áp dụng, điều kiện áp dụng, mức độ chắc chắn. Nêu rõ bằng ngôn ngữ tiếng Việt tự nhiên: "Đã xác định nghĩa vụ áp dụng", "Có khả năng áp dụng nhưng chưa đủ dữ liệu", "Cần xác minh thông tin hoặc căn cứ", "Đã có căn cứ xác định không áp dụng".\n` +
-                        `4. **Căn cứ pháp lý**: Trích dẫn chính xác tên văn bản, điều khoản, hiệu lực, nguồn kiểm chứng tra cứu chính thức.\n` +
-                        `5. **Dữ liệu đầu vào**: Nêu rõ dữ liệu doanh nghiệp làm căn cứ, nguồn dữ liệu và ngày cập nhật (phân biệt rõ thông tin thực tế hệ thống đang ghi nhận với tình huống giả sử người dùng đưa ra tham khảo tư vấn; câu hỏi giả sử không tự ý biến thành dữ liệu doanh nghiệp).\n` +
-                        `6. **Kỳ và thời hạn**: Kỳ tính thuế, hạn nộp, căn cứ xác định hạn (LƯU Ý: TNDN 80% áp dụng cho tổng 4 quý trước ngày 31/01 năm sau; không mặc định hạn 30/10; TNCN theo tháng/quý tuỳ kỳ GTGT).\n` +
-                        `7. **Bằng chứng còn thiếu**: Tên hồ sơ, kỳ liên quan, bằng chứng đã có trong hệ thống (chưa có chứng từ KHÔNG đồng nghĩa với vi phạm).\n` +
-                        `8. **Rủi ro**: Điều kiện phát sinh, hậu quả có thể xảy ra theo quy định pháp luật (chỉ nêu rủi ro có căn cứ; KHÔNG tự tính số tiền phạt hay tiền chậm nộp khi thiếu dữ liệu đầu vào; thanh toán tiền mặt thì chuyển khoản sau không mặc định khắc phục).\n` +
-                        `9. **Hành động tiếp theo**: Thứ tự ưu tiên, người phụ trách, hạn xử lý, điều kiện hoàn tất.\n` +
-                        `10. **Câu hỏi xác minh**: Một câu hỏi cụ thể, trọng tâm nhất để giải quyết điểm chưa rõ nhất cho chủ doanh nghiệp.\n`;
+                        `3. **Bảng đối soát Nghĩa vụ, Căn cứ pháp lý & Dữ liệu đầu vào** (Tích hợp 3-trong-1):\n` +
+                        `   - Phần mở đầu bảng: Nêu ngắn gọn dữ liệu nguồn hệ thống (ngành nghề, quy mô, mô hình, ngày cập nhật dữ liệu) kèm lưu ý phân biệt thông tin thực tế với tình huống giả sử người dùng đưa ra tham khảo (câu hỏi giả sử không tự ý biến thành dữ liệu doanh nghiệp).\n` +
+                        `   - Trình bày một Bảng Markdown gồm 4 cột: [STT] | [Nghĩa vụ tuân thủ] | [Hiện trạng & Dữ liệu đầu vào đối soát] | [Căn cứ pháp lý & Hiệu lực].\n` +
+                        `   - Cột Hiện trạng: Bắt buộc dùng trạng thái tiếng Việt tự nhiên ("Đã xác định nghĩa vụ áp dụng", "Có khả năng áp dụng nhưng chưa đủ dữ liệu", "Cần xác minh thông tin hoặc căn cứ", "Đã có căn cứ xác định không áp dụng") kèm dữ kiện hồ sơ đối soát.\n` +
+                        `   - Cột Căn cứ pháp lý: Trích dẫn chính xác tên văn bản, số hiệu, điều/khoản/điểm cụ thể và tình trạng [Còn hiệu lực].\n` +
+                        `   - TUYỆT ĐỐI KHÔNG tách rời thành 3 mục riêng lẻ gây trùng lặp danh sách nghĩa vụ.\n` +
+                        `4. **Kỳ và thời hạn**: Kỳ tính thuế, hạn nộp, căn cứ xác định hạn (LƯU Ý: TNDN 80% áp dụng cho tổng 4 quý trước ngày 31/01 năm sau; không mặc định hạn 30/10; TNCN theo tháng/quý tuỳ kỳ GTGT).\n` +
+                        `5. **Bằng chứng còn thiếu**: Tên hồ sơ, kỳ liên quan, bằng chứng đã có trong hệ thống (chưa có chứng từ KHÔNG đồng nghĩa với vi phạm).\n` +
+                        `6. **Rủi ro**: Điều kiện phát sinh, hậu quả có thể xảy ra theo quy định pháp luật (chỉ nêu rủi ro có căn cứ; KHÔNG tự tính số tiền phạt hay tiền chậm nộp khi thiếu dữ liệu đầu vào; thanh toán tiền mặt thì chuyển khoản sau không mặc định khắc phục).\n` +
+                        `7. **Hành động tiếp theo**: Thứ tự ưu tiên, người phụ trách, hạn xử lý, điều kiện hoàn tất.\n` +
+                        `8. **Câu hỏi xác minh**: Một câu hỏi cụ thể, trọng tâm nhất để giải quyết điểm chưa rõ nhất cho chủ doanh nghiệp.\n`;
                     } else {
                       prompt +=
                         `## HƯỚNG DẪN BẮT BUỘC (MỤC 10 - QUY TẮC KHI TRẢ LỜI CÂU HỎI NGẮN / LUẬT CHUNG):\n` +
@@ -1047,12 +1184,13 @@ export class AIAssistantService implements OnModuleInit {
       throw new NotFoundException('Thiếu x-organization-id: không xác định được doanh nghiệp');
     }
     const targetOrgId = orgId;
-    // Payment Guard: Checklist/Task chỉ được tạo sau khi DN đã thanh toán Rà soát (isAuditPaid)
-    const paidAuditExists = await this.prisma.task.count({
-      where: { organizationId: targetOrgId, isAuditPaid: true },
+    // Subscription Guard: Kiểm tra thời hạn gói thuê bao của doanh nghiệp
+    const targetOrg = await this.prisma.organization.findUnique({
+      where: { id: targetOrgId },
+      select: { subscriptionStatus: true, subscriptionExpiresAt: true },
     });
-    if (paidAuditExists === 0) {
-      throw new ForbiddenException('Checklist chỉ được tạo từ Rà soát Tuân thủ (đã thanh toán). Vui lòng mở Rà soát qua thẻ bối cảnh và thanh toán 25 Credit.');
+    if (targetOrg?.subscriptionExpiresAt && new Date(targetOrg.subscriptionExpiresAt) < new Date()) {
+      throw new ForbiddenException('Gói thuê bao của bạn đã hết hạn. Vui lòng gia hạn gói để tự động tạo Tác vụ tuân thủ.');
     }
     // Chống tạo trùng task khi user chấp nhận cùng proposal nhiều lần
     const existing = await this.prisma.task.findFirst({

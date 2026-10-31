@@ -40,8 +40,15 @@ describe('AIAssistantService Intent & Prompt Conditioning', () => {
       update: jest.fn().mockResolvedValue({}),
       create: jest.fn().mockResolvedValue({ id: 'fact-new', key: 'q_tax_corp_monbai', currentValue: 'Đã nộp' }),
     },
+    citRevenue: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    citExpense: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     task: {
       count: jest.fn().mockResolvedValue(0),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     aiSystem: {
       findFirst: jest.fn().mockResolvedValue({
@@ -233,5 +240,59 @@ describe('AIAssistantService Intent & Prompt Conditioning', () => {
     });
 
     expect(greetingResult.content).not.toContain('TỪ CHỐI TRẢ LỜI');
+  });
+
+  it('trả lời trực tiếp số liệu doanh thu, chi phí B4 và tạm nộp thuế TNDN từ dữ liệu thực tế của doanh nghiệp', async () => {
+    mockPrisma.citRevenue.findMany.mockResolvedValueOnce([
+      { id: 'rev-1', amount: 500000000, date: '15/01/2026', invoiceNo: 'HD01' },
+      { id: 'rev-2', amount: 300000000, date: '20/02/2026', invoiceNo: 'HD02' },
+    ]);
+    mockPrisma.citExpense.findMany.mockResolvedValueOnce([
+      { id: 'exp-1', amount: 200000000, date: '10/01/2026', category: 'Thuê nhà', isDisallowedB4: false },
+      { id: 'exp-2', amount: 50000000, date: '18/01/2026', category: 'Tiền mặt > 5M', isDisallowedB4: true, disallowedReason: 'Hóa đơn > 5M thanh toán tiền mặt' },
+    ]);
+
+    const revResult = await service.chat('org-test-1', {
+      message: 'Doanh thu công ty tôi hiện tại là bao nhiêu?',
+    });
+    expect(revResult.content).toContain('800.000.000 VNĐ');
+    expect(revResult.confidenceReason).toContain('Sổ Kê khai Doanh thu');
+
+    mockPrisma.citExpense.findMany.mockResolvedValueOnce([
+      { id: 'exp-1', amount: 200000000, date: '10/01/2026', category: 'Thuê nhà', isDisallowedB4: false },
+      { id: 'exp-2', amount: 50000000, date: '18/01/2026', category: 'Tiền mặt > 5M', isDisallowedB4: true, disallowedReason: 'Hóa đơn > 5M thanh toán tiền mặt' },
+    ]);
+    const expResult = await service.chat('org-test-1', {
+      message: 'Chi phí của doanh nghiệp tôi và các khoản mục B4?',
+    });
+    expect(expResult.content).toContain('250.000.000 VNĐ');
+    expect(expResult.content).toContain('50.000.000 VNĐ');
+    expect(expResult.confidenceReason).toContain('Mục B4');
+  });
+
+  it('cô lập hoàn toàn cache và không nhầm lẫn dữ liệu giữa Doanh nghiệp A và Doanh nghiệp B', async () => {
+    const orgB = {
+      ...mockOrg,
+      id: 'org-test-2',
+      name: 'Công ty Cổ phần Công nghệ An Phát',
+      taxCode: '0409876543',
+      updatedAt: new Date('2026-02-01'),
+    };
+
+    mockPrisma.organization.findUnique.mockImplementation(({ where }: { where: { id: string } }) => {
+      if (where.id === 'org-test-2') return Promise.resolve(orgB);
+      return Promise.resolve(mockOrg);
+    });
+
+    const resA = await service.chat('org-test-1', {
+      message: 'Doanh nghiệp tôi tên là gì?',
+    });
+    expect(resA.content).toContain('Công ty TNHH Cà phê Sài Gòn');
+
+    const resB = await service.chat('org-test-2', {
+      message: 'Doanh nghiệp tôi tên là gì?',
+    });
+    expect(resB.content).toContain('Công ty Cổ phần Công nghệ An Phát');
+    expect(resB.content).not.toContain('Công ty TNHH Cà phê Sài Gòn');
   });
 });

@@ -211,6 +211,17 @@ model Organization {
   createdAt          DateTime     @default(now()) @map("ngay_tao")
   updatedAt          DateTime     @updatedAt @map("ngay_cap_nhat")
 
+  // Subscription & Hạn Mức Gói Dịch Vụ
+  subscriptionPlan          String       @default("STARTER") @map("goi_dich_vu")
+  subscriptionStatus        String       @default("ACTIVE") @map("trang_thai_goi")
+  subscriptionStartedAt     DateTime?    @map("ngay_bat_dau_goi")
+  subscriptionExpiresAt     DateTime?    @map("ngay_het_han_goi")
+  subscriptionNextBillingAt DateTime?    @map("ngay_thanh_toan_tiep_theo")
+  aiQueriesUsedThisMonth    Int          @default(0) @map("luot_ai_da_dung_thang")
+  docAnalysesUsedThisMonth  Int          @default(0) @map("luot_ho_so_da_dung_thang")
+  currentBillingCycleStart  DateTime?    @map("ngay_dau_chu_ky_thang")
+  autoRenew                 Boolean      @default(true) @map("tu_dong_gia_han")
+
   createdBy          User?        @relation("CreatedByUser", fields: [createdById], references: [id])
   departments        Department[]
   memberships        Membership[]
@@ -225,6 +236,8 @@ model Organization {
   citRevenues        CitRevenue[]
   citExpenses        CitExpense[]
   aiLogs             AiSystem[]
+  subscriptionInvoices SubscriptionInvoice[]
+
   @@map("doanh_nghiep")
 }
 
@@ -617,6 +630,30 @@ model CalendarNote {
 
   @@index([organizationId, date])
   @@map("ghi_chu_lich")
+}
+
+// ===================== HÓA ĐƠN GÓI DỊCH VỤ SUBSCRIPTION =====================
+model SubscriptionInvoice {
+  id             String       @id @default(uuid())
+  organizationId String       @map("id_doanh_nghiep")
+  code           String       @unique @map("ma_hoa_don")
+  planCode       String       @map("ma_goi")
+  planName       String       @map("ten_goi")
+  amountVnd      Float        @map("so_tien")
+  billingMonths  Int          @default(1) @map("so_thang")
+  paymentMethod  String       @default("VietQR") @map("phuong_thuc_thanh_toan")
+  status         String       @default("SUCCESS") @map("trang_thai")
+  paidAt         DateTime     @default(now()) @map("thoi_gian_thanh_toan")
+  periodStart    DateTime     @map("ngay_bat_dau_chu_ky")
+  periodEnd      DateTime     @map("ngay_ket_thuc_chu_ky")
+  taxNote        String?      @map("ghi_chu_thue")
+  createdAt      DateTime     @default(now()) @map("ngay_tao")
+  updatedAt      DateTime     @updatedAt @map("ngay_cap_nhat")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@map("hoa_don_thue_bao")
 }
 
 // ===================== SỔ THU CHI THUẾ TNDN =====================

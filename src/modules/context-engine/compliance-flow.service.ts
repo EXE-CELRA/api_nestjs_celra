@@ -144,20 +144,15 @@ export class ComplianceFlowService {
       };
     }
 
-    // CACHE MISS: Thực hiện rà soát mới và khấu trừ phí nếu có
-    // Kiểm tra và khấu trừ phí qua Ví CELRA (50.000 VNĐ cho phiên rà soát)
-    try {
-      await this.walletService.deductAuditFee(
-        org.id,
-        `Rà soát tuân thủ pháp luật (${targetFacts.length} dữ kiện)`,
-        userName,
-      );
-    } catch (err: any) {
-      // Nếu ví không đủ tiền, báo lỗi rõ ràng cho người dùng
-      throw new BadRequestException(
-        `Không thể thực hiện rà soát do số dư ví không đủ: ${err.message || 'Vui lòng nạp thêm tiền vào ví CELRA.'}`,
-      );
+    // Subscription Check: Kiểm tra thời hạn gói thuê bao của doanh nghiệp
+    if (org.subscriptionExpiresAt && new Date(org.subscriptionExpiresAt) < new Date()) {
+      throw new BadRequestException('Gói thuê bao của bạn đã hết hạn. Vui lòng gia hạn gói để thực hiện rà soát bối cảnh.');
     }
+    // Ghi nhận lượt phân tích theo gói thuê bao (không trừ Credit lẻ)
+    await this.prisma.organization.update({
+      where: { id: org.id },
+      data: { docAnalysesUsedThisMonth: { increment: targetFacts.length } },
+    }).catch(() => {});
 
     // Đánh giá theo Rule Engine và Bản đồ Luật chính thức đã xác minh
     const verifiedNow = new Date();
