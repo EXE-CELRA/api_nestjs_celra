@@ -25,7 +25,7 @@ describe('SubscriptionService (12 Mandatory Business Scenarios)', () => {
     ],
   };
 
-  const mockPrisma = {
+  const mockPrisma: any = {
     organization: {
       findUnique: jest.fn(),
       update: jest.fn(),
@@ -34,7 +34,7 @@ describe('SubscriptionService (12 Mandatory Business Scenarios)', () => {
       findMany: jest.fn(),
       create: jest.fn(),
     },
-    $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockPrisma)),
+    $transaction: jest.fn(async (cb: (tx: any) => Promise<any>) => cb(mockPrisma)),
   };
 
   beforeEach(async () => {

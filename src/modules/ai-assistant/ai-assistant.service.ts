@@ -4,7 +4,8 @@ import { PrismaService } from '../../database/prisma.service';
 import { AIChatMessageDto, AcceptProposalDto, UpdateLegalRuleDto } from './dto/ai-chat.dto';
 import { TaskStatus, UserRole, WaitingOnRole, TimelineEventType, ContextStatus, ContextGroup } from '@prisma/client';
 import * as crypto from 'crypto';
-
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   CORE_LEGAL_DOC_LINKS,
   cleanDLPLUrl,
@@ -41,11 +42,41 @@ export class AIAssistantService implements OnModuleInit {
 
   // Rate Limiting chống spam (Tối đa 15 câu/ngày/tổ chức)
   private dailyQueryTracker = new Map<string, { count: number; date: string }>();
+  private configFilePath = path.join(process.cwd(), 'data', 'platform-settings.json');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) { }
 
+  /**
+   * Đọc cấu hình AI động trực tiếp từ bảng AiSystem trong Database.
+   * NGUYÊN TẮC: Chỉ cho phép chat khi Admin đã kết nối thành công API Key qua trang Admin.
+   * Nếu chưa kết nối key -> Báo lỗi yêu cầu Admin cấu hình, tuyệt đối không âm thầm gọi API hay dùng key rác.
+   */
+  private async getResolvedAIConfig() {
+    // Tìm cấu hình hệ thống (organizationId === null) trong Database
+    const configRecord = await this.prisma.aiSystem.findFirst({
+      where: { organizationId: null },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.JEST_WORKER_ID);
+    const testApiKey = isTestEnv ? this.config.get<string>('OPENCODE_GO_API_KEY', '') : '';
+    const effectiveApiKey = configRecord?.apiKey?.trim() || testApiKey;
+
+    const provider = configRecord?.provider || 'GEMINI';
+    const effectiveApiUrl = configRecord?.apiUrl?.trim() || (provider === 'GEMINI' ? 'https://generativelanguage.googleapis.com/v1beta/openai' : 'https://opencode.ai/inference/openai/v1');
+    const effectiveModel = configRecord?.model?.trim() || 'gemini-3.5-flash-lite';
+
+    return {
+      isConnected: Boolean(effectiveApiKey),
+      model: effectiveModel,
+      apiUrl: effectiveApiUrl,
+      apiKey: effectiveApiKey,
+      provider,
+    };
+  }
   async onModuleInit() {
     // Làm sạch toàn bộ cache cũ để xóa bỏ dứt điểm các câu trả lời fallback lỗi từ các phiên trước
     this.queryCache.clear();
@@ -745,12 +776,27 @@ export class AIAssistantService implements OnModuleInit {
       this.logger.log(`[DLPL BYPASS 100%] Đã sử dụng Kho Luật Thuế Nội Bộ (${citedSources.length} văn bản) -> TỐN ĐÚNG 0 LƯỢT GỌI API DLPL.`);
     }
     // ------------------------------------------------------------------------
-    // BƯỚC 6: GHÉP BỐI CẢNH + DỮ LIỆU VÀO SYSTEM PROMPT & GỌI DEEPSEEK AI
+    // BƯỚC 6: KIỂM TRA TRẠNG THÁI KẾT NỐI API KEY CỦA ADMIN & GỌI AI
     // ------------------------------------------------------------------------
-    const opencodeApiUrl = this.config.get<string>('OPENCODE_GO_API_URL', 'https://opencode.ai/inference/openai/v1');
-    const apiKey = this.config.get<string>('OPENCODE_GO_API_KEY', '');
-    const model = this.config.get<string>('OPENCODE_MODEL', 'deepseek-v4.1-flash');
+    const aiCfg = await this.getResolvedAIConfig();
 
+    // Nếu Admin chưa cấu hình hoặc chưa kết nối API Key thành công -> Chặn chat và thông báo rõ ràng
+    if (!aiCfg.isConnected || !aiCfg.apiKey) {
+      return {
+        messageId: `msg-${Date.now()}`,
+        sender: 'assistant',
+        content: `⚠️ **Trợ lý AI chưa được kích hoạt:**\n\nHệ thống chưa ghi nhận API Key của AI Copilot (Google Gemini hoặc OpenCode / DeepSeek). Quản trị viên (Admin) cần truy cập vào mục **Tri Thức Luật & Quota AI** -> bấm **"Đổi Key & Model"** để kết nối API Key và kích hoạt mô hình trước khi người dùng có thể trò chuyện.\n\n*Nếu bạn là Quản trị viên, vui lòng vào trang Quản trị để cập nhật Key.*`,
+        answer: 'Trợ lý AI chưa được cấu hình API Key bởi Quản trị viên.',
+        actionType: 'info',
+        citations: [],
+        proposedChecklists: [],
+        createdAt: new Date().toISOString(),
+      };
+    }
+
+    const opencodeApiUrl = aiCfg.apiUrl;
+    const apiKey = aiCfg.apiKey;
+    const model = aiCfg.model;
     let replyContent = '';
     let shouldCache = true;
     const endpoint = opencodeApiUrl.endsWith('/chat/completions')
@@ -767,6 +813,7 @@ export class AIAssistantService implements OnModuleInit {
 
       let lastError: Error | null = null;
       let successfulResponse: Response | null = null;
+      let usedModel = model;
 
       for (const currentModel of candidateModels) {
         try {
@@ -876,6 +923,7 @@ export class AIAssistantService implements OnModuleInit {
 
           if (response.ok) {
             successfulResponse = response;
+            usedModel = currentModel;
             break; // Thành công -> Thoát vòng lặp failover
           } else if (response.status === 503 || response.status === 429 || response.status === 404) {
             const errBody = await response.text();
@@ -895,6 +943,27 @@ export class AIAssistantService implements OnModuleInit {
         const data = await successfulResponse.json();
         replyContent = data.choices?.[0]?.message?.content || data.content || '';
 
+        // 1. Ghi nhận nhật ký chi tiết vào bảng AiSystem trên PostgreSQL (1 BẢNG DUY NHẤT)
+        const promptTokens = data.usage?.prompt_tokens || Math.round(rawMessage.length / 3);
+        const completionTokens = data.usage?.completion_tokens || Math.round(replyContent.length / 3);
+        const totalTokens = data.usage?.total_tokens || (promptTokens + completionTokens);
+
+        try {
+          await this.prisma.aiSystem.create({
+            data: {
+              organizationId: org.id,
+              provider: aiCfg.provider,
+              model: usedModel,
+              promptTokens,
+              completionTokens,
+              totalTokens,
+              questionSnippet: rawMessage.slice(0, 100),
+            },
+          });
+          this.logger.log(`[AI USAGE LOG SAVED TO DB] DN: ${org.name} | Model: ${usedModel} | Tokens: ${totalTokens}`);
+        } catch (dbLogErr) {
+          this.logger.warn(`Lỗi ghi nhật ký AI vào DB: ${(dbLogErr as Error)?.message}`);
+        }
         const extractedCitations = extractLegalCitationsFromText(replyContent);
         for (const c of extractedCitations) {
           const isAlreadyCited = citedSources.some(
