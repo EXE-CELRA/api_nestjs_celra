@@ -4,10 +4,9 @@
  * - Luật Quản lý thuế số 38/2019/QH14 (Điều 36, Điều 44)
  * - Nghị định 126/2020/NĐ-CP (Điều 8, Điều 9, Điều 18)
  * - Nghị định 91/2022/NĐ-CP (Khoản 3 Điều 1 - Tạm nộp 80% TNDN 4 quý)
- * - Bộ luật Lao động 2019 (Điều 119) & Nghị định 145/2020/NĐ-CP (Khoản 2 Điều 4)
+ * - Bộ luật Lao động 2019 (Điều 112, Điều 119) & Nghị định 145/2020/NĐ-CP
  * - Luật Doanh nghiệp 2020 (Điều 30, Điều 47, Điều 75, Điều 113)
- * - Nghị định 01/2021/NĐ-CP (Điều 66 - Tạm ngừng kinh doanh trước 03 ngày làm việc)
- * - Nghị định 123/2020/NĐ-CP (Điều 19 - Giải trình HĐĐT sai sót Mẫu 04/SS-HĐĐT)
+ * - Nghị định 252/2026/NĐ-CP (Khoản 7 Điều 3 - Chuyển ngày nghỉ thuế)
  */
 
 import { StatutoryCycleType } from '@prisma/client';
@@ -15,6 +14,7 @@ export { StatutoryCycleType };
 
 // Múi giờ chuẩn Việt Nam (UTC+7)
 export const VN_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
 export function addBusinessDays(startDate: Date, businessDays: number): Date {
   const result = new Date(startDate);
   let added = 0;
@@ -29,6 +29,141 @@ export function addBusinessDays(startDate: Date, businessDays: number): Date {
     }
   }
   return result;
+}
+
+export interface StatutoryHolidayItem {
+  date: string;
+  name: string;
+  isCompensatory?: boolean;
+  legalBasis: string;
+  legalDocUrl?: string;
+}
+
+export const STATUTORY_HOLIDAYS_MAP: Record<string, StatutoryHolidayItem> = {
+  // ── NĂM 2026 ─────────────────────────────────────────────────────────────
+  '2026-01-01': {
+    date: '2026-01-01',
+    name: 'Tết Dương lịch 2026',
+    legalBasis: 'Điểm a Khoản 1 Điều 112 Bộ luật Lao động 2019',
+    legalDocUrl: 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/bo-luat-lao-dong-2019-45716.html',
+  },
+  '2026-02-16': {
+    date: '2026-02-16',
+    name: 'Tết Âm lịch Bính Ngọ (29 Tháng Chạp)',
+    legalBasis: 'Điểm b Khoản 1 Điều 112 Bộ luật Lao động 2019',
+    legalDocUrl: 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/bo-luat-lao-dong-2019-45716.html',
+  },
+  '2026-02-17': {
+    date: '2026-02-17',
+    name: 'Tết Âm lịch Bính Ngọ (Mùng 1 Tết)',
+    legalBasis: 'Điểm b Khoản 1 Điều 112 Bộ luật Lao động 2019',
+    legalDocUrl: 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/bo-luat-lao-dong-2019-45716.html',
+  },
+  '2026-02-18': {
+    date: '2026-02-18',
+    name: 'Tết Âm lịch Bính Ngọ (Mùng 2 Tết)',
+    legalBasis: 'Điểm b Khoản 1 Điều 112 Bộ luật Lao động 2019',
+    legalDocUrl: 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/bo-luat-lao-dong-2019-45716.html',
+  },
+  '2026-02-19': {
+    date: '2026-02-19',
+    name: 'Tết Âm lịch Bính Ngọ (Mùng 3 Tết)',
+    legalBasis: 'Điểm b Khoản 1 Điều 112 Bộ luật Lao động 2019',
+    legalDocUrl: 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/bo-luat-lao-dong-2019-45716.html',
+  },
+  '2026-02-20': {
+    date: '2026-02-20',
+    name: 'Tết Âm lịch Bính Ngọ (Mùng 4 Tết)',
+    legalBasis: 'Điểm b Khoản 1 Điều 112 Bộ luật Lao động 2019',
+    legalDocUrl: 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/bo-luat-lao-dong-2019-45716.html',
+  },
+  '2026-04-26': {
+    date: '2026-04-26',
+    name: 'Giỗ Tổ Hùng Vương (10/3 Âm lịch)',
+    legalBasis: 'Điểm e Khoản 1 Điều 112 Bộ luật Lao động 2019',
+    legalDocUrl: 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/bo-luat-lao-dong-2019-45716.html',
+  },
+  '2026-04-27': {
+    date: '2026-04-27',
+    name: 'Nghỉ bù Giỗ Tổ Hùng Vương (do trùng Chủ Nhật 26/04)',
+    isCompensatory: true,
+    legalBasis: 'Khoản 3 Điều 111 Bộ luật Lao động 2019',
+    legalDocUrl: 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/bo-luat-lao-dong-2019-45716.html',
+  },
+  '2026-04-30': {
+    date: '2026-04-30',
+    name: 'Ngày Chiến thắng 30/4',
+    legalBasis: 'Điểm c Khoản 1 Điều 112 Bộ luật Lao động 2019',
+    legalDocUrl: 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/bo-luat-lao-dong-2019-45716.html',
+  },
+  '2026-05-01': {
+    date: '2026-05-01',
+    name: 'Ngày Quốc tế Lao động 1/5',
+    legalBasis: 'Điểm d Khoản 1 Điều 112 Bộ luật Lao động 2019',
+    legalDocUrl: 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/bo-luat-lao-dong-2019-45716.html',
+  },
+  '2026-09-01': {
+    date: '2026-09-01',
+    name: 'Nghỉ kề Quốc khánh 2/9',
+    legalBasis: 'Điểm đ Khoản 1 Điều 112 Bộ luật Lao động 2019',
+    legalDocUrl: 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/bo-luat-lao-dong-2019-45716.html',
+  },
+  '2026-09-02': {
+    date: '2026-09-02',
+    name: 'Ngày Quốc khánh 2/9',
+    legalBasis: 'Điểm đ Khoản 1 Điều 112 Bộ luật Lao động 2019',
+    legalDocUrl: 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/bo-luat-lao-dong-2019-45716.html',
+  },
+
+  // ── NĂM 2027 ─────────────────────────────────────────────────────────────
+  '2027-01-01': {
+    date: '2027-01-01',
+    name: 'Tết Dương lịch 2027',
+    legalBasis: 'Điểm a Khoản 1 Điều 112 Bộ luật Lao động 2019',
+    legalDocUrl: 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/bo-luat-lao-dong-2019-45716.html',
+  },
+};
+
+export function getStatutoryHolidaysForYear(year: number): StatutoryHolidayItem[] {
+  return Object.values(STATUTORY_HOLIDAYS_MAP).filter(
+    (h) => new Date(h.date).getFullYear() === year,
+  );
+}
+
+/**
+ * Điều chỉnh ngày deadline về ngày làm việc liền kề tiếp theo nếu rơi vào Thứ Bảy, Chủ Nhật hoặc Ngày Nghỉ Lễ.
+ * Căn cứ:
+ * - Khoản 7 Điều 3 Nghị định 252/2026/NĐ-CP (quy định chuyển ngày thuế)
+ * - Điều 112 Bộ luật Lao động số 45/2019/QH14 (các ngày nghỉ lễ, tết hưởng nguyên lương)
+ * - Khoản 5 Điều 8 Nghị định 126/2020/NĐ-CP & Điều 86 Thông tư 80/2021/TT-BTC
+ */
+export function adjustForWeekendAndHolidays(
+  date: Date,
+  customHolidays?: Record<string, StatutoryHolidayItem>,
+): Date {
+  const d = new Date(date);
+  const holidays = customHolidays || STATUTORY_HOLIDAYS_MAP;
+
+  while (true) {
+    const dow = d.getDay();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const isoDate = `${y}-${m}-${day}`;
+    const isHoliday = Boolean(holidays[isoDate]);
+
+    if (dow === 6 || dow === 0 || isHoliday) {
+      d.setDate(d.getDate() + 1);
+    } else {
+      break;
+    }
+  }
+
+  return d;
+}
+
+export function adjustForWeekend(date: Date): Date {
+  return adjustForWeekendAndHolidays(date);
 }
 
 /**
@@ -123,31 +258,34 @@ export function calculateComplianceDeadline(
       // Hạn ngày 20 của tháng kế tiếp
       const nextMonthYear = currentMonth === 11 ? currentYear + 1 : currentYear;
       const nextMonth = (currentMonth + 1) % 12;
-      const dueDate = new Date(nextMonthYear, nextMonth, 20, 23, 59, 59);
+      // Áp dụng chuyển ngày khi deadline trùng cuối tuần (NĐ 252/2026 Điều 3 Khoản 7)
+      const dueDate = adjustForWeekend(new Date(nextMonthYear, nextMonth, 20, 23, 59, 59));
       return {
         dueDate,
         requiresEventDate: false,
-        calculationBasis: 'Khoản 1 Điều 44 Luật QLT số 38/2019/QH14: Chậm nhất ngày 20 của tháng tiếp theo kỳ phát sinh nghĩa vụ.',
+        calculationBasis: 'Khoản 1 Điều 44 Luật QLT số 38/2019/QH14: Chậm nhất ngày 20 của tháng tiếp theo kỳ phát sinh nghĩa vụ. Nếu trùng ngày nghỉ, chuyển sang ngày LV kế tiếp theo Khoản 7 Điều 3 NĐ 252/2026/NĐ-CP.',
         periodKey: getPeriodKey(cycle, d),
       };
     }
 
     case 'QUARTERLY': {
-      // Các mốc quý: 30/04 (Q1), 31/07 (Q2), 31/10 (Q3), 31/01 năm sau (Q4)
-      const quarterDeadlines = [
-        new Date(currentYear, 3, 30, 23, 59, 59), // 30/04
-        new Date(currentYear, 6, 31, 23, 59, 59), // 31/07
-        new Date(currentYear, 9, 31, 23, 59, 59), // 31/10
-        new Date(currentYear + 1, 0, 31, 23, 59, 59), // 31/01 năm sau
+      const isTndn = ruleCode.includes('TNDN');
+      // Mốc cơ sở luật định cho 4 quý:
+      // Q1: 30/04 (Nghỉ lễ 30/4, 1/5 và cuối tuần -> tự động chuyển sang 04/05/2026)
+      // Q2: 31/07 (Thứ Sáu -> giữ nguyên 31/07/2026)
+      // Q3: 31/10 (Thứ Bảy, CN 01/11 -> tự động chuyển sang 02/11/2026)
+      // Q4: 31/01 năm sau (Chủ Nhật hoặc 30/01 Thứ Bảy -> tự động chuyển sang 01/02/2027)
+      const rawQuarterDeadlines = [
+        new Date(currentYear, 3, 30, 23, 59, 59),
+        new Date(currentYear, 6, 31, 23, 59, 59),
+        new Date(currentYear, 9, 31, 23, 59, 59),
+        new Date(currentYear + 1, 0, 31, 23, 59, 59),
       ];
 
-      // Nếu là TNDN tạm nộp 80% (RULE-TAX-TNDN-80): mốc Q3 là 30/10 theo NĐ 91/2022
-      if (ruleCode.includes('TNDN')) {
-        quarterDeadlines[2] = new Date(currentYear, 9, 30, 23, 59, 59); // 30/10
-      }
+      const adjustedQuarterDeadlines = rawQuarterDeadlines.map((dl) => adjustForWeekendAndHolidays(dl));
 
-      let chosen = quarterDeadlines[0];
-      for (const deadline of quarterDeadlines) {
+      let chosen = adjustedQuarterDeadlines[0];
+      for (const deadline of adjustedQuarterDeadlines) {
         if (deadline.getTime() >= d.getTime()) {
           chosen = deadline;
           break;
@@ -157,7 +295,9 @@ export function calculateComplianceDeadline(
       return {
         dueDate: chosen,
         requiresEventDate: false,
-        calculationBasis: 'Khoản 1 Điều 44 Luật QLT & NĐ 91/2022/NĐ-CP: Chậm nhất ngày cuối cùng của tháng đầu quý tiếp theo.',
+        calculationBasis: isTndn
+          ? 'Khoản 6 Điều 1 Nghị định 91/2022/NĐ-CP: Tạm nộp TNDN chậm nhất ngày 30 tháng đầu quý tiếp theo. Nếu trùng ngày nghỉ, chuyển sang ngày LV kế tiếp theo Khoản 7 Điều 3 NĐ 252/2026/NĐ-CP.'
+          : 'Khoản 1 Điều 44 Luật QLT 38/2019/QH14: Chậm nhất ngày cuối cùng của tháng đầu quý tiếp theo. Nếu trùng ngày nghỉ, chuyển sang ngày LV kế tiếp theo Khoản 7 Điều 3 NĐ 252/2026/NĐ-CP.',
         periodKey: getPeriodKey(cycle, d),
       };
     }
@@ -185,28 +325,23 @@ export function calculateComplianceDeadline(
     }
 
     case 'ANNUAL': {
-      // Nếu là lệ phí môn bài: 30/01
-      // Nếu là quyết toán BCTC: 31/03
-      let dueDate: Date;
-      let basis = '';
-      if (ruleCode.includes('MB') || ruleCode.includes('MON_BAI')) {
-        dueDate = new Date(currentYear, 0, 30, 23, 59, 59);
-        if (d.getTime() > dueDate.getTime()) {
-          dueDate = new Date(currentYear + 1, 0, 30, 23, 59, 59);
-        }
-        basis = 'Khoản 9 Điều 18 Nghị định 126/2020/NĐ-CP: Hạn nộp lệ phí môn bài chậm nhất ngày 30/01 hàng năm.';
-      } else {
-        dueDate = new Date(currentYear, 2, 31, 23, 59, 59);
-        if (d.getTime() > dueDate.getTime()) {
-          dueDate = new Date(currentYear + 1, 2, 31, 23, 59, 59);
-        }
-        basis = 'Điểm a Khoản 2 Điều 44 Luật QLT số 38/2019/QH14: Chậm nhất ngày cuối cùng của tháng thứ 3 kể từ ngày kết thúc năm dương lịch.';
+      // LƯU Ý: Từ 01/01/2026, lệ phí môn bài chính thức bị BÃI BỎ HOÀN TOÀN
+      // Căn cứ: Khoản 7 Điều 10 Nghị quyết 198/2025/QH15 & Nghị định 362/2025/NĐ-CP
+      // → Không còn tạo deadline môn bài cho năm 2026 trở đi.
+      // → Code này chỉ còn phục vụ quyết toán thuế TNDN/TNCN/BCTC (hạn 31/03).
+
+      let dueDate = new Date(currentYear, 2, 31, 23, 59, 59); // 31/03
+      if (d.getTime() > dueDate.getTime()) {
+        dueDate = new Date(currentYear + 1, 2, 31, 23, 59, 59);
       }
+
+      // Áp dụng chuyển ngày khi deadline trùng cuối tuần (NĐ 252/2026 Điều 3 Khoản 7)
+      dueDate = adjustForWeekend(dueDate);
 
       return {
         dueDate,
         requiresEventDate: false,
-        calculationBasis: basis,
+        calculationBasis: 'Điểm a Khoản 2 Điều 44 Luật QLT số 38/2019/QH14: Chậm nhất ngày cuối cùng của tháng thứ 3 kể từ ngày kết thúc năm tài chính. Nếu trùng ngày nghỉ, chuyển sang ngày LV kế tiếp theo Khoản 7 Điều 3 NĐ 252/2026/NĐ-CP.',
         periodKey: getPeriodKey(cycle, d),
       };
     }
