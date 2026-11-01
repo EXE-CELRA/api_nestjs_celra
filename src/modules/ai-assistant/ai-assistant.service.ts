@@ -49,6 +49,29 @@ export class AIAssistantService implements OnModuleInit {
     private readonly config: ConfigService,
   ) { }
 
+  private async getEffectiveDLPLConfig(): Promise<{ apiKey: string; apiUrl: string }> {
+    try {
+      const rec = await this.prisma.systemConfig.findUnique({
+        where: { key: 'DLPL_CONFIG' },
+      });
+      if (rec && rec.value) {
+        const parsed = JSON.parse(rec.value);
+        if (parsed.apiKey) {
+          return {
+            apiKey: parsed.apiKey.trim(),
+            apiUrl: parsed.apiUrl || this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1'),
+          };
+        }
+      }
+    } catch {
+      // ignore error
+    }
+    return {
+      apiKey: this.config.get<string>('DLPL_API_KEY', ''),
+      apiUrl: this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1'),
+    };
+  }
+
   /**
    * Đọc cấu hình AI động trực tiếp từ bảng AiSystem trong Database.
    * NGUYÊN TẮC: Chỉ cho phép chat khi Admin đã kết nối thành công API Key qua trang Admin.
@@ -725,14 +748,54 @@ export class AIAssistantService implements OnModuleInit {
     // ------------------------------------------------------------------------
 
     // ------------------------------------------------------------------------
-    // BƯỚC 5: ĐỐI CHIẾU KHO VĂN BẢN THUẾ NỘI BỘ (0 API) - HẠN CHẾ TỐI ĐA GỌI DLPL API
-    // ------------------------------------------------------------------------
-    // BƯỚC 5: ĐỐI CHIẾU CĂN CỨ PHÁP LÝ TỰ ĐỘNG & GỌI DLPL API KHI CẦN (HOÀN TOÀN ĐỘNG)
+    // BƯỚC 5: ĐỐI CHIẾU TRỰC TIẾP TỪ BẢNG VĂN BẢN PHÁP LUẬT ĐÃ ĐỒNG BỘ (van_ban_phap_luat)
     // ------------------------------------------------------------------------
     const citedSources: Array<{ title: string; docNumber: string; articleNumber?: string; sourceUrl?: string }> = [];
     let dlplGroundingContext = '';
 
-    // Căn cứ pháp lý phát sinh từ các nghĩa vụ thực tế của doanh nghiệp (hoàn toàn động từ auditReport)
+    // 1. Quét tìm kiếm thông minh từ bảng van_ban_phap_luat trong Database
+    try {
+      const activeLegalDocs = await this.prisma.legalDocument.findMany({
+        where: {
+          status: { contains: 'Còn hiệu lực' },
+        },
+        orderBy: { effectiveDate: 'desc' },
+        take: 20,
+      });
+
+      // Lọc các văn bản có liên quan đến câu hỏi người dùng
+      const matchedDocs = activeLegalDocs.filter((doc) => {
+        const docCode = doc.code.toLowerCase();
+        const docName = doc.name.toLowerCase();
+        return (
+          normalized.includes(docCode) ||
+          docName.split(' ').some((word) => word.length >= 4 && normalized.includes(word)) ||
+          normalized.includes('tndn') ||
+          normalized.includes('thuế') ||
+          normalized.includes('chi phí')
+        );
+      });
+
+      const topDocs = (matchedDocs.length > 0 ? matchedDocs : activeLegalDocs).slice(0, 5);
+      if (topDocs.length > 0) {
+        dlplGroundingContext += '\nCĂN CỨ VĂN BẢN PHÁP LUẬT TỪ BẢNG van_ban_phap_luat (ĐÃ ĐỐI CHIẾU DLPL):\n';
+        topDocs.forEach((doc) => {
+          dlplGroundingContext += `- [${doc.code}] ${doc.name} (Hiệu lực: ${doc.effectiveDate}, Tình trạng: ${doc.status})\n`;
+          if (!citedSources.some((s) => s.docNumber === doc.code)) {
+            citedSources.push({
+              title: doc.name,
+              docNumber: doc.code,
+              articleNumber: doc.effectiveDate || 'Còn hiệu lực',
+              sourceUrl: cleanDLPLUrl(doc.sourceUrl),
+            });
+          }
+        });
+      }
+    } catch (err: any) {
+      this.logger.warn(`Lỗi khi đọc bảng van_ban_phap_luat: ${err.message}`);
+    }
+
+    // 2. Căn cứ từ các nghĩa vụ thực tế của doanh nghiệp
     if (isEnterpriseQuery) {
       auditReport.obligations.forEach((o) => {
         if (o.legalDoc && o.sourceUrl && !citedSources.some((s) => s.title === o.legalDoc || s.sourceUrl === o.sourceUrl)) {
@@ -740,12 +803,11 @@ export class AIAssistantService implements OnModuleInit {
             title: o.legalDoc,
             docNumber: o.article || o.code,
             articleNumber: o.effectiveDate || 'Còn hiệu lực',
-            sourceUrl: o.sourceUrl,
+            sourceUrl: cleanDLPLUrl(o.sourceUrl),
           });
         }
       });
     }
-
     let dlplDocs: unknown[] = [];
     let dlplPenalties: unknown[] = [];
 
@@ -1294,10 +1356,9 @@ export class AIAssistantService implements OnModuleInit {
   }
 
   async getDLPLQuota() {
-    const apiUrl = this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1');
-    const apiKey = this.config.get<string>('DLPL_API_KEY', '');
+    const { apiKey, apiUrl } = await this.getEffectiveDLPLConfig();
     if (!apiKey) {
-      return { success: false, message: 'Chưa cấu hình DLPL_API_KEY trong .env' };
+      return { success: false, message: 'Chưa cấu hình API Key DLPL (vui lòng cấu hình qua trang Admin hoặc file .env)' };
     }
 
     try {
@@ -1327,57 +1388,97 @@ export class AIAssistantService implements OnModuleInit {
     }, 24 * 60 * 60 * 1000);
   }
 
-  async syncLegalRulesFromExternalApi() {
-    this.logger.log('[SYNC] Đang kiểm tra hiệu lực các văn bản pháp luật qua API Dữ Liệu Pháp Luật (DLPL)...');
-    const rules = await this.prisma.rule.findMany();
+  async syncLegalRulesFromExternalApi(categories?: string[]) {
+    this.logger.log(`[SYNC] Kéo toàn bộ kho văn bản pháp luật thực tế từ Cổng Dữ Liệu Pháp Luật...`);
 
+    const { apiKey, apiUrl } = await this.getEffectiveDLPLConfig();
+    const syncedDocs: any[] = [];
     let updatedCount = 0;
-    for (const rule of rules) {
-      if (rule.legalReference) {
-        const docs = await this.searchDLPLLegalDocuments(rule.legalReference, 1);
-        if (docs.length > 0) {
-          const doc = docs[0];
-          this.logger.log(`[DLPL SYNC] Quy tắc ${rule.code} (${rule.legalReference}) -> Trạng thái DLPL: ${doc.status} (${doc.name})`);
+    let callsMade = 0;
 
-          if (doc.sourceUrl) {
-            const currentPayload = (rule.conditionsJson as { citations?: Array<{ sourceUrl?: string }> }) || {};
-            const citations = currentPayload.citations || [];
-            if (citations.length > 0 && doc.sourceUrl !== citations[0].sourceUrl) {
-              citations[0].sourceUrl = doc.sourceUrl;
-              await this.prisma.rule.update({
-                where: { id: rule.id },
-                data: {
-                  conditionsJson: { ...currentPayload, citations },
-                },
-              });
-              this.logger.log(`[DLPL SYNC] ✅ Đã tự động cập nhật link mới cho quy tắc ${rule.code}: ${doc.sourceUrl}`);
+    if (apiKey) {
+      try {
+        let page = 1;
+        let hasMore = true;
+        // Dò tự động qua từng trang đến khi nào hết văn bản có hiệu lực (has_more = false hoặc hết data)
+        // Đặt mốc an toàn tối đa 5 trang (50 văn bản mới nhất) để không vượt rate limit
+        while (hasMore && page <= 5) {
+          const url = `${apiUrl.replace(/\/+$/, '')}/legal-documents?q=${encodeURIComponent('thuế thu nhập doanh nghiệp')}&database=vbqppl&status_id=1&per_page=10&page=${page}`;
+          const res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
+          callsMade++;
+
+          if (res.ok) {
+            const json = await res.json();
+            if (json.data && Array.isArray(json.data) && json.data.length > 0) {
+              for (const doc of json.data) {
+                const docData = {
+                  code: doc.code || 'N/A',
+                  name: doc.name || 'Văn bản pháp luật',
+                  category: 'TAX_CIT',
+                  issuedBy: doc.agency?.name || 'Cơ quan nhà nước',
+                  status: doc.status?.name || 'Còn hiệu lực',
+                  effectiveDate: doc.effective_date ? new Date(doc.effective_date).toLocaleDateString('vi-VN') : (doc.issued_date || 'Đang áp dụng'),
+                  sourceUrl: doc.source_url || `https://dulieuphapluat.vn/van-ban/tim-kiem.html?q=${encodeURIComponent(doc.code)}`,
+                  syncedAt: 'Vừa đồng bộ từ DLPL',
+                };
+                syncedDocs.push(docData);
+                updatedCount++;
+
+                try {
+                  await this.prisma.legalDocument.upsert({
+                    where: { code: docData.code },
+                    update: {
+                      name: docData.name,
+                      issuedBy: docData.issuedBy,
+                      status: docData.status,
+                      effectiveDate: docData.effectiveDate,
+                      sourceUrl: docData.sourceUrl,
+                      syncedAt: new Date(),
+                    },
+                    create: {
+                      code: docData.code,
+                      name: docData.name,
+                      category: docData.category,
+                      issuedBy: docData.issuedBy,
+                      status: docData.status,
+                      effectiveDate: docData.effectiveDate,
+                      sourceUrl: docData.sourceUrl,
+                    },
+                  });
+                } catch {
+                  // skip duplicate error
+                }
+              }
+              // Kiểm tra xem Cổng DLPL có còn trang kế tiếp không
+              hasMore = Boolean(json.meta?.has_more && page < (json.meta?.max_page || 5));
+              page++;
+            } else {
+              hasMore = false;
             }
+          } else {
+            hasMore = false;
           }
+          // Giãn cách request tuân thủ giới hạn burst
+          await new Promise((r) => setTimeout(r, 400));
         }
+        this.logger.log(`[DLPL SYNC] Đã duyệt qua ${callsMade} trang (Tốn đúng ${callsMade} lượt API), kéo về ${updatedCount} văn bản.`);
+      } catch (err: any) {
+        this.logger.warn(`Lỗi khi kéo DLPL pages: ${err.message}`);
       }
-
-      await this.prisma.rule.update({
-        where: { id: rule.id },
-        data: { updatedAt: new Date() },
-      });
-      updatedCount++;
-
-      // Tạm dừng 600ms giữa các văn bản để tuân thủ giới hạn burst <= 2 req/s của DLPL API
-      await new Promise((resolve) => setTimeout(resolve, 600));
     }
 
-    // Làm mới toàn bộ Cache để người dùng luôn nhận thông tin văn bản cập nhật nhất
     this.queryCache.clear();
-    this.logger.log(`[SYNC COMPLETED] Đã đối chiếu và làm mới ${updatedCount} quy định pháp luật qua DLPL API. Đã reset Cache để cập nhật luật mới.`);
+    this.logger.log(`[SYNC COMPLETED] Đã kéo về thành công trọn bộ ${updatedCount} văn bản pháp luật TNDN thực tế từ DLPL API.`);
 
     return {
       success: true,
-      message: `Đã đối chiếu thành công ${updatedCount} văn bản pháp luật qua DLPL API (Chu kỳ tự động 15 ngày/lần)`,
+      message: `Đã kéo về thành công toàn bộ ${updatedCount} văn bản pháp luật Thuế TNDN từ Cổng Dữ Liệu Pháp Luật (Tiêu tốn ${callsMade} lượt API)!`,
+      updatedCount,
+      callsMade,
+      syncedDocs,
       syncedAt: new Date().toISOString(),
-      syncCycle: '15 ngày / lần (Ngày 1 & Ngày 15 hàng tháng)',
     };
   }
-
   // ============================================================================
   // HÀM KẾT NỐI API NGOÀI & TIỆN ÍCH PHỤ TRỢ (HELPER METHODS)
   // ============================================================================
@@ -1389,8 +1490,7 @@ export class AIAssistantService implements OnModuleInit {
       return cached.data as Array<{ id: string; code: string; name: string; database: string; status: string; effectiveDate: string; issuedDate: string; sourceUrl: string }>;
     }
 
-    const apiUrl = this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1');
-    const apiKey = this.config.get<string>('DLPL_API_KEY', '');
+    const { apiKey, apiUrl } = await this.getEffectiveDLPLConfig();
     if (!apiKey) return [];
 
     const url = `${apiUrl.replace(/\/+$/, '')}/legal-documents?q=${encodeURIComponent(query)}&database=vbqppl&status_id=1&sort=relevance&per_page=${limit}`;
@@ -1425,8 +1525,7 @@ export class AIAssistantService implements OnModuleInit {
       return cached.data;
     }
 
-    const apiUrl = this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1');
-    const apiKey = this.config.get<string>('DLPL_API_KEY', '');
+    const { apiKey, apiUrl } = await this.getEffectiveDLPLConfig();
     if (!apiKey) return [];
 
     const url = `${apiUrl.replace(/\/+$/, '')}/administrative-penalties?q=${encodeURIComponent(query)}&per_page=${limit}`;

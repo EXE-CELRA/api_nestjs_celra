@@ -18,6 +18,8 @@ import {
   UpdatePackageDto,
   TestAIKeyDto,
   UpdateAIConfigDto,
+  SyncDLPLCategoryDto,
+  UpdateDLPLConfigDto,
 } from './dto/admin.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AdminOnlyGuard } from '../../common/guards/admin-only.guard';
@@ -63,10 +65,41 @@ export class AdminController {
     return this.adminService.getDLPLQuota();
   }
 
+  @Get('dlpl/documents')
+  @ApiOperation({ summary: 'Lấy danh sách văn bản pháp luật từ DLPL theo phân trang Server-side' })
+  async getDLPLDocuments(
+    @Query('page') page = '1',
+    @Query('limit') limit = '10',
+    @Query('query') query = 'thuế thu nhập doanh nghiệp',
+  ) {
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(20, Math.max(1, parseInt(limit, 10) || 10));
+    const res = await this.adminService.getDLPLDocumentsPaginated(pageNum, limitNum, query);
+    return {
+      items: res.data,
+      total: res.total,
+      page: res.page,
+      limit: res.limit,
+      hasMore: res.hasMore,
+    };
+  }
+
   @Post('dlpl/sync-now')
   @ApiOperation({ summary: 'Kích hoạt đồng bộ luật mới tức thì từ DLPL (Không cần chờ 15 ngày)' })
-  async triggerInstantSync() {
-    return this.adminService.triggerInstantSync();
+  async triggerInstantSync(@Body() dto?: SyncDLPLCategoryDto) {
+    return this.adminService.triggerInstantSync(dto?.categories);
+  }
+
+  @Post('dlpl/config')
+  @ApiOperation({ summary: 'Cập nhật API Key Dữ Liệu Pháp Luật tùy chỉnh trực tiếp qua Admin UI' })
+  async updateDLPLConfig(@Body() dto: UpdateDLPLConfigDto) {
+    return this.adminService.updateDLPLConfig(dto.apiKey, dto.apiUrl);
+  }
+
+  @Delete('dlpl/config')
+  @ApiOperation({ summary: 'Xóa API Key Dữ Liệu Pháp Luật tùy chỉnh' })
+  async deleteDLPLConfig() {
+    return this.adminService.deleteDLPLConfig();
   }
 
   @Get('ai/status')
