@@ -1,3 +1,4 @@
+import { adjustToNextWorkingDay, createVietnamEndOfDay } from './vietnam-holidays.util';
 // Chuẩn lịch thuế pháp định Việt Nam
 export type TaxType = 'MON_BAI' | 'GTGT' | 'TNCN' | 'TNDN_80';
 
@@ -24,27 +25,18 @@ export function calculateTaxDeadline(taxTypeOrKey: TaxType | string, ref: Date =
       return d;
     }
     case 'GTGT':
-    case 'TNCN': {
-      const deadlines = [
+    case 'TNCN':
+    case 'TNDN_80': {
+      const rawDeadlines = [
         new Date(y, 3, 30),
         new Date(y, 6, 31),
         new Date(y, 9, 31),
         new Date(y + 1, 0, 31),
       ];
-      for (const d of deadlines) {
-        if (d >= ref) return d;
-      }
-      return deadlines[0];
-    }
-    case 'TNDN_80': {
-      // Khoản 3 Điều 1 Nghị định 91/2022/NĐ-CP: Tạm nộp theo 4 quý (Q1: 30/04, Q2: 31/07, Q3: 31/10, Q4: 31/01 năm sau).
-      // Hạn chót tạm nộp 4 quý tối thiểu 80% số thuế TNDN quyết toán cả năm là ngày 31/01 năm tiếp theo.
-      const deadlines = [
-        new Date(y, 3, 30, 23, 59, 59), // Q1: 30/04
-        new Date(y, 6, 31, 23, 59, 59), // Q2: 31/07
-        new Date(y, 9, 31, 23, 59, 59), // Q3: 31/10 (tháng 10 có 31 ngày)
-        new Date(y + 1, 0, 31, 23, 59, 59), // Q4 & chốt hạn 80%: 31/01 năm sau
-      ];
+      const deadlines = rawDeadlines.map((rd) => {
+        const adj = adjustToNextWorkingDay(rd);
+        return createVietnamEndOfDay(adj.getFullYear(), adj.getMonth() + 1, adj.getDate());
+      });
       for (const d of deadlines) {
         if (d >= ref) return d;
       }

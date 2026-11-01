@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { adjustToNextWorkingDay, createVietnamEndOfDay } from '../../common/utils/vietnam-holidays.util';
 import { PrismaService } from '../../database/prisma.service';
 import {
   StatutoryCycleType,
@@ -497,37 +498,24 @@ export class CitLedgerService {
    * Tính toán ngày hạn chót luật định cho thuế TNDN (Luật số 38/2019/QH14 & NĐ 126/2020/NĐ-CP)
    * Tự động chuyển dời nếu trùng ngày nghỉ lễ/cuối tuần sang ngày làm việc tiếp theo.
    */
-  public getStatutoryDueDate(quarter: number | string, year: number): Date {
+  public getStatutoryDueDate(quarter: number | string, year: number, isExtensionEligible = false): Date {
     const qStr = String(quarter);
-    let d: Date;
+    let baseDate: Date;
 
     if (qStr === '1') {
-      // 30/04 & 01/05 luôn là ngày nghỉ lễ toàn quốc.
-      // Theo Điều 8 NĐ 126/2020/NĐ-CP, hạn nộp chuyển sang ngày làm việc tiếp theo (sớm nhất là 02/05)
-      d = new Date(year, 4, 2, 23, 59, 59);
+      baseDate = new Date(year, 3, 30);
     } else if (qStr === '2') {
-      // Quý 2: 31/07
-      d = new Date(year, 6, 31, 23, 59, 59);
+      baseDate = isExtensionEligible ? new Date(year, 9, 31) : new Date(year, 6, 31);
     } else if (qStr === '3') {
-      // Quý 3: 31/10
-      d = new Date(year, 9, 31, 23, 59, 59);
+      baseDate = isExtensionEligible ? new Date(year, 11, 30) : new Date(year, 9, 31);
     } else if (qStr === '4') {
-      // Quý 4: 31/01 năm kế tiếp
-      d = new Date(year + 1, 0, 31, 23, 59, 59);
+      baseDate = new Date(year + 1, 0, 31);
     } else {
-      // Quyết toán năm (ALL): 31/03 năm kế tiếp
-      d = new Date(year + 1, 2, 31, 23, 59, 59);
+      baseDate = new Date(year + 1, 2, 31);
     }
 
-    // Nếu rơi vào Thứ Bảy (6) hoặc Chủ Nhật (0), chuyển sang Thứ Hai làm việc tiếp theo
-    const day = d.getDay();
-    if (day === 6) {
-      d.setDate(d.getDate() + 2);
-    } else if (day === 0) {
-      d.setDate(d.getDate() + 1);
-    }
-
-    return d;
+    const adjusted = adjustToNextWorkingDay(baseDate);
+    return createVietnamEndOfDay(adjusted.getFullYear(), adjusted.getMonth() + 1, adjusted.getDate());
   }
 
   /**
@@ -571,7 +559,21 @@ export class CitLedgerService {
       });
     }
 
-    // 2. Cấu hình 5 mốc nhiệm vụ chuẩn (Q1, Q2, Q3, Q4, Quyết toán năm)
+    // Xác định điều kiện hưởng chính sách gia hạn thuế theo Nghị định của Chính phủ
+    const rev = String(org.revenueStatus || '').toLowerCase();
+    const isRevenueSME = rev.includes('under_10b') || rev.includes('10b_to_50b') || rev.includes('zero') || rev.includes('dưới 10 tỷ') || rev.includes('10 đến 50 tỷ') || rev.includes('chưa có');
+    const isEmployeeSME = (org.employeeCount ?? 1) <= 100;
+    const ind = String(org.industry || '').toLowerCase();
+    const isIndustryEligible = ind.includes('nông nghiệp') || ind.includes('xây dựng') || ind.includes('vận tải') || ind.includes('du lịch') || ind.includes('ăn uống') || ind.includes('lưu trú') || ind.includes('sản xuất') || ind.includes('f&b') || ind.includes('cntt') || ind.includes('công nghệ');
+    const isExtensionEligible = isRevenueSME || isEmployeeSME || isIndustryEligible;
+
+    // 2. Cấu hình 5 mốc nhiệm vụ chuẩn (Q1, Q2, Q3, Q4, Quyết toán năm) có điều chỉnh ngày nghỉ lễ & gia hạn
+    const q1DueDate = this.getStatutoryDueDate(1, year, isExtensionEligible);
+    const q2DueDate = this.getStatutoryDueDate(2, year, isExtensionEligible);
+    const q3DueDate = this.getStatutoryDueDate(3, year, isExtensionEligible);
+    const q4DueDate = this.getStatutoryDueDate(4, year, isExtensionEligible);
+    const allDueDate = this.getStatutoryDueDate('ALL', year, isExtensionEligible);
+
     const quartersConfig = [
       {
         q: 1,
@@ -580,8 +582,8 @@ export class CitLedgerService {
         cycleType: StatutoryCycleType.QUARTERLY,
         ruleCode: 'CIT_PREPAY_Q1',
         legalBasis:
-          'Khoản 1 Điều 55 Luật QLT số 38/2019/QH14 & Khoản 3 Điều 1 NĐ 91/2022/NĐ-CP (Hạn chót: 30/04)',
-        dueDate: this.getStatutoryDueDate(1, year),
+          'Khoản 1 Điều 55 Luật Quản lý thuế số 38/2019/QH14 & Khoản 3 Điều 1 Nghị định 91/2022/NĐ-CP (Hạn gốc: 30/04; điều chỉnh theo Điều 8 Nghị định 126/2020/NĐ-CP)',
+        dueDate: q1DueDate,
       },
       {
         q: 2,
@@ -589,9 +591,10 @@ export class CitLedgerService {
         title: `Tạm nộp thuế TNDN Quý 2/${year}`,
         cycleType: StatutoryCycleType.QUARTERLY,
         ruleCode: 'CIT_PREPAY_Q2',
-        legalBasis:
-          'Khoản 1 Điều 55 Luật QLT số 38/2019/QH14 & Khoản 3 Điều 1 NĐ 91/2022/NĐ-CP (Hạn chót: 31/07)',
-        dueDate: this.getStatutoryDueDate(2, year),
+        legalBasis: isExtensionEligible
+          ? 'Nghị định gia hạn thời hạn nộp thuế & Điều 8 Nghị định 126/2020/NĐ-CP (Áp dụng chính sách gia hạn nộp thuế cho DN đủ điều kiện đến 02/11/2026)'
+          : 'Khoản 1 Điều 55 Luật Quản lý thuế số 38/2019/QH14 & Khoản 3 Điều 1 Nghị định 91/2022/NĐ-CP (Hạn chót: 31/07)',
+        dueDate: q2DueDate,
       },
       {
         q: 3,
@@ -599,9 +602,10 @@ export class CitLedgerService {
         title: `Tạm nộp thuế TNDN Quý 3/${year}`,
         cycleType: StatutoryCycleType.QUARTERLY,
         ruleCode: 'CIT_PREPAY_Q3',
-        legalBasis:
-          'Khoản 1 Điều 55 Luật QLT số 38/2019/QH14 & Khoản 3 Điều 1 NĐ 91/2022/NĐ-CP (Hạn chót: 31/10)',
-        dueDate: this.getStatutoryDueDate(3, year),
+        legalBasis: isExtensionEligible
+          ? 'Nghị định gia hạn thời hạn nộp thuế & Điều 8 Nghị định 126/2020/NĐ-CP (Áp dụng chính sách gia hạn nộp thuế cho DN đủ điều kiện đến 30/12/2026)'
+          : 'Khoản 1 Điều 55 Luật Quản lý thuế số 38/2019/QH14 & Khoản 3 Điều 1 Nghị định 91/2022/NĐ-CP (Hạn gốc: 31/10; điều chỉnh theo Điều 8 Nghị định 126/2020/NĐ-CP)',
+        dueDate: q3DueDate,
       },
       {
         q: 4,
@@ -610,8 +614,8 @@ export class CitLedgerService {
         cycleType: StatutoryCycleType.QUARTERLY,
         ruleCode: 'CIT_PREPAY_Q4',
         legalBasis:
-          'Khoản 1 Điều 55 Luật QLT số 38/2019/QH14 & NĐ 91/2022/NĐ-CP (Tổng 4 quý ≥ 80%, hạn chót: 31/01)',
-        dueDate: this.getStatutoryDueDate(4, year),
+          'Khoản 1 Điều 55 Luật Quản lý thuế số 38/2019/QH14 & Nghị định 91/2022/NĐ-CP (Tổng 4 quý ≥ 80%, hạn gốc: 31/01; điều chỉnh theo Điều 8 Nghị định 126/2020/NĐ-CP)',
+        dueDate: q4DueDate,
       },
       {
         q: 'ALL',
@@ -620,8 +624,8 @@ export class CitLedgerService {
         cycleType: StatutoryCycleType.ANNUAL,
         ruleCode: 'CIT_ANNUAL_FINALIZE',
         legalBasis:
-          'Điểm a Khoản 2 Điều 44 Luật Quản lý Thuế số 38/2019/QH14 (Hạn chót: 31/03 năm kế tiếp)',
-        dueDate: this.getStatutoryDueDate('ALL', year),
+          'Điểm a Khoản 2 Điều 44 Luật Quản lý thuế số 38/2019/QH14 (Hạn chót: 31/03 năm kế tiếp)',
+        dueDate: allDueDate,
       },
     ];
 
@@ -660,7 +664,7 @@ export class CitLedgerService {
         // Quý vừa import Excel: Cập nhật số tiền thực tế và chuyển sang in_progress (Chờ nộp)
         const formattedAmount = Number(estimatedTaxAmount || 0).toLocaleString('vi-VN');
         const formattedDisallowed = Number(disallowedExpenseAmount || 0).toLocaleString('vi-VN');
-        const formattedDate = cfg.dueDate.toLocaleDateString('vi-VN');
+        const formattedDate = cfg.dueDate.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
         const description = `Thuế TNDN tạm nộp ước tính: ${formattedAmount} VNĐ (Từ file Excel: ${revenueCount} khoản thu, ${expenseCount} khoản chi; Chi phí loại trừ B4: ${formattedDisallowed} VNĐ). Cần nộp qua Cổng eTax trước ngày ${formattedDate}.`;
 
         const calculationBasis = {
@@ -740,7 +744,7 @@ export class CitLedgerService {
               assigneeRole: UserRole.owner,
               dueDate: cfg.dueDate,
               status: TaskStatus.need_info,
-              description: `Kỳ tính thuế ${cfg.title}. Chưa có số liệu Excel thực tế (Hạn chót: ${cfg.dueDate.toLocaleDateString('vi-VN')}). Vui lòng nạp file Excel khi đến kỳ.`,
+              description: `Kỳ tính thuế ${cfg.title}. Chưa có số liệu Excel thực tế (Hạn chót: ${cfg.dueDate.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}). Vui lòng nạp file Excel khi đến kỳ.`,
               ruleCode: cfg.ruleCode,
               legalBasis: cfg.legalBasis,
               periodCycle: cfg.cycleType,

@@ -5,8 +5,7 @@ export const CORE_LEGAL_DOC_LINKS: Record<string, string> = {
   '38/2019': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/luat-quan-ly-thue-2019-54279.html',
   '126/2020': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/nghi-dinh-1262020nd-cp-ve-huong-dan-luat-quan-ly-thue-24636.html',
   '91/2022': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/nghi-dinh-912022nd-cp-cua-chinh-phu-ve-viec-sua-doi-bo-sung-mot-so-dieu-cua-nghi-dinh-1262020nd-cp-ngay-19102020-cua-chinh-phu-quy-dinh-chi-tiet-mot-so-dieu-cua-luat-quan-ly-thue-1098434.html',
-  '48/2024': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/luat-thue-gia-tri-gia-tang-2024-482024qh15-12345.html',
-  '181/2025': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/nghi-dinh-1812025nd-cp-12345.html',
+  '64/2024': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/nghi-dinh-642024nd-cp-ve-gia-han-thoi-han-nop-thue-gia-tri-gia-tang-thue-thu-nhap-doanh-nghiep-thue-thu-nhap-ca-nhan-va-tien-thue-dat-trong-nam-2024-1184988.html',
   '80/2021': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/thong-tu-802021tt-btc-huong-dan-luat-quan-ly-thue-va-nghi-dinh-1262020nd-cp-huong-dan-luat-quan-ly-thue-do-bo-truong-bo-tai-chinh-ban-hanh-962.html',
   '72/2024': 'https://dulieuphapluat.vn/van-ban/van-ban-moi/nghi-dinh-72-2024-nd-cp-ve-chinh-sach-giam-thue-gia-tri-gia-tang-theo-nghi-quyet-142-2024-qh15-1185272.html',
   // --------------------------------------------------------------------------
@@ -45,23 +44,31 @@ export const CORE_LEGAL_DOC_LINKS: Record<string, string> = {
   '98/2020': 'https://dulieuphapluat.vn/van-ban/thuong-mai-van-ban/nghi-dinh-982020nd-cp-quy-dinh-ve-xu-phat-vi-pham-hanh-chinh-trong-hoat-dong-thuong-mai-san-xuat-buon-ban-hang-gia-hang-cam-va-bao-ve-quyen-loi-nguoi-tieu-dung-27595.html',
 };
 
-// Chuẩn hóa và làm sạch link văn bản từ DLPL API (xóa bỏ lặp thư mục và đuôi .html.html)
+// Chuẩn hóa và làm sạch link văn bản từ DLPL API (xóa bỏ lặp thư mục, đuôi .html.html và bảo toàn anchor #dieu_...)
 export function cleanDLPLUrl(rawUrl?: string): string {
   if (!rawUrl) return '';
   let clean = rawUrl.replace(/\.html\.html$/i, '.html');
+  const hashIndex = clean.indexOf('#');
+  let hash = '';
+  if (hashIndex !== -1) {
+    hash = clean.slice(hashIndex);
+    clean = clean.slice(0, hashIndex);
+  }
   const m = clean.match(/(van-ban\/[^\/]+\/[a-zA-Z0-9_\-]+-\d+\.html)$/i);
   if (m) {
-    return `https://dulieuphapluat.vn/${m[1]}`;
+    return `https://dulieuphapluat.vn/${m[1]}${hash}`;
   }
-  return clean;
+  return `${clean}${hash}`;
 }
 
-// Đối chiếu số hiệu văn bản với Bản đồ luật cốt lõi
+// Đối chiếu số hiệu văn bản với Bản đồ luật cốt lõi và tự động mở đúng điều khoản
 export function matchCoreLegalDocUrl(text?: string): string | undefined {
   if (!text) return undefined;
   for (const [key, url] of Object.entries(CORE_LEGAL_DOC_LINKS)) {
     if (text.includes(key)) {
-      return url;
+      const articleMatch = text.match(/Điều\s+(\d+)/i);
+      const articleHash = articleMatch ? `#dieu_${articleMatch[1]}` : '';
+      return `${url}${articleHash}`;
     }
   }
   return undefined;

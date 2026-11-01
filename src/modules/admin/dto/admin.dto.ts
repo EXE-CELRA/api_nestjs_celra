@@ -136,3 +136,21 @@ export class UpdateAIConfigDto {
   @IsNotEmpty()
   model: string;
 }
+
+export class SyncDLPLCategoryDto {
+  @ApiProperty({ example: ['TAX_CIT'], description: 'Danh sách các thẻ chủ đề luật cần đồng bộ' })
+  @IsOptional()
+  categories?: string[];
+}
+
+export class UpdateDLPLConfigDto {
+  @ApiProperty({ example: 'eyJhbGciOi...', description: 'API Key Dữ Liệu Pháp Luật (dulieuphapluat.vn)' })
+  @IsString()
+  @IsNotEmpty()
+  apiKey: string;
+
+  @ApiPropertyOptional({ example: 'https://api.dulieuphapluat.vn/v1' })
+  @IsString()
+  @IsOptional()
+  apiUrl?: string;
+}

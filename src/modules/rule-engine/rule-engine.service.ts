@@ -207,8 +207,17 @@ export class RuleEngineService {
         isMatched = true;
         cycleType = 'QUARTERLY';
       } else if (rule.code === 'RULE-TAX-MB') {
-        isMatched = true;
+        // LƯU Ý PHÁP LÝ QUAN TRỌNG:
+        // Từ ngày 01/01/2026, lệ phí môn bài chính thức bị BÃI BỎ HOÀN TOÀN.
+        // Căn cứ: Khoản 7 Điều 10 Nghị quyết 198/2025/QH15 của Quốc hội
+        //         & Nghị định 362/2025/NĐ-CP của Chính phủ hướng dẫn thi hành.
+        // → Từ năm 2026 trở đi, doanh nghiệp KHÔNG CÒN nghĩa vụ kê khai,
+        //   nộp lệ phí môn bài định kỳ hàng năm.
+        // → Chỉ giữ lại task này cho dữ liệu lịch sử (năm tài chính < 2026).
+        const currentFiscalYear = new Date().getFullYear();
+        isMatched = currentFiscalYear < 2026;
         cycleType = 'ANNUAL';
+
       } else if (rule.code === 'RULE-TAX-FCT-10D') {
         isMatched = isEcom || isFnb;
         cycleType = 'EVENT_10D';
