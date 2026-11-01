@@ -103,8 +103,8 @@ export class ComplianceNotificationService implements OnModuleInit {
       } else if (daysUntilDue < 0) {
         targetMilestone = NotificationMilestone.OVERDUE;
         const overdueDays = Math.abs(daysUntilDue);
-        milestoneTitle = `CẢNH BÁO QUÁ HẠN (${overdueDays} ngày): ${task.title}`;
-        milestoneMessage = `Tác vụ "${task.title}" đã quá hạn ${overdueDays} ngày. Rủi ro bị cơ quan quản lý xử phạt vi phạm hành chính.`;
+        milestoneTitle = `QUÁ HẠN THEO LỊCH (${overdueDays} ngày): ${task.title}`;
+        milestoneMessage = `Tác vụ "${task.title}" đã quá hạn theo lịch ${overdueDays} ngày (Chưa xác nhận hoàn thành). Vui lòng kiểm tra và cập nhật minh chứng hoàn thành.`;
       }
 
       if (!targetMilestone) continue;

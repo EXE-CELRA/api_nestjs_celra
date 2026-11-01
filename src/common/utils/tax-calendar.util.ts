@@ -11,6 +11,7 @@
  */
 
 import { StatutoryCycleType } from '@prisma/client';
+import { adjustToNextWorkingDay, createVietnamEndOfDay } from './vietnam-holidays.util';
 export { StatutoryCycleType };
 
 // Múi giờ chuẩn Việt Nam (UTC+7)
@@ -133,18 +134,18 @@ export function calculateComplianceDeadline(
     }
 
     case 'QUARTERLY': {
-      // Các mốc quý: 30/04 (Q1), 31/07 (Q2), 31/10 (Q3), 31/01 năm sau (Q4)
-      const quarterDeadlines = [
-        new Date(currentYear, 3, 30, 23, 59, 59), // 30/04
-        new Date(currentYear, 6, 31, 23, 59, 59), // 31/07
-        new Date(currentYear, 9, 31, 23, 59, 59), // 31/10
-        new Date(currentYear + 1, 0, 31, 23, 59, 59), // 31/01 năm sau
+      // Các mốc quý có điều chỉnh ngày nghỉ lễ theo Điều 8 Nghị định 126/2020/NĐ-CP
+      const rawQuarterDeadlines = [
+        new Date(currentYear, 3, 30), // 30/04
+        new Date(currentYear, 6, 31), // 31/07
+        new Date(currentYear, 9, 31), // 31/10
+        new Date(currentYear + 1, 0, 31), // 31/01 năm sau
       ];
 
-      // Nếu là TNDN tạm nộp 80% (RULE-TAX-TNDN-80): mốc Q3 là 30/10 theo NĐ 91/2022
-      if (ruleCode.includes('TNDN')) {
-        quarterDeadlines[2] = new Date(currentYear, 9, 30, 23, 59, 59); // 30/10
-      }
+      const quarterDeadlines = rawQuarterDeadlines.map((rd) => {
+        const adj = adjustToNextWorkingDay(rd);
+        return createVietnamEndOfDay(adj.getFullYear(), adj.getMonth() + 1, adj.getDate());
+      });
 
       let chosen = quarterDeadlines[0];
       for (const deadline of quarterDeadlines) {
@@ -153,7 +154,6 @@ export function calculateComplianceDeadline(
           break;
         }
       }
-
       return {
         dueDate: chosen,
         requiresEventDate: false,
