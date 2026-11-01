@@ -36,8 +36,16 @@ export class TaskController {
     private readonly taskService: TaskService,
     private readonly notificationService: ComplianceNotificationService,
   ) {}
+  @Get('statutory-holidays')
+  @ApiOperation({ summary: 'Lấy danh mục ngày nghỉ lễ Nhà nước chuẩn theo Bộ luật Lao động và Thông báo CP' })
+  @ApiQuery({ name: 'year', type: Number, required: false, description: 'Năm cần tra cứu (mặc định năm hiện tại)' })
+  async getStatutoryHolidays(@Query('year') year?: string) {
+    const y = year ? parseInt(year, 10) : new Date().getFullYear();
+    return this.taskService.getStatutoryHolidays(isNaN(y) ? new Date().getFullYear() : y);
+  }
 
   @Post()
+
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Tạo tác vụ tuân thủ mới' })
   async create(

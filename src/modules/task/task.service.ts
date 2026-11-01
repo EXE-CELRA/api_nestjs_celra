@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { getStatutoryHolidaysForYear } from '../../common/utils/tax-calendar.util';
 import {
   CreateTaskDto,
   UpdateTaskStatusDto,
@@ -563,5 +564,15 @@ export class TaskService {
     });
 
     return { success: true, message: 'Đã xóa ghi chú lịch' };
+  }
+  /**
+   * Lấy danh mục ngày nghỉ lễ Nhà nước chuẩn theo Bộ luật Lao động và Thông báo CP
+   */
+  getStatutoryHolidays(year: number) {
+    return {
+      year,
+      holidays: getStatutoryHolidaysForYear(year),
+      message: 'Danh mục ngày nghỉ lễ chính thức theo Điều 112 Bộ luật Lao động và quy định quản lý thuế',
+    };
   }
 }
