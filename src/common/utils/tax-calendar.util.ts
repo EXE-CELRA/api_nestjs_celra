@@ -32,6 +32,21 @@ export function addBusinessDays(startDate: Date, businessDays: number): Date {
 }
 
 /**
+ * Điều chỉnh ngày nộp thuế nếu rơi vào Thứ 7 hoặc Chủ Nhật -> tự động dời sang Thứ Hai kế tiếp (khoản 5 Điều 148 Bộ luật Dân sự & Luật Quản lý Thuế)
+ */
+export function adjustDeadlineForWeekend(targetDate: Date): Date {
+  const result = new Date(targetDate);
+  const day = result.getDay();
+  if (day === 6) {
+    result.setDate(result.getDate() + 2); // Thứ 7 -> Thứ 2
+  } else if (day === 0) {
+    result.setDate(result.getDate() + 1); // Chủ nhật -> Thứ 2
+  }
+  return result;
+}
+
+
+/**
  * Lấy Period Key chuẩn hóa dùng cho Unique Constraint và chống trùng Task
  * Ví dụ:
  * - MONTHLY -> "2026-10"
@@ -135,10 +150,10 @@ export function calculateComplianceDeadline(
     case 'QUARTERLY': {
       // Các mốc quý: 30/04 (Q1), 31/07 (Q2), 31/10 (Q3), 31/01 năm sau (Q4)
       const quarterDeadlines = [
-        new Date(currentYear, 3, 30, 23, 59, 59), // 30/04
-        new Date(currentYear, 6, 31, 23, 59, 59), // 31/07
-        new Date(currentYear, 9, 31, 23, 59, 59), // 31/10
-        new Date(currentYear + 1, 0, 31, 23, 59, 59), // 31/01 năm sau
+        adjustDeadlineForWeekend(new Date(currentYear, 3, 30, 23, 59, 59)), // 30/04
+        adjustDeadlineForWeekend(new Date(currentYear, 6, 31, 23, 59, 59)), // 31/07
+        adjustDeadlineForWeekend(new Date(currentYear, 9, 31, 23, 59, 59)), // 31/10
+        adjustDeadlineForWeekend(new Date(currentYear + 1, 0, 31, 23, 59, 59)), // 31/01 năm sau (31/01/2027 rơi vào Chủ Nhật -> dời sang 01/02/2027)
       ];
 
       // Nếu là TNDN tạm nộp 80% (RULE-TAX-TNDN-80): mốc Q3 là 30/10 theo NĐ 91/2022
