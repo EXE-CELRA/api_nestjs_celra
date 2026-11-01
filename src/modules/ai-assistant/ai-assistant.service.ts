@@ -66,9 +66,10 @@ export class AIAssistantService implements OnModuleInit {
     } catch {
       // ignore error
     }
+    // Tuyệt đối không đọc fallback từ .env nữa, chỉ đọc từ Database
     return {
-      apiKey: this.config.get<string>('DLPL_API_KEY', ''),
-      apiUrl: this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1'),
+      apiKey: '',
+      apiUrl: 'https://api.dulieuphapluat.vn/v1',
     };
   }
 

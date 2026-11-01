@@ -486,15 +486,9 @@ export class AdminService {
       // ignore
     }
     return {
-      apiKey: this.config.get<string>('DLPL_API_KEY', ''),
-      apiUrl: this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1'),
+      apiKey: '',
+      apiUrl: 'https://api.dulieuphapluat.vn/v1',
     };
-  }
-
-  getEffectiveDLPLKey(): { apiKey: string; apiUrl: string } {
-    const apiKey = this.platformConfig.dlplApiKey || this.config.get<string>('DLPL_API_KEY', '');
-    const apiUrl = this.platformConfig.dlplApiUrl || this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1');
-    return { apiKey, apiUrl };
   }
 
   // ============================================================================
