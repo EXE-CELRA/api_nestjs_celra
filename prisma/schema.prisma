@@ -334,6 +334,34 @@ model Rule {
   @@map("quy_tac_tuan_thu")
 }
 
+model LegalDocument {
+  id            String   @id @default(uuid())
+  code          String   @unique @map("so_hieu_van_ban")
+  name          String   @map("ten_van_ban")
+  category      String   @default("TAX_CIT") @map("chu_de")
+  issuedBy      String?  @map("co_quan_ban_hanh")
+  status        String   @default("Còn hiệu lực") @map("tinh_trang_hieu_luc")
+  effectiveDate String?  @map("ngay_hieu_luc")
+  sourceUrl     String   @map("duong_dan_nguon_dlpl")
+  syncedAt      DateTime @default(now()) @map("thoi_gian_dong_bo")
+  createdAt     DateTime @default(now()) @map("ngay_tao")
+  updatedAt     DateTime @updatedAt @map("ngay_cap_nhat")
+
+  @@index([category, status])
+  @@map("van_ban_phap_luat")
+}
+
+model SystemConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique @map("khoa_cau_hinh")
+  value     String   @map("gia_tri")
+  note      String?  @map("ghi_chu")
+  createdAt DateTime @default(now()) @map("ngay_tao")
+  updatedAt DateTime @updatedAt @map("ngay_cap_nhat")
+
+  @@map("cau_hinh_he_thong")
+}
+
 model ComplianceAudit {
   id                 String          @id @default(uuid())
   organizationId     String          @map("id_doanh_nghiep")

@@ -20,6 +20,7 @@ import {
   AIProviderType,
 } from './dto/admin.dto';
 import { TransactionType, TransactionStatus, UserRole } from '@prisma/client';
+import { cleanDLPLUrl } from '../../common/constants/legal-docs.constant';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -32,6 +33,8 @@ interface PlatformConfig {
   freeTierCredits: number;
   suspendedOrgIds: string[];
   lastSyncAt: string | null;
+  dlplApiKey?: string;
+  dlplApiUrl?: string;
   aiProvider?: {
     provider: AIProviderType;
     apiKey: string;
@@ -318,19 +321,29 @@ export class AdminService {
       this.aiAssistantService.getDLPLQuota(),
     ]);
 
-    const totalLimit = 1000;
-    // Lấy số liệu thực tế từ DLPL nếu có hoặc tính toán
-    let remainingCalls = 845;
-    let usedCalls = 155;
-    if (dlplRes && (dlplRes as any).quota) {
-      remainingCalls = (dlplRes as any).quota.remaining ?? remainingCalls;
-      usedCalls = (dlplRes as any).quota.used ?? usedCalls;
+    let totalLimit = 1000;
+    let remainingCalls = 1000;
+    let usedCalls = 0;
+
+    // Phân tích đúng cấu trúc trả về từ API DLPL: dlplRes.data.quota
+    const quotaObj = (dlplRes as any)?.data?.quota || (dlplRes as any)?.quota;
+    if (quotaObj) {
+      totalLimit = quotaObj.monthly_limit ?? totalLimit;
+      usedCalls = quotaObj.monthly_used ?? (quotaObj.used ?? usedCalls);
+      remainingCalls = quotaObj.monthly_remaining ?? (quotaObj.remaining ?? (totalLimit - usedCalls));
     }
+    const configRecord = await this.prisma.systemConfig.findUnique({
+      where: { key: 'DLPL_CONFIG' },
+    });
+    const parsedConfig = configRecord ? JSON.parse(configRecord.value) : null;
+    const customKey = parsedConfig?.apiKey || '';
 
     return {
       success: true,
       provider: 'Dữ Liệu Pháp Luật (dulieuphapluat.vn)',
-      apiUrl: this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1'),
+      apiUrl: parsedConfig?.apiUrl || this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1'),
+      customApiKey: customKey ? `${customKey.slice(0, 8)}...${customKey.slice(-4)}` : '',
+      hasCustomKey: Boolean(customKey),
       totalMonthlyLimit: totalLimit,
       remainingCalls,
       usedCalls,
@@ -341,19 +354,147 @@ export class AdminService {
     };
   }
 
-  async triggerInstantSync() {
-    this.logger.log('[ADMIN ACTION] Kích hoạt đồng bộ tức thời từ API Dữ Liệu Pháp Luật...');
-    const syncResult = await this.aiAssistantService.syncLegalRulesFromExternalApi();
+
+  async getDLPLDocumentsPaginated(page: number, limit: number, query = 'thuế thu nhập doanh nghiệp') {
+    const skip = (page - 1) * limit;
+
+    // ĐỌC TRỰC TIẾP TỪ DATABASE POSTGRESQL (Bảng van_ban_phap_luat)
+    const [totalInDb, docsInDb] = await Promise.all([
+      this.prisma.legalDocument.count({ where: { category: 'TAX_CIT' } }),
+      this.prisma.legalDocument.findMany({
+        where: { category: 'TAX_CIT' },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    if (docsInDb.length > 0) {
+      return {
+        data: docsInDb.map((d) => ({
+          code: d.code,
+          name: d.name,
+          category: d.category,
+          issuedBy: d.issuedBy || 'Cơ quan nhà nước',
+          status: d.status,
+          effectiveDate: d.effectiveDate || 'Đang áp dụng',
+          sourceUrl: cleanDLPLUrl(d.sourceUrl),
+        })),
+        total: totalInDb,
+        page,
+        limit,
+        hasMore: skip + docsInDb.length < totalInDb,
+      };
+    }
+
+    return { data: [], total: 0, page, limit };
+  }
+  async triggerInstantSync(categories?: string[]) {
+    this.logger.log(`[ADMIN ACTION] Kích hoạt đồng bộ tức thời từ API Dữ Liệu Pháp Luật (Danh mục: ${categories?.join(', ') || 'Tất cả'})...`);
+    const syncResult = await this.aiAssistantService.syncLegalRulesFromExternalApi(categories);
 
     this.platformConfig.lastSyncAt = new Date().toISOString();
     this.savePlatformConfig();
 
     return {
       success: true,
-      message: 'Đã kích hoạt và hoàn tất đồng bộ toàn diện từ Dữ Liệu Pháp Luật (DLPL) thành công!',
+      message: `Đã kích hoạt và hoàn tất đồng bộ thành công cho các danh mục: ${categories?.join(', ') || 'Tất cả'}!`,
       details: syncResult,
       syncedAt: this.platformConfig.lastSyncAt,
     };
+  }
+
+  async updateDLPLConfig(apiKey: string, apiUrl?: string) {
+    const targetKey = apiKey.trim();
+    const targetUrl = (apiUrl || this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1')).trim();
+
+    if (!targetKey) {
+      throw new BadRequestException('API Key không được để trống.');
+    }
+
+    // BƯỚC BẮT BUỘC: Gửi request test trực tiếp lên DLPL để xác minh key hợp lệ
+    let testData: any = null;
+    try {
+      const testRes = await fetch(`${targetUrl.replace(/\/+$/, '')}/me`, {
+        headers: { Authorization: `Bearer ${targetKey}` },
+      });
+
+      if (!testRes.ok) {
+        const errBody = await testRes.text();
+        throw new BadRequestException(
+          `Kết nối thất bại (Mã lỗi ${testRes.status}): API Key không hợp lệ hoặc đã hết hạn trên Cổng Dữ Liệu Pháp Luật! Chi tiết: ${errBody.slice(0, 100)}`
+        );
+      }
+
+      testData = await testRes.json();
+    } catch (err: any) {
+      if (err instanceof BadRequestException) throw err;
+      throw new BadRequestException(`Không thể kết nối đến máy chủ Dữ Liệu Pháp Luật: ${err.message || 'Lỗi mạng'}`);
+    }
+
+    // Lưu trực tiếp vào Database PostgreSQL (Bảng cau_hinh_he_thong)
+    await this.prisma.systemConfig.upsert({
+      where: { key: 'DLPL_CONFIG' },
+      update: {
+        value: JSON.stringify({ apiKey: targetKey, apiUrl: targetUrl }),
+      },
+      create: {
+        key: 'DLPL_CONFIG',
+        value: JSON.stringify({ apiKey: targetKey, apiUrl: targetUrl }),
+        note: 'API Key Cổng Dữ Liệu Pháp Luật do Admin cấu hình qua Web UI',
+      },
+    });
+    const quota = testData?.data?.quota || testData?.quota;
+    const remaining = quota?.monthly_remaining ?? 1000;
+    const limit = quota?.monthly_limit ?? 1000;
+    const used = quota?.monthly_used ?? 0;
+
+    this.logger.log(`[DLPL CONFIG] ✅ Đã xác minh và kết nối thành công API Key DLPL! Còn lại: ${remaining}/${limit} lượt.`);
+    return {
+      success: true,
+      message: `Xác thực thành công! Key hợp lệ, còn lại ${remaining.toLocaleString('vi-VN')} / ${limit.toLocaleString('vi-VN')} lượt gọi trong tháng.`,
+      quota: {
+        remainingCalls: remaining,
+        usedCalls: used,
+        totalMonthlyLimit: limit,
+      },
+    };
+  }
+
+  async deleteDLPLConfig() {
+    await this.prisma.systemConfig.deleteMany({
+      where: { key: 'DLPL_CONFIG' },
+    });
+    return {
+      success: true,
+      message: 'Đã xóa API Key Dữ Liệu Pháp Luật tùy chỉnh trong Database, quay về cấu hình .env mặc định',
+    };
+  }
+  async getEffectiveDLPLKeyAsync(): Promise<{ apiKey: string; apiUrl: string }> {
+    try {
+      const rec = await this.prisma.systemConfig.findUnique({ where: { key: 'DLPL_CONFIG' } });
+      if (rec && rec.value) {
+        const parsed = JSON.parse(rec.value);
+        if (parsed.apiKey) {
+          return {
+            apiKey: parsed.apiKey.trim(),
+            apiUrl: parsed.apiUrl || this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1'),
+          };
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return {
+      apiKey: this.config.get<string>('DLPL_API_KEY', ''),
+      apiUrl: this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1'),
+    };
+  }
+
+  getEffectiveDLPLKey(): { apiKey: string; apiUrl: string } {
+    const apiKey = this.platformConfig.dlplApiKey || this.config.get<string>('DLPL_API_KEY', '');
+    const apiUrl = this.platformConfig.dlplApiUrl || this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1');
+    return { apiKey, apiUrl };
   }
 
   // ============================================================================
@@ -447,61 +588,102 @@ export class AdminService {
   }
 
   async getAIAnalytics() {
-    this.platformConfig = this.loadPlatformConfig();
     const today = new Date();
     const currentYear = today.getFullYear();
     const currentMonth = today.getMonth() + 1; // 1-12
     const monthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-    const daysInMonth = new Date(currentYear, currentMonth, 0).getDate(); // 28, 29, 30 or 31
+    const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
+    const startOfMonth = new Date(currentYear, currentMonth - 1, 1);
+    const endOfMonth = new Date(currentYear, currentMonth, 0, 23, 59, 59);
 
-    const stats = this.platformConfig.aiStats || {
-      todayRequests: 0,
-      totalTokensUsed: 0,
-      lastDate: today.toISOString().slice(0, 10),
-      currentMonth: monthStr,
-      monthRequests: 0,
-      monthTokens: 0,
-      dailyUsage: {},
-      orgUsage: {},
-    };
+    // 1. TRUY VẤN TRỰC TIẾP NHẬT KÝ SỬ DỤNG AI TỪ DATABASE POSTGRESQL (Bảng AiSystem)
+    const [monthlyLogs, dbOrgs] = await Promise.all([
+      this.prisma.aiSystem.findMany({
+        where: {
+          organizationId: { not: null },
+          createdAt: {
+            gte: startOfMonth,
+            lte: endOfMonth,
+          },
+        },
+        include: {
+          organization: {
+            select: { id: true, name: true, taxCode: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.organization.findMany({
+        take: 50,
+        select: { id: true, name: true, taxCode: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
 
-    // Tạo nhãn và dữ liệu cho biểu đồ từ Ngày 1 đến Ngày cuối cùng của tháng
+    // Tổng hợp số request và token trong tháng từ Database
+    const totalMonthRequests = monthlyLogs.length;
+    const totalMonthTokens = monthlyLogs.reduce((sum, log) => sum + (log.totalTokens || 0), 0);
+
+    // 2. Tính toán phân bổ dữ liệu biểu đồ theo từng ngày (Day 1 -> Day 31)
     const chartLabels: string[] = [];
     const chartTokenData: number[] = [];
     const chartRequestData: number[] = [];
 
-    const dailyMap = stats.dailyUsage || {};
-
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dayStr = `${monthStr}-${String(day).padStart(2, '0')}`;
-      chartLabels.push(`Ngày ${day}`);
-      const dayUsage = dailyMap[dayStr] || { requests: 0, tokens: 0 };
-      chartTokenData.push(dayUsage.tokens);
-      chartRequestData.push(dayUsage.requests);
+    const dailyStatsMap: Record<number, { requests: number; tokens: number }> = {};
+    for (const log of monthlyLogs) {
+      const logDate = new Date(log.createdAt);
+      const dayNum = logDate.getDate();
+      if (!dailyStatsMap[dayNum]) {
+        dailyStatsMap[dayNum] = { requests: 0, tokens: 0 };
+      }
+      dailyStatsMap[dayNum].requests += 1;
+      dailyStatsMap[dayNum].tokens += log.totalTokens || 0;
     }
 
-    // Phân bổ theo từng doanh nghiệp
-    // Nếu hệ thống có doanh nghiệp thực tế trong DB, ghép thêm thông tin để hiển thị đầy đủ
-    const orgMap = stats.orgUsage || {};
-    const orgList = Object.values(orgMap).sort((a, b) => b.tokens - a.tokens);
+    for (let day = 1; day <= daysInMonth; day++) {
+      chartLabels.push(`Ngày ${day}`);
+      const dayData = dailyStatsMap[day] || { requests: 0, tokens: 0 };
+      chartTokenData.push(dayData.tokens);
+      chartRequestData.push(dayData.requests);
+    }
 
-    // Lấy thêm danh sách các doanh nghiệp từ DB nếu danh sách rỗng (đảm bảo canvas có dữ liệu thực tế)
-    if (orgList.length === 0) {
-      const dbOrgs = await this.prisma.organization.findMany({
-        take: 10,
-        select: { id: true, name: true, taxCode: true, industry: true },
-      });
-      for (const o of dbOrgs) {
-        orgList.push({
-          orgId: o.id,
-          orgName: o.name,
-          taxCode: o.taxCode,
+    // 3. Tính toán phân bổ sử dụng theo từng doanh nghiệp
+    const enterpriseMap = new Map<string, { orgId: string; orgName: string; taxCode?: string; requests: number; tokens: number; lastUsedAt: string }>();
+
+    for (const log of monthlyLogs) {
+      if (!log.organizationId) continue;
+      const orgId = log.organizationId;
+      const existing = enterpriseMap.get(orgId);
+      if (!existing) {
+        enterpriseMap.set(orgId, {
+          orgId,
+          orgName: log.organization?.name || 'Doanh nghiệp',
+          taxCode: log.organization?.taxCode,
+          requests: 1,
+          tokens: log.totalTokens || 0,
+          lastUsedAt: new Date(log.createdAt).toLocaleString('vi-VN'),
+        });
+      } else {
+        existing.requests += 1;
+        existing.tokens += log.totalTokens || 0;
+      }
+    }
+
+    // Bổ sung các doanh nghiệp chưa sử dụng để Admin thấy toàn bộ danh sách
+    for (const org of dbOrgs) {
+      if (!enterpriseMap.has(org.id)) {
+        enterpriseMap.set(org.id, {
+          orgId: org.id,
+          orgName: org.name,
+          taxCode: org.taxCode,
           requests: 0,
           tokens: 0,
           lastUsedAt: 'Chưa sử dụng',
         });
       }
     }
+
+    const orgList = Array.from(enterpriseMap.values()).sort((a, b) => b.tokens - a.tokens);
 
     const status = await this.getAIServiceStatus();
 
@@ -513,8 +695,8 @@ export class AdminService {
       apiKeyMasked: status.apiKeyMasked,
       hasApiKey: status.hasApiKey,
       currentMonth: `Tháng ${currentMonth} / ${currentYear}`,
-      monthRequests: status.monthRequests,
-      monthTokens: status.monthTokens,
+      monthRequests: totalMonthRequests,
+      monthTokens: totalMonthTokens,
       chart: {
         labels: chartLabels,
         tokens: chartTokenData,
