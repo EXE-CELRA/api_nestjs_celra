@@ -50,6 +50,7 @@ export class EvidenceDocumentService {
 
     // Chuẩn bị dữ liệu phân loại Tag, Quý, Năm lưu vào JSON OCR Metadata
     const ocrData: any = {};
+    if (category) ocrData.documentType = category;
     if (tag) ocrData.tag = tag;
     if (quarter) ocrData.quarter = quarter === 'ALL' ? 'ALL' : Number(quarter);
     if (year) ocrData.year = Number(year);

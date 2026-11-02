@@ -61,7 +61,7 @@ export class EvidenceDocumentController {
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadEvidenceDto,
   ) {
-    const finalCategory = dto.category || dto.danhMuc || 'Chứng từ tuân thủ';
+    const finalCategory = dto.category || dto.documentType || dto.danhMuc || 'Chứng từ tuân thủ';
     const finalTaskId = dto.taskId || dto.maNhiemVu;
     const finalTag = dto.tag || (dto.category?.includes('Thuế') ? 'Thuế TNDN' : 'Tài liệu chung');
     const finalQuarter = dto.quarter !== undefined ? dto.quarter : dto.quy;
