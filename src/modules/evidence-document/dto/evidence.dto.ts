@@ -40,6 +40,11 @@ export class UploadEvidenceDto {
   @IsString()
   category?: string;
 
+  @ApiPropertyOptional({ example: 'LEGAL_LICENSE', description: 'Loại chứng từ tải lên' })
+  @IsOptional()
+  @IsString()
+  documentType?: string;
+
   @ApiPropertyOptional({ example: 'Thuế Doanh Nghiệp', description: 'Danh mục chứng từ tiếng Việt (camelCase)' })
   @IsOptional()
   @IsString()
