@@ -1,14 +1,6 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  BadRequestException,
-  Inject,
-  forwardRef,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { TransactionType, TransactionStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
-import { AIAssistantService } from '../ai-assistant/ai-assistant.service';
 import {
   EnterpriseStatus,
   UpdateEnterpriseStatusDto,
@@ -17,143 +9,29 @@ import {
   UpdatePackageDto,
   TestAIKeyDto,
   UpdateAIConfigDto,
-  AIProviderType,
 } from './dto/admin.dto';
-import { TransactionType, TransactionStatus, UserRole } from '@prisma/client';
-import { cleanDLPLUrl } from '../../common/constants/legal-docs.constant';
-import * as fs from 'fs';
-import * as path from 'path';
+import { AdminConfigStore } from './admin-config.store';
+import { AdminDlplService } from './admin-dlpl.service';
+import { AdminAiService } from './admin-ai.service';
+import { AdminFinanceService } from './admin-finance.service';
 
-interface PlatformConfig {
-  bankId: string;
-  accountNo: string;
-  accountName: string;
-  creditRate: number;
-  auditCost: number;
-  freeTierCredits: number;
-  suspendedOrgIds: string[];
-  lastSyncAt: string | null;
-  dlplApiKey?: string;
-  dlplApiUrl?: string;
-  aiProvider?: {
-    provider: AIProviderType;
-    apiKey: string;
-    apiUrl: string;
-    model: string;
-    availableModels?: string[];
-    lastTestedAt?: string;
-  };
-  aiStats?: {
-    todayRequests: number;
-    totalTokensUsed: number;
-    lastDate: string;
-    // Dữ liệu theo tháng
-    currentMonth?: string; // YYYY-MM
-    monthRequests?: number;
-    monthTokens?: number;
-    // Diễn biến theo ngày trong tháng (key là YYYY-MM-DD: { requests, tokens })
-    dailyUsage?: Record<string, { requests: number; tokens: number }>;
-    // Phân bổ theo từng doanh nghiệp (key là orgId: { orgId, orgName, taxCode, requests, tokens, lastUsedAt })
-    orgUsage?: Record<string, {
-      orgId: string;
-      orgName: string;
-      taxCode?: string;
-      requests: number;
-      tokens: number;
-      lastUsedAt: string;
-    }>;
-  };
-  packages: Array<{
-    id: string;
-    name: string;
-    priceVnd: number;
-    credits: number;
-    bonusCredits: number;
-    badge: string;
-  }>;
-}
+/**
+ * Facade điều phối toàn bộ phân hệ Admin Portal:
+ * - Dashboard KPIs & quản trị doanh nghiệp (xử lý trực tiếp tại đây)
+ * - Kho luật DLPL -> AdminDlplService
+ * - Cấu hình & thống kê AI -> AdminAiService
+ * - Tài chính, Credit & báo cáo tuân thủ vĩ mô -> AdminFinanceService
+ * - Tham số nền tảng JSON -> AdminConfigStore
+ */
 @Injectable()
 export class AdminService {
-  private readonly logger = new Logger(AdminService.name);
-  private readonly configFilePath = path.join(process.cwd(), 'data', 'platform-settings.json');
-  private platformConfig: PlatformConfig;
-
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
-    @Inject(forwardRef(() => AIAssistantService))
-    private readonly aiAssistantService: AIAssistantService,
-  ) {
-    this.platformConfig = this.loadPlatformConfig();
-  }
-
-  // ============================================================================
-  // QUẢN LÝ CẤU HÌNH PERSISTENT (JSON STORAGE)
-  // ============================================================================
-  private loadPlatformConfig(): PlatformConfig {
-    const defaultConfig: PlatformConfig = {
-      bankId: 'MB',
-      accountNo: '0987654321',
-      accountName: 'CONG TY CP CONG NGHE CELRA VIET NAM',
-      creditRate: 2000,
-      auditCost: 25,
-      freeTierCredits: 100,
-      suspendedOrgIds: [],
-      lastSyncAt: new Date().toISOString(),
-      packages: [
-        {
-          id: 'starter',
-          name: 'Gói Khởi Động',
-          priceVnd: 100000,
-          credits: 50,
-          bonusCredits: 0,
-          badge: 'Cơ Bản',
-        },
-        {
-          id: 'standard',
-          name: 'Gói Tiêu Chuẩn',
-          priceVnd: 200000,
-          credits: 100,
-          bonusCredits: 20,
-          badge: 'Khuyên Dùng',
-        },
-        {
-          id: 'enterprise',
-          name: 'Gói Doanh Nghiệp',
-          priceVnd: 500000,
-          credits: 300,
-          bonusCredits: 150,
-          badge: 'Tiết Kiệm Nhất',
-        },
-      ],
-    };
-
-    try {
-      const dir = path.dirname(this.configFilePath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-
-      if (fs.existsSync(this.configFilePath)) {
-        const raw = fs.readFileSync(this.configFilePath, 'utf8');
-        return { ...defaultConfig, ...JSON.parse(raw) };
-      } else {
-        fs.writeFileSync(this.configFilePath, JSON.stringify(defaultConfig, null, 2), 'utf8');
-        return defaultConfig;
-      }
-    } catch (err: any) {
-      this.logger.warn(`Lỗi đọc file cấu hình admin: ${err?.message}. Dùng config mặc định.`);
-      return defaultConfig;
-    }
-  }
-
-  private savePlatformConfig(): void {
-    try {
-      fs.writeFileSync(this.configFilePath, JSON.stringify(this.platformConfig, null, 2), 'utf8');
-    } catch (err: any) {
-      this.logger.error(`Lỗi lưu file cấu hình admin: ${err?.message}`);
-    }
-  }
+    private readonly configStore: AdminConfigStore,
+    private readonly dlplService: AdminDlplService,
+    private readonly aiService: AdminAiService,
+    private readonly financeService: AdminFinanceService,
+  ) {}
 
   // ============================================================================
   // 1. TỔNG QUAN CHỈ SỐ SÀN (DASHBOARD STATS)
@@ -195,9 +73,10 @@ export class AdminService {
       }),
     ]);
 
+    const platformConfig = this.configStore.getConfig();
     const totalRevenueVnd = depositTxs.reduce((sum, tx) => sum + tx.amount, 0);
     const totalCreditsSpent = spendTxs.reduce((sum, tx) => sum + tx.amount, 0);
-    const suspendedCount = this.platformConfig.suspendedOrgIds.length;
+    const suspendedCount = platformConfig.suspendedOrgIds.length;
     const activeEnterprises = Math.max(0, totalEnterprises - suspendedCount);
 
     return {
@@ -223,7 +102,7 @@ export class AdminService {
         timestamp: tx.timestamp,
         note: tx.note,
       })),
-      lastSyncAt: this.platformConfig.lastSyncAt,
+      lastSyncAt: platformConfig.lastSyncAt,
     };
   }
 
@@ -231,7 +110,7 @@ export class AdminService {
   // 2. QUẢN TRỊ DOANH NGHIỆP (ENTERPRISES MANAGEMENT)
   // ============================================================================
   async getEnterprises(query: { search?: string; status?: string; industry?: string }) {
-    const whereClause: any = {};
+    const whereClause: Prisma.OrganizationWhereInput = {};
 
     if (query.search) {
       const q = query.search.trim();
@@ -258,7 +137,7 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const suspendedSet = new Set(this.platformConfig.suspendedOrgIds);
+    const suspendedSet = new Set(this.configStore.getConfig().suspendedOrgIds);
 
     const formatted = orgs.map((org) => {
       const isSuspended = suspendedSet.has(org.id);
@@ -294,15 +173,16 @@ export class AdminService {
       throw new NotFoundException('Không tìm thấy doanh nghiệp');
     }
 
-    const set = new Set(this.platformConfig.suspendedOrgIds);
+    const platformConfig = this.configStore.getConfig();
+    const set = new Set(platformConfig.suspendedOrgIds);
     if (dto.status === EnterpriseStatus.SUSPENDED) {
       set.add(orgId);
     } else {
       set.delete(orgId);
     }
 
-    this.platformConfig.suspendedOrgIds = Array.from(set);
-    this.savePlatformConfig();
+    platformConfig.suspendedOrgIds = Array.from(set);
+    this.configStore.save();
 
     return {
       success: true,
@@ -313,788 +193,90 @@ export class AdminService {
   }
 
   // ============================================================================
-  // 3. QUẢN TRỊ ĐỒNG BỘ DLPL & QUOTA AI
+  // 3. KHO LUẬT DLPL (DELEGATED -> AdminDlplService)
   // ============================================================================
-  async getDLPLQuota() {
-    const [totalRules, dlplRes] = await Promise.all([
-      this.prisma.rule.count(),
-      this.aiAssistantService.getDLPLQuota(),
-    ]);
-
-    let totalLimit = 1000;
-    let remainingCalls = 1000;
-    let usedCalls = 0;
-
-    // Phân tích đúng cấu trúc trả về từ API DLPL: dlplRes.data.quota
-    const quotaObj = (dlplRes as any)?.data?.quota || (dlplRes as any)?.quota;
-    if (quotaObj) {
-      totalLimit = quotaObj.monthly_limit ?? totalLimit;
-      usedCalls = quotaObj.monthly_used ?? (quotaObj.used ?? usedCalls);
-      remainingCalls = quotaObj.monthly_remaining ?? (quotaObj.remaining ?? (totalLimit - usedCalls));
-    }
-    const configRecord = await this.prisma.systemConfig.findUnique({
-      where: { key: 'DLPL_CONFIG' },
-    });
-    const parsedConfig = configRecord ? JSON.parse(configRecord.value) : null;
-    const customKey = parsedConfig?.apiKey || '';
-
-    return {
-      success: true,
-      provider: 'Dữ Liệu Pháp Luật (dulieuphapluat.vn)',
-      apiUrl: parsedConfig?.apiUrl || this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1'),
-      customApiKey: customKey ? `${customKey.slice(0, 8)}...${customKey.slice(-4)}` : '',
-      hasCustomKey: Boolean(customKey),
-      totalMonthlyLimit: totalLimit,
-      remainingCalls,
-      usedCalls,
-      usagePercent: Math.round((usedCalls / totalLimit) * 100),
-      totalRulesInDb: totalRules,
-      lastSyncAt: this.platformConfig.lastSyncAt,
-      nextScheduledSync: 'Chu kỳ tự động 15 ngày/lần (Ngày 1 & Ngày 15 hàng tháng)',
-    };
+  getDLPLQuota() {
+    return this.dlplService.getDLPLQuota();
   }
 
-
-  async getDLPLDocumentsPaginated(page: number, limit: number, query = 'thuế thu nhập doanh nghiệp') {
-    const skip = (page - 1) * limit;
-
-    // ĐỌC TRỰC TIẾP TỪ DATABASE POSTGRESQL (Bảng van_ban_phap_luat)
-    const [totalInDb, docsInDb] = await Promise.all([
-      this.prisma.legalDocument.count({ where: { category: 'TAX_CIT' } }),
-      this.prisma.legalDocument.findMany({
-        where: { category: 'TAX_CIT' },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-    ]);
-
-    if (docsInDb.length > 0) {
-      return {
-        data: docsInDb.map((d) => ({
-          code: d.code,
-          name: d.name,
-          category: d.category,
-          issuedBy: d.issuedBy || 'Cơ quan nhà nước',
-          status: d.status,
-          effectiveDate: d.effectiveDate || 'Đang áp dụng',
-          sourceUrl: cleanDLPLUrl(d.sourceUrl),
-        })),
-        total: totalInDb,
-        page,
-        limit,
-        hasMore: skip + docsInDb.length < totalInDb,
-      };
-    }
-
-    return { data: [], total: 0, page, limit };
-  }
-  async triggerInstantSync(categories?: string[]) {
-    this.logger.log(`[ADMIN ACTION] Kích hoạt đồng bộ tức thời từ API Dữ Liệu Pháp Luật (Danh mục: ${categories?.join(', ') || 'Tất cả'})...`);
-    const syncResult = await this.aiAssistantService.syncLegalRulesFromExternalApi(categories);
-
-    this.platformConfig.lastSyncAt = new Date().toISOString();
-    this.savePlatformConfig();
-
-    return {
-      success: true,
-      message: `Đã kích hoạt và hoàn tất đồng bộ thành công cho các danh mục: ${categories?.join(', ') || 'Tất cả'}!`,
-      details: syncResult,
-      syncedAt: this.platformConfig.lastSyncAt,
-    };
+  getDLPLDocumentsPaginated(page: number, limit: number, query = 'thuế thu nhập doanh nghiệp') {
+    return this.dlplService.getDLPLDocumentsPaginated(page, limit, query);
   }
 
-  async updateDLPLConfig(apiKey: string, apiUrl?: string) {
-    const targetKey = apiKey.trim();
-    const targetUrl = (apiUrl || this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1')).trim();
-
-    if (!targetKey) {
-      throw new BadRequestException('API Key không được để trống.');
-    }
-
-    // BƯỚC BẮT BUỘC: Gửi request test trực tiếp lên DLPL để xác minh key hợp lệ
-    let testData: any = null;
-    try {
-      const testRes = await fetch(`${targetUrl.replace(/\/+$/, '')}/me`, {
-        headers: { Authorization: `Bearer ${targetKey}` },
-      });
-
-      if (!testRes.ok) {
-        const errBody = await testRes.text();
-        throw new BadRequestException(
-          `Kết nối thất bại (Mã lỗi ${testRes.status}): API Key không hợp lệ hoặc đã hết hạn trên Cổng Dữ Liệu Pháp Luật! Chi tiết: ${errBody.slice(0, 100)}`
-        );
-      }
-
-      testData = await testRes.json();
-    } catch (err: any) {
-      if (err instanceof BadRequestException) throw err;
-      throw new BadRequestException(`Không thể kết nối đến máy chủ Dữ Liệu Pháp Luật: ${err.message || 'Lỗi mạng'}`);
-    }
-
-    // Lưu trực tiếp vào Database PostgreSQL (Bảng cau_hinh_he_thong)
-    await this.prisma.systemConfig.upsert({
-      where: { key: 'DLPL_CONFIG' },
-      update: {
-        value: JSON.stringify({ apiKey: targetKey, apiUrl: targetUrl }),
-      },
-      create: {
-        key: 'DLPL_CONFIG',
-        value: JSON.stringify({ apiKey: targetKey, apiUrl: targetUrl }),
-        note: 'API Key Cổng Dữ Liệu Pháp Luật do Admin cấu hình qua Web UI',
-      },
-    });
-    const quota = testData?.data?.quota || testData?.quota;
-    const remaining = quota?.monthly_remaining ?? 1000;
-    const limit = quota?.monthly_limit ?? 1000;
-    const used = quota?.monthly_used ?? 0;
-
-    this.logger.log(`[DLPL CONFIG] ✅ Đã xác minh và kết nối thành công API Key DLPL! Còn lại: ${remaining}/${limit} lượt.`);
-    return {
-      success: true,
-      message: `Xác thực thành công! Key hợp lệ, còn lại ${remaining.toLocaleString('vi-VN')} / ${limit.toLocaleString('vi-VN')} lượt gọi trong tháng.`,
-      quota: {
-        remainingCalls: remaining,
-        usedCalls: used,
-        totalMonthlyLimit: limit,
-      },
-    };
+  triggerInstantSync(categories?: string[]) {
+    return this.dlplService.triggerInstantSync(categories);
   }
 
-  async deleteDLPLConfig() {
-    await this.prisma.systemConfig.deleteMany({
-      where: { key: 'DLPL_CONFIG' },
-    });
-    return {
-      success: true,
-      message: 'Đã xóa API Key Dữ Liệu Pháp Luật tùy chỉnh trong Database, quay về cấu hình .env mặc định',
-    };
+  updateDLPLConfig(apiKey: string, apiUrl?: string) {
+    return this.dlplService.updateDLPLConfig(apiKey, apiUrl);
   }
-  async getEffectiveDLPLKeyAsync(): Promise<{ apiKey: string; apiUrl: string }> {
-    try {
-      const rec = await this.prisma.systemConfig.findUnique({ where: { key: 'DLPL_CONFIG' } });
-      if (rec && rec.value) {
-        const parsed = JSON.parse(rec.value);
-        if (parsed.apiKey) {
-          return {
-            apiKey: parsed.apiKey.trim(),
-            apiUrl: parsed.apiUrl || this.config.get<string>('DLPL_API_URL', 'https://api.dulieuphapluat.vn/v1'),
-          };
-        }
-      }
-    } catch {
-      // ignore
-    }
-    return {
-      apiKey: '',
-      apiUrl: 'https://api.dulieuphapluat.vn/v1',
-    };
+
+  deleteDLPLConfig() {
+    return this.dlplService.deleteDLPLConfig();
+  }
+
+  getEffectiveDLPLKeyAsync(): Promise<{ apiKey: string; apiUrl: string }> {
+    return this.dlplService.getEffectiveDLPLKeyAsync();
   }
 
   // ============================================================================
-  // 3.1. QUẢN LÝ CẤU HÌNH AI PROVIDER & TEST KEY DYNAMICALLY
+  // 3.1. CẤU HÌNH & GIÁM SÁT AI (DELEGATED -> AdminAiService & AdminConfigStore)
   // ============================================================================
-  async getActiveAIConfig() {
-    const configRecord = await this.prisma.aiSystem.findFirst({
-      where: { organizationId: null },
-      orderBy: { updatedAt: 'desc' },
-    });
-
-    const apiKey = configRecord?.apiKey?.trim() || '';
-    const isConnected = Boolean(apiKey);
-    const provider = isConnected ? ((configRecord?.provider as AIProviderType) || AIProviderType.GEMINI) : null;
-    const apiUrl = isConnected ? (configRecord?.apiUrl?.trim() || '') : '';
-    const model = isConnected ? (configRecord?.model?.trim() || '') : null;
-    const availableModels = isConnected && Array.isArray(configRecord?.availableModels) ? (configRecord?.availableModels as string[]) : [];
-
-    return {
-      provider,
-      apiUrl,
-      apiKey,
-      model,
-      availableModels,
-      lastTestedAt: isConnected ? (configRecord?.lastTestedAt?.toISOString() || null) : null,
-    };
+  getActiveAIConfig() {
+    return this.aiService.getActiveAIConfig();
   }
 
-  async getAIServiceStatus() {
-    this.platformConfig = this.loadPlatformConfig();
-    const active = await this.getActiveAIConfig();
-    const today = new Date().toISOString().slice(0, 10);
-    if (!this.platformConfig.aiStats || this.platformConfig.aiStats.lastDate !== today) {
-      this.platformConfig.aiStats = {
-        todayRequests: this.platformConfig.aiStats?.todayRequests || 0,
-        totalTokensUsed: this.platformConfig.aiStats?.totalTokensUsed || 0,
-        lastDate: today,
-      };
-    }
-
-    const stats = this.platformConfig.aiStats;
-
-    // Đo latency thực tế nếu có apiKey và đã được Admin kết nối
-    let latencyMs = 0;
-    let isOnline = false;
-    if (active.apiKey) {
-      const start = Date.now();
-      try {
-        const checkUrl = active.apiUrl.endsWith('/models') ? active.apiUrl : `${active.apiUrl.replace(/\/+$/, '')}/models`;
-        const res = await fetch(checkUrl, {
-          headers: { Authorization: `Bearer ${active.apiKey}` },
-          signal: AbortSignal.timeout(4000),
-        });
-        latencyMs = Date.now() - start;
-        isOnline = res.ok;
-      } catch {
-        latencyMs = 280;
-        isOnline = false;
-      }
-    }
-
-    // Tính toán chi phí ước tính theo token thực tế ($0.00015 / 1k tokens)
-    const estimatedCostUsd = Math.round((stats.totalTokensUsed / 1000) * 0.00015 * 1000) / 1000;
-
-    // Mask API key để bảo mật khi gửi lên UI
-    const maskedKey = active.apiKey
-      ? `${active.apiKey.slice(0, 6)}...${active.apiKey.slice(-4)}`
-      : 'Chưa cấu hình';
-
-    const currentMonth = today.slice(0, 7);
-    const monthRequests = (stats.currentMonth === currentMonth ? stats.monthRequests : 0) || stats.todayRequests || 0;
-    const monthTokens = (stats.currentMonth === currentMonth ? stats.monthTokens : 0) || stats.totalTokensUsed || 0;
-
-    return {
-      status: !active.apiKey ? 'DISCONNECTED' : isOnline ? 'ONLINE' : 'DEGRADED',
-      provider: active.apiKey ? active.provider : 'Chưa kết nối',
-      model: active.apiKey ? active.model : 'Chưa kết nối model',
-      endpoint: active.apiKey ? active.apiUrl : 'Chưa cấu hình',
-      apiKeyMasked: maskedKey,
-      hasApiKey: Boolean(active.apiKey),
-      latencyMs: active.apiKey ? latencyMs : 0,
-      todayRequests: stats.todayRequests,
-      estimatedTokensUsed: stats.totalTokensUsed,
-      monthRequests,
-      monthTokens,
-      estimatedCostUsd,
-      maxContextWindow: active.apiKey ? (active.model?.includes('gemini') ? '1M tokens' : '64k tokens') : '0 tokens',
-      availableModels: active.availableModels || [],
-      lastTestedAt: active.lastTestedAt,
-    };
+  getAIServiceStatus() {
+    return this.aiService.getAIServiceStatus();
   }
 
-  async getAIAnalytics() {
-    const today = new Date();
-    const currentYear = today.getFullYear();
-    const currentMonth = today.getMonth() + 1; // 1-12
-    const monthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-    const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
-    const startOfMonth = new Date(currentYear, currentMonth - 1, 1);
-    const endOfMonth = new Date(currentYear, currentMonth, 0, 23, 59, 59);
-
-    // 1. TRUY VẤN TRỰC TIẾP NHẬT KÝ SỬ DỤNG AI TỪ DATABASE POSTGRESQL (Bảng AiSystem)
-    const [monthlyLogs, dbOrgs] = await Promise.all([
-      this.prisma.aiSystem.findMany({
-        where: {
-          organizationId: { not: null },
-          createdAt: {
-            gte: startOfMonth,
-            lte: endOfMonth,
-          },
-        },
-        include: {
-          organization: {
-            select: { id: true, name: true, taxCode: true },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.organization.findMany({
-        take: 50,
-        select: { id: true, name: true, taxCode: true },
-        orderBy: { createdAt: 'desc' },
-      }),
-    ]);
-
-    // Tổng hợp số request và token trong tháng từ Database
-    const totalMonthRequests = monthlyLogs.length;
-    const totalMonthTokens = monthlyLogs.reduce((sum, log) => sum + (log.totalTokens || 0), 0);
-
-    // 2. Tính toán phân bổ dữ liệu biểu đồ theo từng ngày (Day 1 -> Day 31)
-    const chartLabels: string[] = [];
-    const chartTokenData: number[] = [];
-    const chartRequestData: number[] = [];
-
-    const dailyStatsMap: Record<number, { requests: number; tokens: number }> = {};
-    for (const log of monthlyLogs) {
-      const logDate = new Date(log.createdAt);
-      const dayNum = logDate.getDate();
-      if (!dailyStatsMap[dayNum]) {
-        dailyStatsMap[dayNum] = { requests: 0, tokens: 0 };
-      }
-      dailyStatsMap[dayNum].requests += 1;
-      dailyStatsMap[dayNum].tokens += log.totalTokens || 0;
-    }
-
-    for (let day = 1; day <= daysInMonth; day++) {
-      chartLabels.push(`Ngày ${day}`);
-      const dayData = dailyStatsMap[day] || { requests: 0, tokens: 0 };
-      chartTokenData.push(dayData.tokens);
-      chartRequestData.push(dayData.requests);
-    }
-
-    // 3. Tính toán phân bổ sử dụng theo từng doanh nghiệp
-    const enterpriseMap = new Map<string, { orgId: string; orgName: string; taxCode?: string; requests: number; tokens: number; lastUsedAt: string }>();
-
-    for (const log of monthlyLogs) {
-      if (!log.organizationId) continue;
-      const orgId = log.organizationId;
-      const existing = enterpriseMap.get(orgId);
-      if (!existing) {
-        enterpriseMap.set(orgId, {
-          orgId,
-          orgName: log.organization?.name || 'Doanh nghiệp',
-          taxCode: log.organization?.taxCode,
-          requests: 1,
-          tokens: log.totalTokens || 0,
-          lastUsedAt: new Date(log.createdAt).toLocaleString('vi-VN'),
-        });
-      } else {
-        existing.requests += 1;
-        existing.tokens += log.totalTokens || 0;
-      }
-    }
-
-    // Bổ sung các doanh nghiệp chưa sử dụng để Admin thấy toàn bộ danh sách
-    for (const org of dbOrgs) {
-      if (!enterpriseMap.has(org.id)) {
-        enterpriseMap.set(org.id, {
-          orgId: org.id,
-          orgName: org.name,
-          taxCode: org.taxCode,
-          requests: 0,
-          tokens: 0,
-          lastUsedAt: 'Chưa sử dụng',
-        });
-      }
-    }
-
-    const orgList = Array.from(enterpriseMap.values()).sort((a, b) => b.tokens - a.tokens);
-
-    const status = await this.getAIServiceStatus();
-
-    return {
-      status: status.status,
-      latencyMs: status.latencyMs,
-      provider: status.provider,
-      model: status.model,
-      apiKeyMasked: status.apiKeyMasked,
-      hasApiKey: status.hasApiKey,
-      currentMonth: `Tháng ${currentMonth} / ${currentYear}`,
-      monthRequests: totalMonthRequests,
-      monthTokens: totalMonthTokens,
-      chart: {
-        labels: chartLabels,
-        tokens: chartTokenData,
-        requests: chartRequestData,
-      },
-      enterprises: orgList,
-    };
+  getAIAnalytics() {
+    return this.aiService.getAIAnalytics();
   }
 
-  async testAIKeyAndFetchModels(dto: TestAIKeyDto) {
-    const active = await this.getActiveAIConfig();
-    const apiKey = dto.apiKey?.trim() || active.apiKey;
-    if (!apiKey) {
-      throw new BadRequestException('Vui lòng nhập API Key để kiểm tra kết nối.');
-    }
-    let apiUrl = dto.apiUrl?.trim() || active.apiUrl;
-    if (!apiUrl) {
-      if (dto.provider === AIProviderType.GEMINI) {
-        apiUrl = 'https://generativelanguage.googleapis.com/v1beta/openai';
-      } else {
-        apiUrl = 'https://opencode.ai/inference/openai/v1';
-      }
-    }
-
-    const cleanBase = apiUrl.replace(/\/+$/, '');
-    const modelsUrl = cleanBase.endsWith('/models') ? cleanBase : `${cleanBase}/models`;
-
-    const start = Date.now();
-    try {
-      const res = await fetch(modelsUrl, {
-        headers: { Authorization: `Bearer ${apiKey}` },
-        signal: AbortSignal.timeout(8000),
-      });
-
-      const latencyMs = Date.now() - start;
-
-      if (!res.ok) {
-        let errDetail = await res.text();
-        try {
-          const parsedErr = JSON.parse(errDetail);
-          if (parsedErr.error?.message) {
-            errDetail = parsedErr.error.message;
-          }
-        } catch {
-          // raw text
-        }
-
-        if (errDetail.includes('suspended') || errDetail.includes('CONSUMER_SUSPENDED')) {
-          throw new BadRequestException(`Google từ chối Key (HTTP 403 - Suspended): Toàn bộ Google Cloud Project chứa key này đang bị Google tạm ngưng. Chi tiết từ Google: "${errDetail}"`);
-        }
-        if (errDetail.includes('API key not valid') || res.status === 401) {
-          throw new BadRequestException(`Google từ chối Key (HTTP 401 - Invalid): Mã khóa API Key không tồn tại hoặc bị copy thiếu ký tự. Chi tiết từ Google: "${errDetail}"`);
-        }
-        throw new BadRequestException(`Google từ chối kết nối (HTTP ${res.status}): ${errDetail}`);
-      }
-      const data: unknown = await res.json();
-      let modelsList: string[] = [];
-
-      if (data && typeof data === 'object' && 'data' in data && Array.isArray((data as { data: unknown[] }).data)) {
-        modelsList = (data as { data: Array<{ id?: string }> }).data
-          .map((m) => {
-            const rawId = m.id || '';
-            return rawId.replace(/^models\//, '');
-          })
-          .filter((id) => Boolean(id) && !id.includes('embedding') && !id.includes('tts') && !id.includes('imagen') && !id.includes('bison'));
-      }
-
-      // Lấy 100% danh sách thực tế trả về từ Provider API (không gán cứng)
-      const merged = Array.from(new Set(modelsList));
-
-      // Tự động lưu luôn danh sách availableModels vào Database để lần sau mở modal không cần test lại
-      const existingConfig = await this.prisma.aiSystem.findFirst({
-        where: { organizationId: null },
-        orderBy: { updatedAt: 'desc' },
-      });
-
-      if (existingConfig) {
-        await this.prisma.aiSystem.update({
-          where: { id: existingConfig.id },
-          data: {
-            apiKey,
-            apiUrl,
-            provider: dto.provider,
-            availableModels: merged,
-            lastTestedAt: new Date(),
-          },
-        });
-      }
-
-      return {
-        success: true,
-        message: `Xác thực thành công với ${dto.provider}! Độ trễ: ${latencyMs}ms. Đã tải ${merged.length} models.`,
-        latencyMs,
-        provider: dto.provider,
-        models: merged,
-        recommendedModel: merged[0] || 'gemini-3.5-flash-lite',
-      };
-    } catch (err: unknown) {
-      if (err instanceof BadRequestException) throw err;
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new BadRequestException(`Không thể xác thực API Key hoặc kết nối tới Endpoint: ${msg}`);
-    }
+  testAIKeyAndFetchModels(dto: TestAIKeyDto) {
+    return this.aiService.testAIKeyAndFetchModels(dto);
   }
 
-  async updateAIConfig(dto: UpdateAIConfigDto) {
-    const active = await this.getActiveAIConfig();
-    const targetProvider = dto.provider;
-    const targetModel = dto.model.trim();
-    const targetApiKey = dto.apiKey?.trim() || active.apiKey;
-
-    let targetApiUrl = dto.apiUrl?.trim() || active.apiUrl;
-    if (!targetApiUrl) {
-      targetApiUrl = targetProvider === AIProviderType.GEMINI
-        ? 'https://generativelanguage.googleapis.com/v1beta/openai'
-        : 'https://opencode.ai/inference/openai/v1';
-    }
-
-    // Tìm bản ghi cấu hình hệ thống (organizationId === null) trong Database
-    const existingConfig = await this.prisma.aiSystem.findFirst({
-      where: { organizationId: null },
-      orderBy: { updatedAt: 'desc' },
-    });
-
-    if (existingConfig) {
-      await this.prisma.aiSystem.update({
-        where: { id: existingConfig.id },
-        data: {
-          provider: targetProvider,
-          apiKey: targetApiKey,
-          apiUrl: targetApiUrl,
-          model: targetModel,
-          availableModels: active.availableModels?.length > 0 ? active.availableModels : (existingConfig.availableModels || []),
-          lastTestedAt: new Date(),
-        },
-      });
-    } else {
-      await this.prisma.aiSystem.create({
-        data: {
-          provider: targetProvider,
-          apiKey: targetApiKey,
-          apiUrl: targetApiUrl,
-          model: targetModel,
-          availableModels: active.availableModels,
-          lastTestedAt: new Date(),
-        },
-      });
-    }
-
-    this.logger.log(`[AI CONFIG UPDATED IN DATABASE] Nhà cung cấp: ${targetProvider} | Model: ${targetModel}`);
-
-    return {
-      success: true,
-      message: `Đã lưu thành công cấu hình AI vào Database! Hệ thống hiện đang dùng mô hình: ${targetModel}`,
-      config: {
-        provider: targetProvider,
-        model: targetModel,
-        endpoint: targetApiUrl,
-        apiKeyMasked: `${targetApiKey.slice(0, 6)}...${targetApiKey.slice(-4)}`,
-      },
-    };
+  updateAIConfig(dto: UpdateAIConfigDto) {
+    return this.aiService.updateAIConfig(dto);
   }
 
   recordAITokenUsage(tokens: number) {
-    const today = new Date().toISOString().slice(0, 10);
-    if (!this.platformConfig.aiStats || this.platformConfig.aiStats.lastDate !== today) {
-      this.platformConfig.aiStats = {
-        todayRequests: 1,
-        totalTokensUsed: tokens,
-        lastDate: today,
-      };
-    } else {
-      this.platformConfig.aiStats.todayRequests += 1;
-      this.platformConfig.aiStats.totalTokensUsed += tokens;
-    }
-    this.savePlatformConfig();
+    return this.configStore.recordAITokenUsage(tokens);
   }
 
-  async resetAIKeyConfig() {
-    // Xóa trắng cấu hình key trong bảng AiSystem trên Database
-    await this.prisma.aiSystem.deleteMany({
-      where: { organizationId: null },
-    });
-    this.logger.log('[AI CONFIG RESET IN DATABASE] Admin đã ngắt kết nối và xóa toàn bộ API Key AI trong Database.');
-    return {
-      success: true,
-      message: 'Đã ngắt kết nối và xóa toàn bộ API Key AI trong Database. Trợ lý AI đã được đưa về trạng thái DISCONNECTED.',
-    };
+  resetAIKeyConfig() {
+    return this.aiService.resetAIKeyConfig();
   }
 
   // ============================================================================
-  // 4. QUẢN TRỊ TÀI CHÍNH & SỔ CÁI TOÀN SÀN (FINANCE & TRANSACTIONS)
+  // 4 & 5. TÀI CHÍNH & BÁO CÁO TUÂN THỦ VĨ MÔ (DELEGATED -> AdminFinanceService)
   // ============================================================================
-  async getFinanceOverview() {
-    const allTxs = await this.prisma.walletTransaction.findMany({
-      include: {
-        wallet: {
-          include: {
-            organization: { select: { id: true, name: true, taxCode: true } },
-          },
-        },
-      },
-      orderBy: { timestamp: 'desc' },
-    });
-
-    const depositTotal = allTxs
-      .filter((t) => t.type === TransactionType.deposit && t.status === TransactionStatus.success)
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    const spendTotal = allTxs
-      .filter((t) => t.type === TransactionType.capture && t.status === TransactionStatus.success)
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    const refundTotal = allTxs
-      .filter((t) => t.type === TransactionType.refund || t.status === TransactionStatus.refunded)
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    return {
-      revenueStats: {
-        totalRevenueVnd: depositTotal,
-        totalCreditsSpent: spendTotal,
-        totalRefundVnd: refundTotal,
-        netRevenueVnd: depositTotal - refundTotal,
-      },
-      packages: this.platformConfig.packages,
-      recentTransactions: allTxs.slice(0, 50).map((t) => ({
-        id: t.id,
-        code: t.code,
-        taskName: t.taskName || (t.type === 'deposit' ? 'Nạp Credit' : 'Rà soát bối cảnh'),
-        orgId: t.wallet?.organization?.id,
-        orgName: t.wallet?.organization?.name || 'Tổ chức',
-        taxCode: t.wallet?.organization?.taxCode || '',
-        amount: t.amount,
-        type: t.type,
-        status: t.status,
-        note: t.note,
-        timestamp: t.timestamp,
-      })),
-    };
+  getFinanceOverview() {
+    return this.financeService.getFinanceOverview();
   }
 
-  async adjustCredit(dto: AdjustCreditDto) {
-    const org = await this.prisma.organization.findUnique({
-      where: { id: dto.organizationId },
-      include: { wallet: true },
-    });
-
-    if (!org) {
-      throw new NotFoundException('Không tìm thấy doanh nghiệp chỉ định');
-    }
-
-    let wallet = org.wallet;
-    if (!wallet) {
-      wallet = await this.prisma.wallet.create({
-        data: {
-          organizationId: org.id,
-          balance: 0,
-        },
-      });
-    }
-
-    const code = `CR-ADJUST-${Date.now().toString().slice(-6)}`;
-
-    // Tạo bản ghi giao dịch bù Credit vào sổ cái
-    const tx = await this.prisma.walletTransaction.create({
-      data: {
-        walletId: wallet.id,
-        code,
-        taskName: dto.taskName || 'Cộng Credit Đền Bù Từ Quản Trị Viên',
-        requestedBy: 'CELRA Super Admin',
-        amount: dto.amount,
-        type: TransactionType.deposit,
-        status: TransactionStatus.success,
-        note: dto.reason,
-      },
-    });
-
-    // Cập nhật số dư ví
-    const updatedWallet = await this.prisma.wallet.update({
-      where: { id: wallet.id },
-      data: {
-        balance: { increment: dto.amount },
-      },
-    });
-
-    return {
-      success: true,
-      message: `Đã cộng thành công ${dto.amount} Credit cho doanh nghiệp "${org.name}"`,
-      newBalance: updatedWallet.balance,
-      transaction: tx,
-    };
+  adjustCredit(dto: AdjustCreditDto) {
+    return this.financeService.adjustCredit(dto);
   }
 
-  async updatePackage(dto: UpdatePackageDto) {
-    const idx = this.platformConfig.packages.findIndex((p) => p.id === dto.packageId);
-    if (idx === -1) {
-      throw new NotFoundException('Không tìm thấy gói nạp tương ứng');
-    }
+  updatePackage(dto: UpdatePackageDto) {
+    return this.financeService.updatePackage(dto);
+  }
 
-    this.platformConfig.packages[idx] = {
-      id: dto.packageId,
-      name: dto.name,
-      priceVnd: dto.priceVnd,
-      credits: dto.credits,
-      bonusCredits: dto.bonusCredits || 0,
-      badge: dto.badge || '',
-    };
-
-    this.savePlatformConfig();
-
-    return {
-      success: true,
-      message: `Đã cập nhật thông tin gói nạp "${dto.name}"`,
-      packages: this.platformConfig.packages,
-    };
+  getComplianceMacroAnalytics() {
+    return this.financeService.getComplianceMacroAnalytics();
   }
 
   // ============================================================================
-  // 5. BÁO CÁO TUÂN THỦ VĨ MÔ TOÀN SÀN (COMPLIANCE MACRO ANALYTICS)
-  // ============================================================================
-  async getComplianceMacroAnalytics() {
-    const [totalOrgs, allTasks] = await Promise.all([
-      this.prisma.organization.count(),
-      this.prisma.task.findMany({
-        select: {
-          ruleCode: true,
-          status: true,
-          priority: true,
-        },
-      }),
-    ]);
-
-    // Thống kê rủi ro pháp lý phổ biến nhất
-    const commonRisks = [
-      {
-        ruleCode: 'RULE-THUE-80',
-        title: 'Thiếu tạm nộp 80% thuế TNDN 4 quý',
-        affectedPercent: 72,
-        warningCount: Math.round(totalOrgs * 0.72) || 1,
-        severity: 'HIGH',
-      },
-      {
-        ruleCode: 'RULE-HD-01',
-        title: 'Chưa xuất hóa đơn điện tử từng lần qua máy tính tiền POS',
-        affectedPercent: 54,
-        warningCount: Math.round(totalOrgs * 0.54) || 1,
-        severity: 'HIGH',
-      },
-      {
-        ruleCode: 'RULE-LD-02',
-        title: 'Thiếu phụ lục hợp đồng lao động & đóng thiếu BHXH bắt buộc',
-        affectedPercent: 38,
-        warningCount: Math.round(totalOrgs * 0.38) || 1,
-        severity: 'MEDIUM',
-      },
-      {
-        ruleCode: 'RULE-MONBAI-01',
-        title: 'Chưa nộp hoặc nộp chậm tờ khai Lệ phí môn bài',
-        affectedPercent: 21,
-        warningCount: Math.round(totalOrgs * 0.21) || 1,
-        severity: 'LOW',
-      },
-    ];
-
-    const safeOrgsCount = Math.max(0, Math.round(totalOrgs * 0.42));
-    const warningOrgsCount = Math.max(0, totalOrgs - safeOrgsCount);
-
-    return {
-      totalOrganizations: totalOrgs,
-      safeOrganizations: safeOrgsCount,
-      warningOrganizations: warningOrgsCount,
-      safeRatePercent: totalOrgs > 0 ? Math.round((safeOrgsCount / totalOrgs) * 100) : 100,
-      commonRisks,
-      totalComplianceTasksAssigned: allTasks.length,
-    };
-  }
-
-  // ============================================================================
-  // 6. CẤU HÌNH THAM SỐ NỀN TẢNG (PLATFORM SETTINGS)
+  // 6. CẤU HÌNH THAM SỐ NỀN TẢNG (DELEGATED -> AdminConfigStore)
   // ============================================================================
   getSettings() {
-    return {
-      bankId: this.platformConfig.bankId,
-      accountNo: this.platformConfig.accountNo,
-      accountName: this.platformConfig.accountName,
-      creditRate: this.platformConfig.creditRate,
-      auditCost: this.platformConfig.auditCost,
-      freeTierCredits: this.platformConfig.freeTierCredits,
-    };
+    return this.configStore.getSettings();
   }
 
   updateSettings(dto: UpdatePlatformSettingsDto) {
-    if (dto.bankId !== undefined) this.platformConfig.bankId = dto.bankId;
-    if (dto.accountNo !== undefined) this.platformConfig.accountNo = dto.accountNo;
-    if (dto.accountName !== undefined) this.platformConfig.accountName = dto.accountName;
-    if (dto.creditRate !== undefined) this.platformConfig.creditRate = dto.creditRate;
-    if (dto.auditCost !== undefined) this.platformConfig.auditCost = dto.auditCost;
-    if (dto.freeTierCredits !== undefined) this.platformConfig.freeTierCredits = dto.freeTierCredits;
-
-    this.savePlatformConfig();
-
-    return {
-      success: true,
-      message: 'Đã lưu thành công cấu hình tham số nền tảng CELRA',
-      settings: this.getSettings(),
-    };
+    return this.configStore.updateSettings(dto);
   }
 }
