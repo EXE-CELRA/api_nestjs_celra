@@ -134,6 +134,7 @@ export class ResetPasswordDto {
 
   @ApiPropertyOptional({ example: 'Password123!@#', description: 'Mật khẩu mới tiếng Việt' })
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'Mật khẩu mới phải là chuỗi' })
+  @MinLength(6, { message: 'Mật khẩu mới tối thiểu 6 ký tự' })
   matKhauMoi?: string;
 }

@@ -11,11 +11,11 @@ const LEGACY_GROUP_MAP: Record<string, any> = {
   tech_data: 'du_lieu_shtt',
 };
 
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { WalletService } from '../wallet/wallet.service';
 import { CreateContextFactDto, UpdateContextFactDto, GenerateChecklistFromFactDto } from './dto/context-fact.dto';
-import { ContextStatus, TaskStatus, Priority, UserRole, WaitingOnRole } from '@prisma/client';
+import { ContextStatus, TaskStatus, Priority, UserRole, WaitingOnRole, MembershipStatus } from '@prisma/client';
 import { CORE_LEGAL_DOC_LINKS } from '../../common/constants/legal-docs.constant';
 import { calculateTaxDeadline } from '../../common/utils/tax-deadline.util';
 
@@ -91,7 +91,7 @@ export class ContextEngineService {
     let targetOrgId = orgId;
     if (!targetOrgId && userId) {
       const userOrg = await this.prisma.membership.findFirst({
-        where: { userId },
+        where: { userId, status: MembershipStatus.active },
       });
       if (userOrg) {
         targetOrgId = userOrg.organizationId;
@@ -127,7 +127,7 @@ export class ContextEngineService {
     return facts.map((f) => this.enrichFactWithVietnamese(f));
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, orgId?: string) {
     const fact = await this.prisma.contextFact.findUnique({
       where: { id },
       include: {
@@ -141,13 +141,21 @@ export class ContextEngineService {
       throw new NotFoundException('Không tìm thấy dữ kiện bối cảnh');
     }
 
+    if (!orgId || fact.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền truy cập dữ kiện bối cảnh của doanh nghiệp khác.');
+    }
+
     return this.enrichFactWithVietnamese(fact);
   }
 
-  async update(id: string, userId: string, dto: UpdateContextFactDto) {
+  async update(id: string, userId: string, dto: UpdateContextFactDto, orgId?: string) {
     const fact = await this.prisma.contextFact.findUnique({ where: { id } });
     if (!fact) {
       throw new NotFoundException('Không tìm thấy dữ kiện bối cảnh');
+    }
+
+    if (!orgId || fact.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền chỉnh sửa dữ kiện bối cảnh của doanh nghiệp khác.');
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -183,10 +191,14 @@ export class ContextEngineService {
     return this.enrichFactWithVietnamese(updated);
   }
 
-  async confirm(id: string, userId: string) {
+  async confirm(id: string, userId: string, orgId?: string) {
     const fact = await this.prisma.contextFact.findUnique({ where: { id } });
     if (!fact) {
       throw new NotFoundException('Không tìm thấy dữ kiện');
+    }
+
+    if (!orgId || fact.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền xác nhận dữ kiện bối cảnh của doanh nghiệp khác.');
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -209,21 +221,17 @@ export class ContextEngineService {
    * Tích hợp Rule-based Risk Analyzer đánh giá rủi ro và trích xuất căn cứ luật từ Database
    */
   async auditCompliance(orgId: string, factId: string, userId: string) {
-    let targetOrgId = orgId;
-    if (!targetOrgId && userId) {
-      const userOrg = await this.prisma.membership.findFirst({
-        where: { userId },
-      });
-      if (userOrg) targetOrgId = userOrg.organizationId;
+    if (!orgId) {
+      throw new ForbiddenException('Thiếu thông tin doanh nghiệp hợp lệ để rà soát tuân thủ.');
     }
     const fact = await this.prisma.contextFact.findFirst({
-      where: targetOrgId ? { id: factId, organizationId: targetOrgId } : { id: factId },
+      where: { id: factId, organizationId: orgId },
     });
 
     if (!fact) {
       throw new NotFoundException('Không tìm thấy thẻ bối cảnh doanh nghiệp');
     }
-    targetOrgId = fact.organizationId;
+    const targetOrgId = fact.organizationId;
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const userName = user ? user.name : 'Chủ doanh nghiệp';
@@ -342,21 +350,17 @@ export class ContextEngineService {
    * Tạo Checklist và Task chính thức vào Database sau khi Chủ DN nhấn 'Tạo Checklist'
    */
   async generateChecklists(orgId: string, factId: string, userId: string, dto: GenerateChecklistFromFactDto) {
-    let targetOrgId = orgId;
-    if (!targetOrgId && userId) {
-      const userOrg = await this.prisma.membership.findFirst({
-        where: { userId },
-      });
-      if (userOrg) targetOrgId = userOrg.organizationId;
+    if (!orgId) {
+      throw new ForbiddenException('Thiếu thông tin doanh nghiệp hợp lệ để tạo Checklist.');
     }
     const fact = await this.prisma.contextFact.findFirst({
-      where: targetOrgId ? { id: factId, organizationId: targetOrgId } : { id: factId },
+      where: { id: factId, organizationId: orgId },
     });
 
     if (!fact) {
       throw new NotFoundException('Không tìm thấy thẻ bối cảnh doanh nghiệp');
     }
-    targetOrgId = fact.organizationId;
+    const targetOrgId = fact.organizationId;
 
     const org = await this.prisma.organization.findUnique({
       where: { id: targetOrgId },

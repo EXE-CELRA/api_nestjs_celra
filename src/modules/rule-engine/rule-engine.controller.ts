@@ -1,10 +1,12 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Headers } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
 import { RuleEngineService } from './rule-engine.service';
 import { CreateRuleDto } from './dto/rule.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { OrganizationMembershipGuard } from '../../common/guards/organization-membership.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { ValidatedOrgId } from '../../common/decorators/validated-org-id.decorator';
 import { UserRole } from '@prisma/client';
 
 @ApiTags('Rule Engine (Động cơ Quy tắc Tuân thủ)')
@@ -34,9 +36,10 @@ export class RuleEngineController {
   }
 
   @Post('trigger-evaluation')
+  @UseGuards(JwtAuthGuard, OrganizationMembershipGuard)
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Kích hoạt động cơ đánh giá quy tắc & tự động tạo Tasks' })
-  async evaluate(@Headers('x-organization-id') orgId: string) {
+  async evaluate(@ValidatedOrgId() orgId: string) {
     return this.ruleService.evaluateAndTrigger(orgId);
   }
 }

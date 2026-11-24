@@ -38,29 +38,36 @@ export class DepartmentService {
         _count: {
           select: {
             tasks: true,
-            findings: true,
           },
         },
       },
     });
   }
 
-  async update(deptId: string, dto: UpdateDepartmentDto) {
-    const dept = await this.prisma.department.findUnique({ where: { id: deptId } });
+  async update(deptId: string, orgId: string, dto: UpdateDepartmentDto) {
+    const dept = await this.prisma.department.findFirst({
+      where: { id: deptId, organizationId: orgId },
+    });
     if (!dept) {
-      throw new NotFoundException('Không tìm thấy phòng ban');
+      throw new NotFoundException('Không tìm thấy phòng ban trong doanh nghiệp hiện tại');
     }
 
     return this.prisma.department.update({
       where: { id: deptId },
-      data: dto,
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.leadName !== undefined && { leadName: dto.leadName }),
+        ...(dto.description !== undefined && { description: dto.description }),
+      },
     });
   }
 
-  async remove(deptId: string) {
-    const dept = await this.prisma.department.findUnique({ where: { id: deptId } });
+  async remove(deptId: string, orgId: string) {
+    const dept = await this.prisma.department.findFirst({
+      where: { id: deptId, organizationId: orgId },
+    });
     if (!dept) {
-      throw new NotFoundException('Không tìm thấy phòng ban');
+      throw new NotFoundException('Không tìm thấy phòng ban trong doanh nghiệp hiện tại');
     }
 
     return this.prisma.department.delete({ where: { id: deptId } });

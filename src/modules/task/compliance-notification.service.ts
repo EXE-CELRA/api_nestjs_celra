@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ForbiddenException,
   OnModuleInit,
+  OnModuleDestroy,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import {
@@ -16,26 +17,49 @@ import {
 import { calculateComplianceDeadline } from '../../common/utils/tax-calendar.util';
 
 @Injectable()
-export class ComplianceNotificationService implements OnModuleInit {
+export class ComplianceNotificationService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ComplianceNotificationService.name);
+  private startupTimeoutTimer: NodeJS.Timeout | null = null;
   private checkIntervalTimer: NodeJS.Timeout | null = null;
 
   constructor(private readonly prisma: PrismaService) {}
 
   onModuleInit() {
+    const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.JEST_WORKER_ID);
+    if (isTestEnv) {
+      return;
+    }
+
     // Khởi chạy background scheduler kiểm tra nhắc hạn và kỳ định kỳ mỗi 10 phút
     // (Lần chạy đầu tiên sau 15 giây khởi động)
-    setTimeout(() => {
+    this.startupTimeoutTimer = setTimeout(() => {
       this.runPeriodicComplianceChecks().catch((err) =>
         this.logger.error('Lỗi khi chạy quét định kỳ:', err),
       );
     }, 15000);
+    if (typeof this.startupTimeoutTimer.unref === 'function') {
+      this.startupTimeoutTimer.unref();
+    }
 
     this.checkIntervalTimer = setInterval(() => {
       this.runPeriodicComplianceChecks().catch((err) =>
         this.logger.error('Lỗi khi chạy quét định kỳ:', err),
       );
     }, 10 * 60 * 1000);
+    if (typeof this.checkIntervalTimer.unref === 'function') {
+      this.checkIntervalTimer.unref();
+    }
+  }
+
+  onModuleDestroy() {
+    if (this.startupTimeoutTimer) {
+      clearTimeout(this.startupTimeoutTimer);
+      this.startupTimeoutTimer = null;
+    }
+    if (this.checkIntervalTimer) {
+      clearInterval(this.checkIntervalTimer);
+      this.checkIntervalTimer = null;
+    }
   }
 
   /**

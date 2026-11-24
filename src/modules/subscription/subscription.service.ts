@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { PrismaService } from '../../database/prisma.service';
 import {
   SUBSCRIPTION_PLANS_BACKEND,
@@ -177,6 +178,17 @@ export class SubscriptionService {
       throw new BadRequestException(`Mã gói không hợp lệ: ${dto.planCode}`);
     }
 
+    // Chặn tự kích hoạt gói trả phí miễn phí trên Production khi chưa có xác nhận thanh toán thật
+    if (
+      plan.priceVnd > 0 &&
+      process.env.NODE_ENV === 'production' &&
+      process.env.ENABLE_SANDBOX_PAYMENT !== 'true'
+    ) {
+      throw new ForbiddenException(
+        'Không thể tự kích hoạt gói dịch vụ trả phí khi chưa hoàn tất thanh toán hợp lệ. Vui lòng thanh toán qua VietQR/SePay hoặc liên hệ Quản trị viên CELRA.',
+      );
+    }
+
     const org = await this.prisma.organization.findUnique({
       where: { id: orgId },
     });
@@ -186,13 +198,21 @@ export class SubscriptionService {
     }
 
     const now = new Date();
+    const currentPlanCode = (org.subscriptionPlan as SubscriptionPlanCode) || 'STARTER';
+    const currentPlanPrice = SUBSCRIPTION_PLANS_BACKEND[currentPlanCode]?.priceVnd ?? 0;
+    const isExpired = !org.subscriptionExpiresAt || new Date(org.subscriptionExpiresAt) <= now;
+    const isUpgradeTier = plan.priceVnd > currentPlanPrice;
+
     // Nếu gói hiện tại còn hạn và cùng gói -> cộng thêm 30 ngày vào ngày hết hạn
     let newExpiresAt = new Date(now.getTime() + 30 * 86400 * 1000);
     if (org.subscriptionExpiresAt && new Date(org.subscriptionExpiresAt) > now && org.subscriptionPlan === dto.planCode) {
       newExpiresAt = new Date(new Date(org.subscriptionExpiresAt).getTime() + 30 * 86400 * 1000);
     }
 
-    const invoiceCode = `SUB-${Date.now().toString().slice(-6)}`;
+    const invoiceCode = `SUB-${Date.now().toString().slice(-6)}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+    // Chỉ reset quota tháng khi nâng hạng cao hơn hoặc chu kỳ cũ đã thực sự hết hạn (chống spam reset quota vô hạn)
+    const shouldResetMonthlyUsage = isUpgradeTier || isExpired;
 
     // Thực hiện trong Transaction an toàn
     await this.prisma.$transaction(async (tx) => {
@@ -205,9 +225,13 @@ export class SubscriptionService {
           subscriptionStartedAt: now,
           subscriptionExpiresAt: newExpiresAt,
           subscriptionNextBillingAt: newExpiresAt,
-          currentBillingCycleStart: now,
-          aiQueriesUsedThisMonth: 0,
-          docAnalysesUsedThisMonth: 0,
+          ...(shouldResetMonthlyUsage
+            ? {
+                currentBillingCycleStart: now,
+                aiQueriesUsedThisMonth: 0,
+                docAnalysesUsedThisMonth: 0,
+              }
+            : {}),
         },
       });
 

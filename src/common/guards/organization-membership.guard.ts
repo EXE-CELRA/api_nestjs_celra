@@ -20,17 +20,40 @@ export class OrganizationMembershipGuard implements CanActivate {
       throw new UnauthorizedException('Yêu cầu đăng nhập để truy cập tài nguyên doanh nghiệp');
     }
 
-    // Lấy organizationId từ params (:orgId), query, body hoặc header 'x-organization-id'
-    let targetOrgId: string | undefined =
-      request.params?.orgId ||
-      request.params?.organizationId ||
-      request.body?.organizationId ||
-      request.query?.orgId ||
-      request.headers['x-organization-id'];
+    // Thu thập tất cả các nguồn organizationId hợp lệ (TUYỆT ĐỐI không đọc params.id chung chung)
+    const rawHeaderOrgId = request.headers?.['x-organization-id'];
+    const headerOrgIds = Array.isArray(rawHeaderOrgId) ? rawHeaderOrgId : [rawHeaderOrgId];
+    const rawSources: unknown[] = [
+      request.params?.orgId,
+      request.params?.organizationId,
+      request.body?.organizationId,
+      request.query?.orgId,
+      ...headerOrgIds,
+    ];
 
-    // Nếu request không truyền orgId, tự động đối soát doanh nghiệp hợp lệ của người dùng
+    const distinctOrgIds = new Set<string>();
+    for (const source of rawSources) {
+      if (typeof source === 'string') {
+        const trimmed = source.trim();
+        if (trimmed.length > 0) {
+          distinctOrgIds.add(trimmed);
+        }
+      }
+    }
+
+    // Chống Parameter Shadowing / Conflict Bypass (VD: ?orgId=OrgA kèm header x-organization-id: OrgB)
+    if (distinctOrgIds.size > 1) {
+      throw new ForbiddenException(
+        'Phát hiện xung đột mã doanh nghiệp (organizationId) giữa các tham số yêu cầu.',
+      );
+    }
+
+    let targetOrgId: string | undefined =
+      distinctOrgIds.size === 1 ? Array.from(distinctOrgIds)[0] : undefined;
+
+    // Chỉ tự động đối soát doanh nghiệp mặc định khi client hoàn toàn KHÔNG truyền bất kỳ orgId nào
     if (!targetOrgId) {
-      if (user.role === UserRole.admin) {
+      if (user.role === UserRole.admin || user.isSuperAdmin) {
         request.activeMembership = { role: UserRole.admin, status: MembershipStatus.active };
         return true;
       }
@@ -50,11 +73,16 @@ export class OrganizationMembershipGuard implements CanActivate {
 
       targetOrgId = activeMembership.organizationId;
       request.headers['x-organization-id'] = targetOrgId;
+      request.activeMembership = activeMembership;
+      request.validatedOrgId = targetOrgId;
+      return true;
     }
-    // Nếu người dùng là admin toàn hệ thống thì có quyền quản trị
-    if (user.role === UserRole.admin) {
+
+    // Nếu người dùng là admin toàn hệ thống thì có quyền quản trị và vẫn gán validatedOrgId nhất quán
+    if (user.role === UserRole.admin || user.isSuperAdmin) {
       request.activeMembership = { role: UserRole.admin, status: MembershipStatus.active };
       request.validatedOrgId = targetOrgId;
+      request.headers['x-organization-id'] = targetOrgId;
       return true;
     }
 
@@ -77,6 +105,7 @@ export class OrganizationMembershipGuard implements CanActivate {
     // Gắn thông tin membership đã xác thực vào request để controller/service tái sử dụng
     request.activeMembership = membership;
     request.validatedOrgId = targetOrgId;
+    request.headers['x-organization-id'] = targetOrgId;
     return true;
   }
 }

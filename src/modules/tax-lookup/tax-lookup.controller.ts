@@ -2,6 +2,7 @@ import { Controller, Get, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { TaxLookupService } from './tax-lookup.service';
 import { Public } from '../../common/decorators/public.decorator';
+import { RateLimit } from '../../common/decorators/rate-limit.decorator';
 
 @ApiTags('Tax Lookup (Tra cứu mã số thuế)')
 @Controller('tax-lookup')
@@ -9,6 +10,7 @@ export class TaxLookupController {
   constructor(private readonly taxLookupService: TaxLookupService) {}
 
   @Public()
+  @RateLimit({ limit: 15, ttlMs: 60_000 })
   @Get(':taxCode')
   @ApiOperation({
     summary: 'Tra cứu thông tin pháp lý doanh nghiệp tự động theo Mã số thuế',

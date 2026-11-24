@@ -20,6 +20,7 @@ import {
 } from './dto/auth.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { RateLimit } from '../../common/decorators/rate-limit.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
 @ApiTags('Authentication & Profile')
@@ -28,6 +29,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 export class AuthController {
   constructor(private readonly authService: AuthService) { }
   @Public()
+  @RateLimit({ limit: 3, ttlMs: 60_000 })
   @Post('send-otp')
   @ApiOperation({ summary: 'Gửi mã xác thực OTP qua Email' })
   async sendOtp(@Body() dto: SendOtpDto) {
@@ -35,6 +37,7 @@ export class AuthController {
   }
 
   @Public()
+  @RateLimit({ limit: 3, ttlMs: 60_000 })
   @Post('forgot-password/send-otp')
   @ApiOperation({ summary: 'Gửi mã OTP khôi phục mật khẩu qua Email' })
   async sendForgotPasswordOtp(@Body() dto: ForgotPasswordSendOtpDto) {
@@ -42,6 +45,7 @@ export class AuthController {
   }
 
   @Public()
+  @RateLimit({ limit: 5, ttlMs: 60_000 })
   @Post('forgot-password/verify-otp')
   @ApiOperation({ summary: 'Xác thực mã OTP khôi phục mật khẩu' })
   async verifyForgotPasswordOtp(@Body() dto: VerifyOtpDto) {
@@ -49,12 +53,14 @@ export class AuthController {
   }
 
   @Public()
+  @RateLimit({ limit: 5, ttlMs: 60_000 })
   @Post('forgot-password/reset')
   @ApiOperation({ summary: 'Đặt lại mật khẩu mới với mã OTP' })
   async resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
   }
   @Public()
+  @RateLimit({ limit: 5, ttlMs: 60_000 })
   @Post('register')
   @ApiOperation({ summary: 'Đăng ký tài khoản người dùng mới' })
   async register(@Body() dto: RegisterDto) {
@@ -62,6 +68,7 @@ export class AuthController {
   }
 
   @Public()
+  @RateLimit({ limit: 10, ttlMs: 60_000 })
   @Post('login')
   @ApiOperation({ summary: 'Đăng nhập hệ thống (Email + Mật khẩu)' })
   async login(@Body() dto: LoginDto) {
@@ -85,6 +92,7 @@ export class AuthController {
     return this.authService.updateProfile(userId, dto);
   }
 
+  @RateLimit({ limit: 5, ttlMs: 60_000 })
   @Patch('change-password')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Đổi mật khẩu người dùng' })

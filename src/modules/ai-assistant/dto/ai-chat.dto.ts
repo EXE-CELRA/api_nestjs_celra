@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsOptional, IsArray, ValidateNested, IsIn } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsArray, ValidateNested, IsIn, ArrayMaxSize, MaxLength } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Priority, UserRole } from '@prisma/client';
@@ -10,17 +10,20 @@ export class ChatHistoryItemDto {
 
   @ApiProperty({ example: 'Doanh nghiệp tôi có 5 nhân sự' })
   @IsString()
+  @MaxLength(1500, { message: 'Mỗi tin nhắn lịch sử hội thoại không được vượt quá 1500 ký tự' })
   content!: string;
 }
 export class AIChatMessageDto {
   @ApiPropertyOptional({ example: 'Doanh nghiệp tôi F&B có 5 nhân sự thì cần làm gì về hợp đồng lao động và BHXH?' })
   @IsOptional()
   @IsString()
+  @MaxLength(1500, { message: 'Nội dung câu hỏi không được vượt quá 1500 ký tự' })
   message?: string;
 
   @ApiPropertyOptional({ example: 'Doanh nghiệp tôi F&B có 5 nhân sự thì cần làm gì về thuế TNDN?' })
   @IsOptional()
   @IsString()
+  @MaxLength(1500, { message: 'Nội dung câu hỏi không được vượt quá 1500 ký tự' })
   question?: string;
 
   @ApiPropertyOptional({ example: 'conv-12345' })
@@ -28,9 +31,10 @@ export class AIChatMessageDto {
   @IsString()
   conversationId?: string;
 
-  @ApiPropertyOptional({ type: [ChatHistoryItemDto], description: 'Lịch sử hội thoại gần nhất (10 messages)' })
+  @ApiPropertyOptional({ type: [ChatHistoryItemDto], description: 'Lịch sử hội thoại gần nhất (tối đa 10 messages)' })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(10, { message: 'Lịch sử hội thoại gửi kèm tối đa 10 tin nhắn gần nhất' })
   @ValidateNested({ each: true })
   @Type(() => ChatHistoryItemDto)
   history?: ChatHistoryItemDto[];

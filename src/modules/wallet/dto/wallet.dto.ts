@@ -1,16 +1,18 @@
-import { IsNotEmpty, IsNumber, IsString, IsOptional, Min } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsString, IsOptional, Min, Max, IsInt } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class DepositDto {
   @ApiProperty({ example: 500000, description: 'Số tiền nạp vào ví (VND)' })
   @IsNumber()
   @Min(10000, { message: 'Số tiền nạp tối thiểu là 10.000đ' })
+  @Max(500000000, { message: 'Số tiền nạp vượt quá hạn mức giao dịch đơn lẻ' })
   amount!: number;
 
   @ApiPropertyOptional({ example: 500000, description: 'Số tiền nạp tiếng Việt (camelCase)' })
   @IsOptional()
   @IsNumber()
   @Min(10000, { message: 'Số tiền nạp tối thiểu là 10.000đ' })
+  @Max(500000000, { message: 'Số tiền nạp vượt quá hạn mức giao dịch đơn lẻ' })
   soTien?: number;
 
   @ApiPropertyOptional({ example: 'Nạp tiền thanh toán dịch vụ thẩm định ATTP' })
@@ -22,6 +24,20 @@ export class DepositDto {
   @IsOptional()
   @IsString()
   ghiChu?: string;
+}
+
+export class CreateSandboxSessionDto {
+  @ApiPropertyOptional({ example: 'PKG_120', description: 'Mã gói Credit muốn nạp qua Sandbox' })
+  @IsOptional()
+  @IsString()
+  packageId?: string;
+
+  @ApiPropertyOptional({ example: 200000, description: 'Số tiền nạp VND (nếu không chọn gói)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(10000, { message: 'Số tiền nạp tối thiểu là 10.000đ' })
+  @Max(500000000, { message: 'Số tiền nạp vượt quá hạn mức cho phép' })
+  amount?: number;
 }
 
 export class GenerateVietQrDto {
@@ -93,11 +109,15 @@ export class SandboxPaymentDto {
   @ApiPropertyOptional({ example: 200000, description: 'Số tiền nạp VND (nếu không chọn gói)' })
   @IsOptional()
   @IsNumber()
+  @Min(10000, { message: 'Số tiền nạp tối thiểu là 10.000đ' })
+  @Max(500000000, { message: 'Số tiền nạp vượt quá hạn mức giao dịch' })
   amount?: number;
 
   @ApiPropertyOptional({ description: 'Số tiền nạp tiếng Việt (camelCase)' })
   @IsOptional()
   @IsNumber()
+  @Min(10000, { message: 'Số tiền nạp tối thiểu là 10.000đ' })
+  @Max(500000000, { message: 'Số tiền nạp vượt quá hạn mức giao dịch' })
   soTien?: number;
 
   @ApiProperty({ example: 'SUCCESS', enum: ['SUCCESS', 'FAILED'], description: 'Kết quả kịch bản thanh toán sandbox' })
@@ -129,4 +149,14 @@ export class SandboxPaymentDto {
   @IsOptional()
   @IsString()
   tenNganHang?: string;
+
+  @ApiPropertyOptional({ description: 'Chữ ký HMAC-SHA256 phiên Sandbox do server cấp qua /wallets/sandbox-session' })
+  @IsOptional()
+  @IsString()
+  signature?: string;
+
+  @ApiPropertyOptional({ description: 'Thời điểm hết hạn phiên Sandbox (epoch ms)' })
+  @IsOptional()
+  @IsInt()
+  expiresAt?: number;
 }

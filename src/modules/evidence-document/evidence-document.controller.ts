@@ -6,22 +6,27 @@ import {
   Body,
   Param,
   UseGuards,
-  Headers,
   UseInterceptors,
   UploadedFile,
   Res,
+  BadRequestException,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname } from 'path';
+import * as crypto from 'crypto';
 import { existsSync, mkdirSync } from 'fs';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader, ApiConsumes } from '@nestjs/swagger';
 import { EvidenceDocumentService } from './evidence-document.service';
 import { VerifyEvidenceDto, UploadEvidenceDto } from './dto/evidence.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OrganizationMembershipGuard } from '../../common/guards/organization-membership.guard';
+import { OrgRolesGuard } from '../../common/guards/org-roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { ValidatedOrgId } from '../../common/decorators/validated-org-id.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { getSafeExtensionForUpload } from '../../common/utils/file-magic-bytes.util';
+import { UserRole } from '@prisma/client';
 
 @ApiTags('Evidence & Documents (Bằng chứng số & Thẩm tra)')
 @Controller('evidence-documents')
@@ -45,18 +50,27 @@ export class EvidenceDocumentController {
           cb(null, uploadPath);
         },
         filename: (_req, file, cb) => {
-          const randomName = Array(32)
-            .fill(null)
-            .map(() => Math.round(Math.random() * 16).toString(16))
-            .join('');
-          cb(null, `${randomName}${extname(file.originalname)}`);
+          const safeExt = getSafeExtensionForUpload(file.mimetype, file.originalname) || '.bin';
+          cb(null, `${crypto.randomUUID()}${safeExt}`);
         },
       }),
+      fileFilter: (_req, file, cb) => {
+        const safeExt = getSafeExtensionForUpload(file.mimetype, file.originalname);
+        if (!safeExt) {
+          return cb(
+            new BadRequestException(
+              'Loại tệp không được phép tải lên. Chỉ chấp nhận PDF, PNG, JPG, WEBP, DOC, DOCX, XLS, XLSX.',
+            ) as unknown as Error,
+            false,
+          );
+        }
+        return cb(null, true);
+      },
       limits: { fileSize: 25 * 1024 * 1024 }, // 25MB max
     }),
   )
   async uploadFile(
-    @Headers('x-organization-id') orgId: string,
+    @ValidatedOrgId() orgId: string,
     @CurrentUser('sub') userId: string,
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadEvidenceDto,
@@ -86,7 +100,7 @@ export class EvidenceDocumentController {
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Lấy kho lưu trữ tất cả bằng chứng số của Doanh nghiệp' })
   async findAll(
-    @Headers('x-organization-id') orgId: string,
+    @ValidatedOrgId() orgId: string,
     @CurrentUser('sub') userId: string,
   ) {
     return this.evidenceService.findAll(orgId, userId);
@@ -97,7 +111,7 @@ export class EvidenceDocumentController {
   @ApiOperation({ summary: 'Lấy chi tiết bằng chứng số theo ID' })
   async findOne(
     @Param('id') id: string,
-    @Headers('x-organization-id') orgId?: string,
+    @ValidatedOrgId() orgId: string,
   ) {
     return this.evidenceService.findOne(id, orgId);
   }
@@ -108,20 +122,23 @@ export class EvidenceDocumentController {
   async downloadFile(
     @Param('id') id: string,
     @Res() res: Response,
-    @Headers('x-organization-id') orgId?: string,
+    @ValidatedOrgId() orgId: string,
   ) {
     const fileInfo = await this.evidenceService.getFileForDownload(id, orgId);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     return res.download(fileInfo.absolutePath, fileInfo.fileName);
   }
 
   @Patch(':id/verify')
+  @UseGuards(JwtAuthGuard, OrganizationMembershipGuard, OrgRolesGuard)
+  @Roles(UserRole.owner, UserRole.service_accountant, UserRole.expert, UserRole.admin)
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Thẩm tra bằng chứng (Xác nhận ĐẠT hoặc TỪ CHỐI kèm lý do)' })
   async verify(
     @Param('id') id: string,
     @CurrentUser('sub') userId: string,
     @Body() dto: VerifyEvidenceDto,
-    @Headers('x-organization-id') orgId?: string,
+    @ValidatedOrgId() orgId: string,
   ) {
     return this.evidenceService.verify(id, userId, dto, orgId);
   }

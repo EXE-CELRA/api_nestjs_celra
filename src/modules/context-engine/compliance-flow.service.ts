@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
@@ -22,6 +23,7 @@ import {
   WaitingOnRole,
   TaskStatus,
   TimelineEventType,
+  MembershipStatus,
 } from '@prisma/client';
 import * as crypto from 'crypto';
 import { CORE_LEGAL_DOC_LINKS, cleanDLPLUrl, matchCoreLegalDocUrl } from '../../common/constants/legal-docs.constant';
@@ -256,6 +258,37 @@ export class ComplianceFlowService {
 
       for (let i = 0; i < dto.items.length; i++) {
         const itemDto = dto.items[i];
+
+        // Kiểm tra toàn vẹn quan hệ đa doanh nghiệp (chống gắn FK của doanh nghiệp khác)
+        if (itemDto.findingId) {
+          const finding = await tx.auditFinding.findFirst({
+            where: { id: itemDto.findingId, organizationId: org.id },
+            select: { id: true },
+          });
+          if (!finding) {
+            throw new ForbiddenException('Kết quả rà soát (findingId) không thuộc doanh nghiệp hiện tại.');
+          }
+        }
+        if (itemDto.departmentId) {
+          const deptMatch = org.departments.find((d) => d.id === itemDto.departmentId);
+          if (!deptMatch) {
+            throw new ForbiddenException('Phòng ban (departmentId) không thuộc doanh nghiệp hiện tại.');
+          }
+        }
+        if (itemDto.assigneeId) {
+          const assigneeMember = await tx.membership.findFirst({
+            where: {
+              organizationId: org.id,
+              userId: itemDto.assigneeId,
+              status: MembershipStatus.active,
+            },
+            select: { id: true },
+          });
+          if (!assigneeMember) {
+            throw new ForbiddenException('Người được phân công (assigneeId) không phải thành viên hợp lệ của doanh nghiệp.');
+          }
+        }
+
         const eventDateParsed = itemDto.eventDate ? new Date(itemDto.eventDate) : null;
 
         // Tính toán hạn chót pháp lý theo ruleCode và cycleType

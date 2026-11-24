@@ -21,6 +21,12 @@ import {
 } from './dto/admin.dto';
 import { TransactionType, TransactionStatus, UserRole } from '@prisma/client';
 import { cleanDLPLUrl } from '../../common/constants/legal-docs.constant';
+import {
+  assertSafeExternalUrl,
+  ALLOWED_AI_API_HOSTS,
+  ALLOWED_DLPL_API_HOSTS,
+} from '../../common/utils/safe-url.util';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -412,24 +418,28 @@ export class AdminService {
       throw new BadRequestException('API Key không được để trống.');
     }
 
+    // Chống SSRF: chỉ cho phép HTTPS tới host DLPL hợp lệ & không trỏ về dải IP nội bộ
+    await assertSafeExternalUrl(targetUrl, ALLOWED_DLPL_API_HOSTS);
+
     // BƯỚC BẮT BUỘC: Gửi request test trực tiếp lên DLPL để xác minh key hợp lệ
     let testData: any = null;
     try {
       const testRes = await fetch(`${targetUrl.replace(/\/+$/, '')}/me`, {
         headers: { Authorization: `Bearer ${targetKey}` },
+        signal: AbortSignal.timeout(8000),
       });
 
       if (!testRes.ok) {
-        const errBody = await testRes.text();
+        this.logger.warn(`[DLPL CONFIG] Kết nối thất bại HTTP ${testRes.status}`);
         throw new BadRequestException(
-          `Kết nối thất bại (Mã lỗi ${testRes.status}): API Key không hợp lệ hoặc đã hết hạn trên Cổng Dữ Liệu Pháp Luật! Chi tiết: ${errBody.slice(0, 100)}`
+          `Kết nối thất bại (Mã lỗi ${testRes.status}): API Key không hợp lệ hoặc đã hết hạn trên Cổng Dữ Liệu Pháp Luật!`,
         );
       }
 
       testData = await testRes.json();
     } catch (err: any) {
       if (err instanceof BadRequestException) throw err;
-      throw new BadRequestException(`Không thể kết nối đến máy chủ Dữ Liệu Pháp Luật: ${err.message || 'Lỗi mạng'}`);
+      throw new BadRequestException('Không thể kết nối đến máy chủ Dữ Liệu Pháp Luật, vui lòng kiểm tra lại cấu hình.');
     }
 
     // Lưu trực tiếp vào Database PostgreSQL (Bảng cau_hinh_he_thong)
@@ -494,7 +504,7 @@ export class AdminService {
   // ============================================================================
   // 3.1. QUẢN LÝ CẤU HÌNH AI PROVIDER & TEST KEY DYNAMICALLY
   // ============================================================================
-  async getActiveAIConfig() {
+  private async getActiveAIConfigInternal() {
     const configRecord = await this.prisma.aiSystem.findFirst({
       where: { organizationId: null },
       orderBy: { updatedAt: 'desc' },
@@ -517,9 +527,27 @@ export class AdminService {
     };
   }
 
+  async getActiveAIConfig() {
+    const active = await this.getActiveAIConfigInternal();
+    const apiKeyMasked = active.apiKey
+      ? `${active.apiKey.slice(0, 6)}...${active.apiKey.slice(-4)}`
+      : null;
+
+    // TUYỆT ĐỐI KHÔNG trả raw apiKey ra HTTP response
+    return {
+      provider: active.provider,
+      apiUrl: active.apiUrl,
+      apiKeyMasked,
+      hasApiKey: Boolean(active.apiKey),
+      model: active.model,
+      availableModels: active.availableModels,
+      lastTestedAt: active.lastTestedAt,
+    };
+  }
+
   async getAIServiceStatus() {
     this.platformConfig = this.loadPlatformConfig();
-    const active = await this.getActiveAIConfig();
+    const active = await this.getActiveAIConfigInternal();
     const today = new Date().toISOString().slice(0, 10);
     if (!this.platformConfig.aiStats || this.platformConfig.aiStats.lastDate !== today) {
       this.platformConfig.aiStats = {
@@ -701,11 +729,7 @@ export class AdminService {
   }
 
   async testAIKeyAndFetchModels(dto: TestAIKeyDto) {
-    const active = await this.getActiveAIConfig();
-    const apiKey = dto.apiKey?.trim() || active.apiKey;
-    if (!apiKey) {
-      throw new BadRequestException('Vui lòng nhập API Key để kiểm tra kết nối.');
-    }
+    const active = await this.getActiveAIConfigInternal();
     let apiUrl = dto.apiUrl?.trim() || active.apiUrl;
     if (!apiUrl) {
       if (dto.provider === AIProviderType.GEMINI) {
@@ -713,6 +737,28 @@ export class AdminService {
       } else {
         apiUrl = 'https://opencode.ai/inference/openai/v1';
       }
+    }
+
+    // Chống SSRF: chỉ cho phép HTTPS tới host AI allowlist & chặn IP nội bộ/metadata
+    const parsedTargetUrl = await assertSafeExternalUrl(apiUrl, ALLOWED_AI_API_HOSTS);
+
+    let apiKey = dto.apiKey?.trim() || '';
+    if (!apiKey) {
+      // Không gửi API Key đã lưu trong DB tới một host khác với host đã lưu
+      let savedHost = '';
+      if (active.apiUrl) {
+        try {
+          savedHost = new URL(active.apiUrl).hostname.toLowerCase();
+        } catch {
+          savedHost = '';
+        }
+      }
+      if (active.apiKey && savedHost && savedHost === parsedTargetUrl.hostname.toLowerCase()) {
+        apiKey = active.apiKey;
+      }
+    }
+    if (!apiKey) {
+      throw new BadRequestException('Vui lòng nhập API Key để kiểm tra kết nối.');
     }
 
     const cleanBase = apiUrl.replace(/\/+$/, '');
@@ -737,14 +783,15 @@ export class AdminService {
         } catch {
           // raw text
         }
+        this.logger.warn(`[AI TEST KEY] Provider trả về HTTP ${res.status}: ${String(errDetail).slice(0, 200)}`);
 
         if (errDetail.includes('suspended') || errDetail.includes('CONSUMER_SUSPENDED')) {
-          throw new BadRequestException(`Google từ chối Key (HTTP 403 - Suspended): Toàn bộ Google Cloud Project chứa key này đang bị Google tạm ngưng. Chi tiết từ Google: "${errDetail}"`);
+          throw new BadRequestException('Nhà cung cấp từ chối Key (HTTP 403 - Suspended): Dự án chứa API Key đang bị tạm ngưng.');
         }
         if (errDetail.includes('API key not valid') || res.status === 401) {
-          throw new BadRequestException(`Google từ chối Key (HTTP 401 - Invalid): Mã khóa API Key không tồn tại hoặc bị copy thiếu ký tự. Chi tiết từ Google: "${errDetail}"`);
+          throw new BadRequestException('Nhà cung cấp từ chối Key (HTTP 401 - Invalid): Mã khóa API Key không hợp lệ hoặc bị thiếu ký tự.');
         }
-        throw new BadRequestException(`Google từ chối kết nối (HTTP ${res.status}): ${errDetail}`);
+        throw new BadRequestException(`Nhà cung cấp AI từ chối kết nối (HTTP ${res.status}). Vui lòng kiểm tra lại API Key và cấu hình.`);
       }
       const data: unknown = await res.json();
       let modelsList: string[] = [];
@@ -758,27 +805,8 @@ export class AdminService {
           .filter((id) => Boolean(id) && !id.includes('embedding') && !id.includes('tts') && !id.includes('imagen') && !id.includes('bison'));
       }
 
-      // Lấy 100% danh sách thực tế trả về từ Provider API (không gán cứng)
+      // Chỉ đọc và trả về kết quả kiểm tra (KHÔNG ghi đè cấu hình DB từ endpoint test-key)
       const merged = Array.from(new Set(modelsList));
-
-      // Tự động lưu luôn danh sách availableModels vào Database để lần sau mở modal không cần test lại
-      const existingConfig = await this.prisma.aiSystem.findFirst({
-        where: { organizationId: null },
-        orderBy: { updatedAt: 'desc' },
-      });
-
-      if (existingConfig) {
-        await this.prisma.aiSystem.update({
-          where: { id: existingConfig.id },
-          data: {
-            apiKey,
-            apiUrl,
-            provider: dto.provider,
-            availableModels: merged,
-            lastTestedAt: new Date(),
-          },
-        });
-      }
 
       return {
         success: true,
@@ -790,13 +818,12 @@ export class AdminService {
       };
     } catch (err: unknown) {
       if (err instanceof BadRequestException) throw err;
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new BadRequestException(`Không thể xác thực API Key hoặc kết nối tới Endpoint: ${msg}`);
+      throw new BadRequestException('Không thể xác thực API Key hoặc kết nối tới Endpoint AI đã chọn.');
     }
   }
 
   async updateAIConfig(dto: UpdateAIConfigDto) {
-    const active = await this.getActiveAIConfig();
+    const active = await this.getActiveAIConfigInternal();
     const targetProvider = dto.provider;
     const targetModel = dto.model.trim();
     const targetApiKey = dto.apiKey?.trim() || active.apiKey;
@@ -807,6 +834,9 @@ export class AdminService {
         ? 'https://generativelanguage.googleapis.com/v1beta/openai'
         : 'https://opencode.ai/inference/openai/v1';
     }
+
+    // Chống SSRF khi lưu cấu hình AI Endpoint
+    await assertSafeExternalUrl(targetApiUrl, ALLOWED_AI_API_HOSTS);
 
     // Tìm bản ghi cấu hình hệ thống (organizationId === null) trong Database
     const existingConfig = await this.prisma.aiSystem.findFirst({
@@ -947,11 +977,12 @@ export class AdminService {
         data: {
           organizationId: org.id,
           balance: 0,
+          currency: 'CREDIT',
         },
       });
     }
 
-    const code = `CR-ADJUST-${Date.now().toString().slice(-6)}`;
+    const code = `CR-ADJUST-${Date.now().toString().slice(-6)}-${crypto.randomBytes(4).toString('hex')}`;
 
     // Tạo bản ghi giao dịch bù Credit vào sổ cái
     const tx = await this.prisma.walletTransaction.create({

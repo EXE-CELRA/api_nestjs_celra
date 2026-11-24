@@ -8,7 +8,6 @@ import {
   Param,
   Query,
   UseGuards,
-  Headers,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { TaskService } from './task.service';
@@ -24,7 +23,9 @@ import {
 } from './dto/task.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OrganizationMembershipGuard } from '../../common/guards/organization-membership.guard';
+import { AdminOnlyGuard } from '../../common/guards/admin-only.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { ValidatedOrgId } from '../../common/decorators/validated-org-id.decorator';
 import { TaskStatus, UserRole, WaitingOnRole, StatutoryCycleType } from '@prisma/client';
 
 @ApiTags('Tasks & Checklists (Quản lý Tác vụ, Quy trình & Nhắc hạn)')
@@ -45,11 +46,10 @@ export class TaskController {
   }
 
   @Post()
-
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Tạo tác vụ tuân thủ mới' })
   async create(
-    @Headers('x-organization-id') orgId: string,
+    @ValidatedOrgId() orgId: string,
     @Body() dto: CreateTaskDto,
   ) {
     return this.taskService.create(orgId, dto);
@@ -64,7 +64,7 @@ export class TaskController {
   @ApiQuery({ name: 'checklistId', type: String, required: false })
   @ApiOperation({ summary: 'Lấy danh sách các tác vụ có bộ lọc (Table, Kanban, Đợt Luật Định)' })
   async findAll(
-    @Headers('x-organization-id') orgId: string,
+    @ValidatedOrgId() orgId: string,
     @Query('status') status?: TaskStatus,
     @Query('assigneeRole') assigneeRole?: UserRole,
     @Query('waitingOnRole') waitingOnRole?: WaitingOnRole,
@@ -85,7 +85,7 @@ export class TaskController {
   @Get('checklists')
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Lấy danh mục Checklists tuân thủ và tiến độ hoàn thành' })
-  async getChecklists(@Headers('x-organization-id') orgId: string) {
+  async getChecklists(@ValidatedOrgId() orgId: string) {
     return this.taskService.findAllChecklists(orgId);
   }
 
@@ -94,7 +94,7 @@ export class TaskController {
   @ApiQuery({ name: 'unreadOnly', type: Boolean, required: false })
   @ApiOperation({ summary: 'Lấy danh sách thông báo nhắc hạn tuân thủ trong ứng dụng' })
   async getNotifications(
-    @Headers('x-organization-id') orgId: string,
+    @ValidatedOrgId() orgId: string,
     @CurrentUser('sub') userId: string,
     @Query('unreadOnly') unreadOnly?: boolean,
   ) {
@@ -114,13 +114,14 @@ export class TaskController {
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Đánh dấu tất cả thông báo nhắc hạn đã đọc' })
   async markAllNotificationsRead(
-    @Headers('x-organization-id') orgId: string,
+    @ValidatedOrgId() orgId: string,
     @CurrentUser('sub') userId: string,
   ) {
     return this.notificationService.markAllNotificationsRead(orgId, userId);
   }
 
   @Post('trigger-reminders')
+  @UseGuards(JwtAuthGuard, AdminOnlyGuard)
   @ApiOperation({ summary: 'Thực thi quét nhắc hạn và bù kỳ định kỳ ngay lập tức (Admin/Debug)' })
   async triggerReminders() {
     await this.notificationService.runPeriodicComplianceChecks();
@@ -132,7 +133,7 @@ export class TaskController {
   @ApiQuery({ name: 'month', required: false, description: 'Lọc theo tháng dạng YYYY-MM' })
   @ApiOperation({ summary: 'Lấy danh sách ghi chú lịch tuân thủ của doanh nghiệp' })
   async getCalendarNotes(
-    @Headers('x-organization-id') orgId: string,
+    @ValidatedOrgId() orgId: string,
     @Query('month') month?: string,
   ) {
     return this.taskService.getCalendarNotes(orgId, month);
@@ -142,7 +143,7 @@ export class TaskController {
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Tạo ghi chú lịch tuân thủ mới' })
   async createCalendarNote(
-    @Headers('x-organization-id') orgId: string,
+    @ValidatedOrgId() orgId: string,
     @CurrentUser('sub') userId: string,
     @CurrentUser('name') userName: string,
     @Body() dto: CreateCalendarNoteDto,
@@ -154,7 +155,7 @@ export class TaskController {
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Cập nhật ghi chú lịch' })
   async updateCalendarNote(
-    @Headers('x-organization-id') orgId: string,
+    @ValidatedOrgId() orgId: string,
     @Param('id') id: string,
     @Body() dto: UpdateCalendarNoteDto,
   ) {
@@ -165,7 +166,7 @@ export class TaskController {
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Xóa ghi chú lịch' })
   async deleteCalendarNote(
-    @Headers('x-organization-id') orgId: string,
+    @ValidatedOrgId() orgId: string,
     @Param('id') id: string,
   ) {
     return this.taskService.deleteCalendarNote(id, orgId);
@@ -176,7 +177,7 @@ export class TaskController {
   @ApiOperation({ summary: 'Lấy chi tiết tác vụ (Bằng chứng, Bình luận, Timeline)' })
   async findOne(
     @Param('id') id: string,
-    @Headers('x-organization-id') orgId?: string,
+    @ValidatedOrgId() orgId: string,
   ) {
     return this.taskService.findOne(id, orgId);
   }
@@ -188,7 +189,7 @@ export class TaskController {
     @Param('id') id: string,
     @CurrentUser('sub') userId: string,
     @Body() dto: UpdateTaskStatusDto,
-    @Headers('x-organization-id') orgId?: string,
+    @ValidatedOrgId() orgId: string,
   ) {
     return this.taskService.updateStatus(id, userId, dto, orgId);
   }
@@ -200,7 +201,7 @@ export class TaskController {
     @Param('id') id: string,
     @CurrentUser('sub') userId: string,
     @Body() dto: UpdateTaskPriorityDto,
-    @Headers('x-organization-id') orgId?: string,
+    @ValidatedOrgId() orgId: string,
   ) {
     return this.taskService.updatePriority(id, userId, dto, orgId);
   }
@@ -212,7 +213,7 @@ export class TaskController {
     @Param('id') id: string,
     @CurrentUser('sub') userId: string,
     @Body() dto: AddTaskCommentDto,
-    @Headers('x-organization-id') orgId?: string,
+    @ValidatedOrgId() orgId: string,
   ) {
     return this.taskService.addComment(id, userId, dto, orgId);
   }
@@ -224,7 +225,7 @@ export class TaskController {
     @Param('id') id: string,
     @CurrentUser('sub') userId: string,
     @Body() dto: SelfCertifyTaskDto,
-    @Headers('x-organization-id') orgId?: string,
+    @ValidatedOrgId() orgId: string,
   ) {
     return this.taskService.selfCertify(id, userId, dto, orgId);
   }

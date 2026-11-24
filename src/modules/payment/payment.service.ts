@@ -1,8 +1,10 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as crypto from 'crypto';
 import { WalletService } from '../wallet/wallet.service';
 import { PrismaService } from '../../database/prisma.service';
 import { GenerateVietQrDto, SepayWebhookDto } from './dto/payment.dto';
+import { deterministicUuidFromKey } from '../../common/utils/deterministic-uuid.util';
 
 @Injectable()
 export class PaymentService {
@@ -13,6 +15,12 @@ export class PaymentService {
     private readonly walletService: WalletService,
     private readonly config: ConfigService,
   ) {}
+
+  private safeCompareSecret(a: string, b: string): boolean {
+    const hashA = crypto.createHash('sha256').update(a).digest();
+    const hashB = crypto.createHash('sha256').update(b).digest();
+    return crypto.timingSafeEqual(hashA, hashB);
+  }
 
   async generateVietQr(orgId: string, dto: GenerateVietQrDto) {
     const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
@@ -44,21 +52,52 @@ export class PaymentService {
     };
   }
 
-  async handleSepayWebhook(dto: SepayWebhookDto) {
-    this.logger.log(`Nhận webhook thanh toán SePay: ${JSON.stringify(dto)}`);
+  async handleSepayWebhook(dto: SepayWebhookDto, authHeader?: string) {
+    // 1. Bắt buộc xác thực Authorization: Apikey <SEPAY_WEBHOOK_API_KEY> bằng timingSafeEqual
+    const expectedApiKey = (
+      process.env.SEPAY_WEBHOOK_API_KEY ||
+      this.config.get<string>('SEPAY_WEBHOOK_API_KEY') ||
+      ''
+    ).trim();
 
-    if (dto.transferType !== 'in' || dto.transferAmount <= 0) {
-      return { success: false, message: 'Giao dịch không phải nạp tiền' };
+    if (!expectedApiKey) {
+      this.logger.error('SEPAY_WEBHOOK_API_KEY chưa được cấu hình — từ chối webhook để đảm bảo an toàn.');
+      throw new UnauthorizedException('Cổng webhook SePay chưa được cấu hình khóa xác thực');
     }
 
-    // Tìm mã Organization trong chuỗi content
+    const apiKeyMatch = typeof authHeader === 'string' ? authHeader.trim().match(/^Apikey\s+(.+)$/i) : null;
+    const providedApiKey = apiKeyMatch?.[1]?.trim() || '';
+    if (!providedApiKey || !this.safeCompareSecret(providedApiKey, expectedApiKey)) {
+      this.logger.warn('Từ chối webhook SePay: thiếu hoặc sai Authorization Apikey.');
+      throw new UnauthorizedException('Khóa xác thực Webhook SePay không hợp lệ');
+    }
+
+    this.logger.log(`Nhận webhook thanh toán SePay hợp lệ GD #${dto.id} (${dto.transferAmount} VND)`);
+
+    if (dto.transferType !== 'in' || dto.transferAmount < 10000) {
+      throw new BadRequestException('Giao dịch không hợp lệ hoặc số tiền nạp nhỏ hơn 10.000đ');
+    }
+
+    // 2. Xác minh số tài khoản thụ hưởng khớp cấu hình hệ thống
+    const expectedAccountNo = (
+      process.env.VIETQR_ACCOUNT_NO ||
+      this.config.get<string>('VIETQR_ACCOUNT_NO', '0987654321')
+    ).trim();
+    if (expectedAccountNo && dto.accountNumber?.trim() !== expectedAccountNo) {
+      this.logger.warn(
+        `Từ chối webhook SePay GD #${dto.id}: số tài khoản nhận (${dto.accountNumber}) không khớp cấu hình.`,
+      );
+      throw new BadRequestException('Số tài khoản thụ hưởng không khớp cấu hình hệ thống');
+    }
+
+    // 3. Tìm mã Organization trong chuỗi content (chuẩn hóa lowercase vì ngân hàng thường đổi chữ HOA)
     const match = dto.content.match(/CELRA\s+([a-zA-Z0-9]{8})/i);
     if (!match) {
       this.logger.warn(`Không nhận diện được mã tổ chức CELRA trong content: ${dto.content}`);
       return { success: false, message: 'Nội dung chuyển khoản không hợp lệ' };
     }
 
-    const shortOrgId = match[1];
+    const shortOrgId = match[1].toLowerCase();
 
     const org = await this.prisma.organization.findFirst({
       where: {
@@ -73,13 +112,26 @@ export class PaymentService {
       return { success: false, message: 'Doanh nghiệp không tồn tại' };
     }
 
-    // Nạp tiền tự động vào ví
-    await this.walletService.deposit(
+    // 4. Nạp tiền tự động vào ví với Idempotency nguyên tử qua Deterministic PK
+    const idempotencyId = deterministicUuidFromKey(`sepay:${dto.id}`);
+    const depositResult: any = await this.walletService.deposit(
       org.id,
       dto.transferAmount,
       `Nạp tự động qua VietQR/SePay GD #${dto.id} - ${dto.content}`,
       'Cổng thanh toán VietQR / SePay',
+      { idempotencyId },
     );
+
+    if (depositResult?.duplicated) {
+      this.logger.log(`[IDEMPOTENCY] Bỏ qua webhook SePay trùng lặp GD #${dto.id}`);
+      return {
+        success: true,
+        duplicated: true,
+        message: 'Giao dịch đã được ghi nhận trước đó',
+        orgId: org.id,
+        amount: dto.transferAmount,
+      };
+    }
 
     this.logger.log(`✅ Đã nạp thành công ${dto.transferAmount.toLocaleString()}đ vào ví của ${org.name} (${org.id})`);
 

@@ -11,8 +11,6 @@ export interface TaxLookupResult {
   isOperating: boolean;
   source: string;
   isRegisteredInCelra?: boolean;
-  registeredOrgId?: string | null;
-  registeredOrgName?: string | null;
 }
 
 @Injectable()
@@ -22,7 +20,7 @@ export class TaxLookupService {
   /**
    * Tra cứu thông tin người nộp thuế / doanh nghiệp theo Mã Số Thuế
    * Tự động lấy dữ liệu từ cơ sở dữ liệu quốc gia thông qua cổng công khai VietQR/Casso
-   * Đồng thời kiểm tra tính khả dụng (tránh tạo trùng MST) trong hệ thống CELRA
+   * Không tiết lộ UUID nội bộ (registeredOrgId) hay tên tổ chức nội bộ ra endpoint công khai
    */
   async lookupTaxCode(taxCode: string): Promise<TaxLookupResult> {
     const cleanTaxCode = (taxCode || '').trim().replace(/\s+/g, '');
@@ -31,10 +29,10 @@ export class TaxLookupService {
       throw new BadRequestException('Mã số thuế không hợp lệ. Vui lòng nhập từ 10 đến 13 chữ số hợp lệ.');
     }
 
-    // 1. Kiểm tra xem Mã số thuế đã được đăng ký bởi doanh nghiệp nào trong hệ thống CELRA chưa
+    // 1. Chỉ kiểm tra cờ tồn tại MST trong CELRA (tuyệt đối không trả registeredOrgId / registeredOrgName ra public)
     const existingOrg = await this.prisma.organization.findUnique({
       where: { taxCode: cleanTaxCode },
-      select: { id: true, name: true },
+      select: { id: true },
     });
 
     try {
@@ -44,6 +42,7 @@ export class TaxLookupService {
           Accept: 'application/json',
           'User-Agent': 'CELRA-Compliance-Engine/1.0',
         },
+        signal: AbortSignal.timeout(5000),
       });
 
       if (!response.ok) {
@@ -82,8 +81,6 @@ export class TaxLookupService {
         isOperating: statusText.toLowerCase().includes('đang hoạt động'),
         source: 'Cổng thông tin Tổng cục Thuế (gdt.gov.vn)',
         isRegisteredInCelra: !!existingOrg,
-        registeredOrgId: existingOrg ? existingOrg.id : null,
-        registeredOrgName: existingOrg ? existingOrg.name : null,
       };
     } catch (error: any) {
       if (error instanceof NotFoundException || error instanceof BadRequestException) {

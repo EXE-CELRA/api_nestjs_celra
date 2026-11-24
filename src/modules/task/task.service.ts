@@ -75,8 +75,13 @@ export class TaskService {
     const departmentId = dto.maPhongBan || dto.departmentId;
     let departmentName = 'Phòng ban';
     if (departmentId) {
-      const dept = await this.prisma.department.findUnique({ where: { id: departmentId } });
-      if (dept) departmentName = dept.name;
+      const dept = await this.prisma.department.findFirst({
+        where: { id: departmentId, organizationId: orgId },
+      });
+      if (!dept) {
+        throw new ForbiddenException('Phòng ban không thuộc doanh nghiệp hiện tại.');
+      }
+      departmentName = dept.name;
     }
 
     const code = dto.maNhiemVu || dto.code || `TASK-${Date.now()}`;
@@ -194,7 +199,7 @@ export class TaskService {
       throw new NotFoundException('Không tìm thấy tác vụ');
     }
 
-    if (orgId && task.organizationId !== orgId) {
+    if (!orgId || task.organizationId !== orgId) {
       throw new ForbiddenException('Bạn không có quyền truy cập tác vụ của doanh nghiệp khác.');
     }
 
@@ -207,7 +212,7 @@ export class TaskService {
       throw new NotFoundException('Không tìm thấy tác vụ');
     }
 
-    if (orgId && task.organizationId !== orgId) {
+    if (!orgId || task.organizationId !== orgId) {
       throw new ForbiddenException('Bạn không có quyền thao tác trên tác vụ của doanh nghiệp khác.');
     }
 
@@ -256,7 +261,7 @@ export class TaskService {
       throw new NotFoundException('Không tìm thấy tác vụ');
     }
 
-    if (orgId && task.organizationId !== orgId) {
+    if (!orgId || task.organizationId !== orgId) {
       throw new ForbiddenException('Bạn không có quyền thao tác trên tác vụ của doanh nghiệp khác.');
     }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -315,7 +320,7 @@ export class TaskService {
       throw new NotFoundException('Không tìm thấy tác vụ');
     }
 
-    if (orgId && task.organizationId !== orgId) {
+    if (!orgId || task.organizationId !== orgId) {
       throw new ForbiddenException('Bạn không có quyền thao tác trên tác vụ của doanh nghiệp khác.');
     }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -365,7 +370,7 @@ export class TaskService {
       throw new NotFoundException('Không tìm thấy tác vụ');
     }
 
-    if (orgId && task.organizationId !== orgId) {
+    if (!orgId || task.organizationId !== orgId) {
       throw new ForbiddenException('Bạn không có quyền thao tác trên tác vụ của doanh nghiệp khác.');
     }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });

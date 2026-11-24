@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, OnModuleInit, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit, OnModuleDestroy, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { AIChatMessageDto, AcceptProposalDto, UpdateLegalRuleDto } from './dto/ai-chat.dto';
@@ -28,8 +28,9 @@ interface CachedAnswer {
 }
 
 @Injectable()
-export class AIAssistantService implements OnModuleInit {
+export class AIAssistantService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AIAssistantService.name);
+  private syncIntervalTimer: NodeJS.Timeout | null = null;
 
   // Bộ nhớ đệm thông minh (Cache TTL đúng 30 ngày theo yêu cầu: 2,592,000,000 ms)
   private readonly CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -107,7 +108,17 @@ export class AIAssistantService implements OnModuleInit {
     this.dlplDocsCache.clear();
     this.dlplPenaltiesCache.clear();
     this.logger.log('[CACHE PURGED] Đã khởi tạo và làm sạch toàn bộ bộ nhớ đệm AI Assistant.');
-    this.initBiWeeklySyncSchedule();
+    const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.JEST_WORKER_ID);
+    if (!isTestEnv) {
+      this.initBiWeeklySyncSchedule();
+    }
+  }
+
+  onModuleDestroy() {
+    if (this.syncIntervalTimer) {
+      clearInterval(this.syncIntervalTimer);
+      this.syncIntervalTimer = null;
+    }
   }
 
   /**
@@ -721,8 +732,10 @@ export class AIAssistantService implements OnModuleInit {
     }
     // ------------------------------------------------------------------------
     // BƯỚC 3: NẾU KHO CHƯA CÓ -> TRA CỨU BỘ NHỚ ĐỆM (CACHE HIT 30 NGÀY - 0 API)
+    // Chống đầu độc Cache (Cache Poisoning): bỏ qua queryCache khi request gửi kèm dto.history
     // ------------------------------------------------------------------------
-    const cached = this.queryCache.get(cacheKey);
+    const hasConversationHistory = Array.isArray(dto.history) && dto.history.length > 0;
+    const cached = hasConversationHistory ? undefined : this.queryCache.get(cacheKey);
     if (cached) {
       if (Date.now() - cached.timestamp < this.CACHE_TTL_MS) {
         this.logger.log(`[CACHE HIT - 30 ngày] Phục vụ câu hỏi "${rawMessage}" từ Local Cache (Tốn 0 API call)`);
@@ -817,11 +830,11 @@ export class AIAssistantService implements OnModuleInit {
     const isAlreadyCoveredInLocal = citedSources.length >= 2;
 
     if (hasSpecificDecreeQuery && !isAlreadyCoveredInLocal) {
-      const contextHints = relevantFacts.map((f) => f.currentValue).join(' ');
+      // KHÔNG đính kèm ContextFact nội bộ của doanh nghiệp vào truy vấn gửi sang API DLPL bên thứ 3 hoặc cache dùng chung toàn sàn
       const taxSearchPrefix = 'thuế';
-      const enrichedQuery = `${taxSearchPrefix} ${rawMessage} ${contextHints}`.slice(0, 120);
-      this.logger.log(`[DLPL SEARCH ON-DEMAND] Chỉ tra cứu đơn lẻ văn bản chuyên ngành: "${enrichedQuery}"`);
-      dlplDocs = await this.searchDLPLLegalDocuments(enrichedQuery, 2);
+      const sanitizedQuery = `${taxSearchPrefix} ${rawMessage}`.slice(0, 120);
+      this.logger.log(`[DLPL SEARCH ON-DEMAND] Tra cứu văn bản chuyên ngành (đã tách dữ liệu riêng tư DN): "${sanitizedQuery}"`);
+      dlplDocs = await this.searchDLPLLegalDocuments(sanitizedQuery, 2);
 
       if (dlplDocs.length > 0) {
         dlplGroundingContext += '\nVĂN BẢN PHÁP LUẬT TỪ CỔNG DLPL:\n';
@@ -861,7 +874,8 @@ export class AIAssistantService implements OnModuleInit {
     const apiKey = aiCfg.apiKey;
     const model = aiCfg.model;
     let replyContent = '';
-    let shouldCache = true;
+    // Không lưu vào queryCache 30 ngày nếu câu hỏi có đính kèm history hội thoại (chống đầu độc cache toàn doanh nghiệp)
+    let shouldCache = !hasConversationHistory;
     const endpoint = opencodeApiUrl.endsWith('/chat/completions')
       ? opencodeApiUrl
       : `${opencodeApiUrl.replace(/\/+$/, '')}/chat/completions`;
@@ -1380,13 +1394,16 @@ export class AIAssistantService implements OnModuleInit {
   // TIẾN TRÌNH CRON: TỰ ĐỘNG ĐỒNG BỘ ĐỊNH KỲ 15 NGÀY MỘT LẦN (NGÀY 1 & 15 HÀNG THÁNG)
   // ============================================================================
   private initBiWeeklySyncSchedule() {
-    setInterval(async () => {
+    this.syncIntervalTimer = setInterval(async () => {
       const today = new Date();
       if (today.getDate() === 1 || today.getDate() === 15) {
         this.logger.log(`[CRON JOB - Chu kỳ 15 ngày] Ngày ${today.getDate()}: Quét cập nhật các văn bản/nghị định mới từ API Dữ Liệu Pháp Luật (DLPL)...`);
         await this.syncLegalRulesFromExternalApi();
       }
     }, 24 * 60 * 60 * 1000);
+    if (typeof this.syncIntervalTimer.unref === 'function') {
+      this.syncIntervalTimer.unref();
+    }
   }
 
   async syncLegalRulesFromExternalApi(categories?: string[]) {

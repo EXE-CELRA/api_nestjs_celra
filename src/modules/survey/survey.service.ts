@@ -1,4 +1,4 @@
-import { Injectable, Logger, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, ConflictException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SubmitSurveyDto } from './dto/survey.dto';
 import { ContextGroup, UserRole, MembershipStatus } from '@prisma/client';
@@ -10,9 +10,11 @@ export class SurveyService {
   constructor(private readonly prisma: PrismaService) {}
 
   async submitAnswers(orgId: string, userId: string, dto: SubmitSurveyDto) {
-    let targetOrgId: string | undefined = orgId;
+    let targetOrgId: string | undefined = orgId?.trim() || undefined;
+    let activeMembershipRole: UserRole | null = null;
+    let isNewlyCreatedOrg = false;
 
-    // BẢO VỆ ĐA DOANH NGHIỆP: Xác minh userId có thực sự thuộc về targetOrgId hay không
+    // BẢO VỆ ĐA DOANH NGHIỆP: Xác minh userId có tư cách thành viên ĐANG HOẠT ĐỘNG (active)
     if (targetOrgId && userId) {
       const membership = await this.prisma.membership.findFirst({
         where: { organizationId: targetOrgId, userId },
@@ -20,17 +22,26 @@ export class SurveyService {
       if (!membership) {
         this.logger.warn(`User ${userId} không phải thành viên của organization ${targetOrgId}. Bỏ qua header x-organization-id để tránh ghi đè dữ liệu chéo.`);
         targetOrgId = undefined;
+      } else if (membership.status !== MembershipStatus.active) {
+        // Chặn tuyệt đối nhân sự đã bị thu hồi / expired tự tái kích hoạt qua survey
+        throw new ForbiddenException(
+          'Tư cách thành viên của bạn tại doanh nghiệp này không còn hiệu lực.',
+        );
+      } else {
+        activeMembershipRole = membership.role;
       }
     }
 
     if (!targetOrgId && userId) {
       const userOrg = await this.prisma.membership.findFirst({
-        where: { userId },
+        where: { userId, status: MembershipStatus.active },
       });
       if (userOrg) {
         targetOrgId = userOrg.organizationId;
+        activeMembershipRole = userOrg.role;
       }
     }
+
     if (!targetOrgId) {
       const p = dto.baseProfile;
       const orgName = p?.companyName?.trim() || 'Doanh nghiệp mới';
@@ -44,16 +55,23 @@ export class SurveyService {
       }
 
       if (existingOrg) {
-        // KIỂM TRA QUYỀN SỞ HỮU / THÀNH VIÊN: Ngăn chặn tạo trùng MST dẫn đến gán chéo dữ liệu
-        let isMember = false;
+        // KIỂM TRA QUYỀN SỞ HỮU / THÀNH VIÊN ACTIVE: Ngăn chặn tạo trùng MST hoặc tái kích hoạt membership bị thu hồi
+        let isActiveMember = false;
         if (userId) {
           const mem = await this.prisma.membership.findFirst({
-            where: { organizationId: existingOrg.id, userId },
+            where: {
+              organizationId: existingOrg.id,
+              userId,
+              status: MembershipStatus.active,
+            },
           });
-          if (mem) isMember = true;
+          if (mem) {
+            isActiveMember = true;
+            activeMembershipRole = mem.role;
+          }
         }
 
-        if (!isMember) {
+        if (!isActiveMember) {
           throw new ConflictException(
             `Mã số thuế "${cleanTaxCode}" đã được đăng ký bởi doanh nghiệp "${existingOrg.name}" trên hệ thống CELRA. Mỗi doanh nghiệp chỉ được sử dụng một mã số thuế duy nhất. Vui lòng kiểm tra lại mã số thuế hoặc liên hệ ban quản trị doanh nghiệp.`,
           );
@@ -82,30 +100,25 @@ export class SurveyService {
               create: {
                 balance: 0,
                 heldAmount: 0,
-                currency: 'VND',
+                currency: 'CREDIT',
               },
             },
           },
         });
         targetOrgId = newOrg.id;
-      }
+        isNewlyCreatedOrg = true;
+        activeMembershipRole = UserRole.owner;
 
-      if (userId && targetOrgId) {
-        await this.prisma.membership.upsert({
-          where: {
-            organizationId_userId: {
+        if (userId) {
+          await this.prisma.membership.create({
+            data: {
               organizationId: targetOrgId,
               userId,
+              role: UserRole.owner,
+              status: MembershipStatus.active,
             },
-          },
-          update: { status: MembershipStatus.active },
-          create: {
-            organizationId: targetOrgId,
-            userId,
-            role: UserRole.owner,
-            status: MembershipStatus.active,
-          },
-        });
+          });
+        }
       }
     }
 
@@ -115,61 +128,49 @@ export class SurveyService {
     // 1. Đồng bộ các thông tin nền tảng (Base Profile) vào ContextFact & Organization
     if (dto.baseProfile && targetOrgId) {
       const p = dto.baseProfile;
-      const isQuarterly = p.isNewlyEstablished || (p.annualRevenue || 0) <= 50000000000;
 
-      // Kiểm tra chủ động: Mã số thuế mới có bị trùng với Organization khác hay không
-      if (p.taxCode) {
-        const cleanTax = p.taxCode.trim();
-        const conflictOrg = await this.prisma.organization.findUnique({
-          where: { taxCode: cleanTax },
-          select: { id: true, name: true },
-        });
-        if (conflictOrg && conflictOrg.id !== targetOrgId) {
-          throw new ConflictException(
-            `Mã số thuế "${cleanTax}" đã được đăng ký bởi doanh nghiệp "${conflictOrg.name}" trên hệ thống CELRA. Không thể gán trùng mã số thuế.`,
-          );
+      const canMutateOrgBaseProfile =
+        isNewlyCreatedOrg ||
+        activeMembershipRole === UserRole.owner ||
+        activeMembershipRole === UserRole.admin ||
+        user?.role === UserRole.admin;
+
+      if (canMutateOrgBaseProfile) {
+        // Kiểm tra chủ động: Mã số thuế mới có bị trùng với Organization khác hay không
+        if (p.taxCode) {
+          const cleanTax = p.taxCode.trim();
+          const conflictOrg = await this.prisma.organization.findUnique({
+            where: { taxCode: cleanTax },
+            select: { id: true, name: true },
+          });
+          if (conflictOrg && conflictOrg.id !== targetOrgId) {
+            throw new ConflictException(
+              `Mã số thuế "${cleanTax}" đã được đăng ký bởi doanh nghiệp "${conflictOrg.name}" trên hệ thống CELRA. Không thể gán trùng mã số thuế.`,
+            );
+          }
         }
-      }
 
-      // Cập nhật thông tin thực thể Organization an toàn
-      try {
-        await this.prisma.organization.update({
-          where: { id: targetOrgId },
-          data: {
-            name: p.companyName || undefined,
-            taxCode: p.taxCode || undefined,
-            employeeCount: Number(p.employeeCount) || (p.employeeScale === 'under_10' ? 8 : p.employeeScale === '10_to_50' ? 25 : 60),
-            revenueStatus: p.isNewlyEstablished ? 'newly_established' : (p.annualRevenue || 0) <= 50000000000 ? 'under_50b' : 'over_50b',
-          },
-        });
-      } catch (err: any) {
-        if (err.code === 'P2002' && p.taxCode) {
-          throw new ConflictException(
-            `Mã số thuế "${p.taxCode}" đã được sử dụng bởi một doanh nghiệp khác trên hệ thống CELRA. Không thể gán trùng mã số thuế.`,
-          );
-        } else {
-          this.logger.error('Lỗi cập nhật organization:', err);
-          throw err;
-        }
-      }
-
-      // Đảm bảo user có membership active trong Organization này
-      if (userId && targetOrgId) {
-        await this.prisma.membership.upsert({
-          where: {
-            organizationId_userId: {
-              organizationId: targetOrgId,
-              userId,
+        // Chỉ cho phép thành viên active có vai trò owner/admin ghi đè thông tin cốt lõi của doanh nghiệp đã tồn tại
+        try {
+          await this.prisma.organization.update({
+            where: { id: targetOrgId },
+            data: {
+              name: p.companyName || undefined,
+              taxCode: p.taxCode || undefined,
+              employeeCount: Number(p.employeeCount) || (p.employeeScale === 'under_10' ? 8 : p.employeeScale === '10_to_50' ? 25 : 60),
+              revenueStatus: p.isNewlyEstablished ? 'newly_established' : (p.annualRevenue || 0) <= 50000000000 ? 'under_50b' : 'over_50b',
             },
-          },
-          update: { status: MembershipStatus.active },
-          create: {
-            organizationId: targetOrgId,
-            userId,
-            role: UserRole.owner,
-            status: MembershipStatus.active,
-          },
-        });
+          });
+        } catch (err: any) {
+          if (err.code === 'P2002' && p.taxCode) {
+            throw new ConflictException(
+              `Mã số thuế "${p.taxCode}" đã được sử dụng bởi một doanh nghiệp khác trên hệ thống CELRA. Không thể gán trùng mã số thuế.`,
+            );
+          } else {
+            this.logger.error('Lỗi cập nhật organization:', err);
+            throw err;
+          }
+        }
       }
 
       await this.prisma.contextFact.deleteMany({

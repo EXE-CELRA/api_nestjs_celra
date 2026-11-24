@@ -3,10 +3,11 @@ import {
   BadRequestException,
   NotFoundException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateOrganizationDto, UpdateOrganizationDto } from './dto/organization.dto';
-import { UserRole, ContextStatus, ContextGroup, TaskStatus, Priority, WaitingOnRole } from '@prisma/client';
+import { UserRole, MembershipStatus, ContextStatus, ContextGroup, TaskStatus, Priority, WaitingOnRole } from '@prisma/client';
 
 @Injectable()
 export class OrganizationService {
@@ -123,13 +124,13 @@ export class OrganizationService {
         },
       });
 
-      // 4. Khởi tạo Ví CELRA cho doanh nghiệp
+      // 4. Khởi tạo Ví CELRA cho doanh nghiệp (đơn vị chuẩn CREDIT)
       await tx.wallet.create({
         data: {
           organizationId: org.id,
           balance: 0,
           heldAmount: 0,
-          currency: 'VND',
+          currency: 'CREDIT',
         },
       });
 
@@ -249,7 +250,7 @@ export class OrganizationService {
 
   async getMyOrganizations(userId: string) {
     const memberships = await this.prisma.membership.findMany({
-      where: { userId },
+      where: { userId, status: MembershipStatus.active },
       include: {
         organization: {
           include: {
@@ -314,7 +315,6 @@ export class OrganizationService {
     }
 
     const name = dto.tenDoanhNghiep || dto.name;
-    const shortName = dto.tenVietTat || dto.shortName;
     const employeeCount = dto.soLuongNhanSu !== undefined ? dto.soLuongNhanSu : dto.employeeCount;
     const address = dto.diaChi || dto.address;
     const representativeName = dto.tenNguoiDaiDien || dto.representativeName;
@@ -324,7 +324,6 @@ export class OrganizationService {
       where: { id: orgId },
       data: {
         ...(name !== undefined && { name }),
-        ...(shortName !== undefined && { shortName }),
         ...(employeeCount !== undefined && { employeeCount }),
         ...(address !== undefined && { address }),
         ...(representativeName !== undefined && { representativeName }),
@@ -335,13 +334,28 @@ export class OrganizationService {
     return this.enrichOrgWithVietnamese(updated);
   }
 
-  async resetDemo(userId: string, orgId: string) {
-    const membership = await this.prisma.membership.findFirst({
-      where: { organizationId: orgId, userId, role: { in: [UserRole.owner, UserRole.admin] } },
-    });
+  async resetDemo(userId: string, orgId: string, userRole?: UserRole) {
+    if (process.env.NODE_ENV === 'production' && process.env.ENABLE_DEMO_RESET !== 'true') {
+      throw new ForbiddenException(
+        'Tính năng xóa trắng dữ liệu demo đã bị vô hiệu hóa trên môi trường Production',
+      );
+    }
 
-    if (!membership) {
-      throw new BadRequestException('Bạn không có quyền quản trị để xóa dữ liệu doanh nghiệp này');
+    if (userRole !== UserRole.admin) {
+      const membership = await this.prisma.membership.findFirst({
+        where: {
+          organizationId: orgId,
+          userId,
+          status: MembershipStatus.active,
+          role: { in: [UserRole.owner, UserRole.admin] },
+        },
+      });
+
+      if (!membership) {
+        throw new ForbiddenException(
+          'Bạn không có quyền quản trị hợp lệ để xóa dữ liệu doanh nghiệp này',
+        );
+      }
     }
 
     await this.prisma.organization.delete({

@@ -2,28 +2,52 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { InviteMemberDto, UpdateMemberDto } from './dto/membership.dto';
-import { MembershipStatus } from '@prisma/client';
+import { MembershipStatus, UserRole } from '@prisma/client';
+import { EmailService } from '../auth/email.service';
 
 @Injectable()
 export class MembershipService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly emailService: EmailService,
+  ) {}
 
   async invite(orgId: string, dto: InviteMemberDto) {
+    // Chặn tuyệt đối leo thang đặc quyền lên Super Admin qua endpoint mời thành viên
+    if (dto.role === UserRole.admin) {
+      throw new ForbiddenException('Không được phép gán vai trò Quản trị hệ thống');
+    }
+
+    // Kiểm tra departmentId (nếu có) phải thuộc đúng doanh nghiệp orgId
+    if (dto.departmentId) {
+      const dept = await this.prisma.department.findFirst({
+        where: { id: dto.departmentId, organizationId: orgId },
+      });
+      if (!dept) {
+        throw new BadRequestException('Phòng ban không thuộc doanh nghiệp hiện tại');
+      }
+    }
+
+    const normalizedEmail = dto.email.toLowerCase().trim();
     let user = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase() },
+      where: { email: normalizedEmail },
     });
 
+    let temporaryPassword: string | null = null;
     if (!user) {
-      // Tạo user mới với mật khẩu mặc định 12345678
-      const defaultPasswordHash = await bcrypt.hash('12345678', 10);
+      // Sinh mật khẩu tạm ngẫu nhiên an toàn (CSPRNG 12 ký tự) thay cho mật khẩu cứng yếu
+      temporaryPassword = crypto.randomBytes(9).toString('base64url');
+      const randomPasswordHash = await bcrypt.hash(temporaryPassword, 10);
       user = await this.prisma.user.create({
         data: {
-          email: dto.email.toLowerCase(),
-          passwordHash: defaultPasswordHash,
+          email: normalizedEmail,
+          passwordHash: randomPasswordHash,
           name: dto.name,
           role: dto.role,
           roleTitle: dto.roleTitle || 'Thành viên',
@@ -65,6 +89,11 @@ export class MembershipService {
           },
         },
         department: true,
+        organization: {
+          select: {
+            name: true,
+          },
+        },
       },
     });
 
@@ -74,6 +103,14 @@ export class MembershipService {
         where: { id: dto.departmentId },
         data: { memberCount: { increment: 1 } },
       });
+    }
+
+    // Gửi email chứa mật khẩu tạm ngẫu nhiên cho tài khoản mới tạo
+    if (temporaryPassword) {
+      const orgName = membership.organization?.name || 'Doanh nghiệp CELRA';
+      await this.emailService
+        .sendMemberInviteEmail(normalizedEmail, dto.name || 'Thành viên mới', orgName, temporaryPassword)
+        .catch(() => false);
     }
 
     return membership;
@@ -98,18 +135,35 @@ export class MembershipService {
     });
   }
 
-  async update(membershipId: string, dto: UpdateMemberDto) {
-    const membership = await this.prisma.membership.findUnique({
-      where: { id: membershipId },
+  async update(membershipId: string, orgId: string, dto: UpdateMemberDto) {
+    if (dto.role === UserRole.admin) {
+      throw new ForbiddenException('Không được phép gán vai trò Quản trị hệ thống');
+    }
+
+    const membership = await this.prisma.membership.findFirst({
+      where: { id: membershipId, organizationId: orgId },
     });
 
     if (!membership) {
       throw new NotFoundException('Không tìm thấy thành viên trong tổ chức');
     }
 
+    if (dto.departmentId) {
+      const dept = await this.prisma.department.findFirst({
+        where: { id: dto.departmentId, organizationId: orgId },
+      });
+      if (!dept) {
+        throw new BadRequestException('Phòng ban không thuộc doanh nghiệp hiện tại');
+      }
+    }
+
     return this.prisma.membership.update({
       where: { id: membershipId },
-      data: dto,
+      data: {
+        ...(dto.role !== undefined && { role: dto.role }),
+        ...(dto.roleTitle !== undefined && { roleTitle: dto.roleTitle }),
+        ...(dto.departmentId !== undefined && { departmentId: dto.departmentId }),
+      },
       include: {
         user: {
           select: {
@@ -124,9 +178,9 @@ export class MembershipService {
     });
   }
 
-  async remove(membershipId: string) {
-    const membership = await this.prisma.membership.findUnique({
-      where: { id: membershipId },
+  async remove(membershipId: string, orgId: string) {
+    const membership = await this.prisma.membership.findFirst({
+      where: { id: membershipId, organizationId: orgId },
     });
 
     if (!membership) {
@@ -134,8 +188,8 @@ export class MembershipService {
     }
 
     if (membership.departmentId) {
-      await this.prisma.department.update({
-        where: { id: membership.departmentId },
+      await this.prisma.department.updateMany({
+        where: { id: membership.departmentId, organizationId: orgId, memberCount: { gt: 0 } },
         data: { memberCount: { decrement: 1 } },
       });
     }

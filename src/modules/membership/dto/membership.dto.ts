@@ -1,6 +1,14 @@
-import { IsEmail, IsNotEmpty, IsString, IsEnum, IsOptional } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString, IsIn, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
+
+export const ALLOWED_MEMBER_ROLES: UserRole[] = [
+  UserRole.owner,
+  UserRole.hr_staff,
+  UserRole.internal_accountant,
+  UserRole.service_accountant,
+  UserRole.expert,
+];
 
 export class InviteMemberDto {
   @ApiProperty({ example: 'tranthulan@bepviet.vn', description: 'Email của thành viên' })
@@ -13,8 +21,8 @@ export class InviteMemberDto {
   @IsNotEmpty()
   name!: string;
 
-  @ApiProperty({ enum: UserRole, example: UserRole.hr_staff, description: 'Vai trò trong hệ thống' })
-  @IsEnum(UserRole)
+  @ApiProperty({ enum: ALLOWED_MEMBER_ROLES, example: UserRole.hr_staff, description: 'Vai trò trong doanh nghiệp (không cho phép gán admin toàn hệ thống)' })
+  @IsIn(ALLOWED_MEMBER_ROLES, { message: 'Không được phép gán vai trò Quản trị hệ thống' })
   @IsNotEmpty()
   role!: UserRole;
 
@@ -35,9 +43,9 @@ export class InviteMemberDto {
 }
 
 export class UpdateMemberDto {
-  @ApiPropertyOptional({ enum: UserRole })
+  @ApiPropertyOptional({ enum: ALLOWED_MEMBER_ROLES })
   @IsOptional()
-  @IsEnum(UserRole)
+  @IsIn(ALLOWED_MEMBER_ROLES, { message: 'Không được phép gán vai trò Quản trị hệ thống' })
   role?: UserRole;
 
   @ApiPropertyOptional()

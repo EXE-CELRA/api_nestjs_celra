@@ -14,9 +14,13 @@ export class EmailService {
 
     if (!apiKey || !senderEmail) {
       this.logger.warn(`BREVO_API_KEY hoặc BREVO_SENDER_EMAIL chưa được cấu hình.`);
-      this.logger.warn(`=======================================================`);
-      this.logger.warn(`🔑 [DEV FALLBACK] MÃ OTP ĐĂNG KÝ CHO [${toEmail}]: >>> ${otpCode} <<<`);
-      this.logger.warn(`=======================================================`);
+      const allowDebugOtp =
+        process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEBUG_OTP === 'true';
+      if (allowDebugOtp) {
+        this.logger.warn(`=======================================================`);
+        this.logger.warn(`🔑 [DEV FALLBACK] MÃ OTP ĐĂNG KÝ CHO [${toEmail}]: >>> ${otpCode} <<<`);
+        this.logger.warn(`=======================================================`);
+      }
       return false;
     }
 
@@ -84,9 +88,13 @@ export class EmailService {
 
     if (!apiKey || !senderEmail) {
       this.logger.warn(`BREVO_API_KEY hoặc BREVO_SENDER_EMAIL chưa được cấu hình.`);
-      this.logger.warn(`=======================================================`);
-      this.logger.warn(`🔑 [DEV FALLBACK] MÃ OTP KHÔI PHỤC MẬT KHẨU CHO [${toEmail}]: >>> ${otpCode} <<<`);
-      this.logger.warn(`=======================================================`);
+      const allowDebugOtp =
+        process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEBUG_OTP === 'true';
+      if (allowDebugOtp) {
+        this.logger.warn(`=======================================================`);
+        this.logger.warn(`🔑 [DEV FALLBACK] MÃ OTP KHÔI PHỤC MẬT KHẨU CHO [${toEmail}]: >>> ${otpCode} <<<`);
+        this.logger.warn(`=======================================================`);
+      }
       return false;
     }
 
@@ -143,6 +151,70 @@ export class EmailService {
       return true;
     } catch (error: any) {
       this.logger.error(`Lỗi kết nối tới Brevo API: ${error.message}`);
+      return false;
+    }
+  }
+
+  async sendMemberInviteEmail(
+    toEmail: string,
+    toName: string,
+    orgName: string,
+    tempPassword: string,
+  ): Promise<boolean> {
+    const apiKey = this.configService.get<string>('BREVO_API_KEY');
+    const senderEmail = this.configService.get<string>('BREVO_SENDER_EMAIL');
+    const senderName = this.configService.get<string>('BREVO_SENDER_NAME') || 'CELRA Compliance';
+
+    if (!apiKey || !senderEmail) {
+      this.logger.warn(
+        `BREVO_API_KEY hoặc BREVO_SENDER_EMAIL chưa được cấu hình. Không thể gửi email mời thành viên tới ${toEmail}.`,
+      );
+      return false;
+    }
+
+    const url = 'https://api.brevo.com/v3/smtp/email';
+    const payload = {
+      sender: { name: senderName, email: senderEmail },
+      to: [{ email: toEmail, name: toName || toEmail }],
+      subject: `[CELRA] Bạn được mời tham gia doanh nghiệp ${orgName}`,
+      htmlContent: `
+        <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+          <h2 style="color: #0052cc; text-align: center; margin-bottom: 8px;">Lời Mời Tham Gia Nền Tảng CELRA</h2>
+          <p style="color: #334155; font-size: 14px;">Xin chào <strong>${toName || 'Quý khách'}</strong>,</p>
+          <p style="color: #334155; font-size: 14px;">Bạn vừa được mời tham gia quản trị tuân thủ cùng <strong>${orgName}</strong> trên hệ thống CELRA.</p>
+          <p style="color: #334155; font-size: 14px;">Thông tin đăng nhập tạm thời của bạn:</p>
+          <div style="background-color: #f8fafc; padding: 14px 18px; border-radius: 8px; border: 1px solid #cbd5e1; margin: 16px 0; font-size: 14px;">
+            <div><strong>Email:</strong> ${toEmail}</div>
+            <div style="margin-top: 6px;"><strong>Mật khẩu tạm thời:</strong> <code style="font-size: 15px; color: #0052cc;">${tempPassword}</code></div>
+          </div>
+          <p style="color: #64748b; font-size: 13px; line-height: 1.5;">
+            • Vui lòng đăng nhập và <strong>đổi mật khẩu ngay lập tức</strong> để bảo vệ tài khoản của bạn.
+          </p>
+        </div>
+      `,
+    };
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'accept': 'application/json',
+          'api-key': apiKey,
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (!response.ok) {
+        this.logger.error(`Brevo gửi email mời thành viên thất bại (status ${response.status})`);
+        return false;
+      }
+
+      this.logger.log(`Đã gửi email mời thành viên tới: ${toEmail}`);
+      return true;
+    } catch (error: any) {
+      this.logger.error(`Lỗi kết nối tới Brevo API khi gửi lời mời: ${error.message}`);
       return false;
     }
   }

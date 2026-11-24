@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './database/prisma.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { TransformResponseInterceptor } from './common/interceptors/transform-response.interceptor';
+import { RateLimitGuard } from './common/guards/rate-limit.guard';
 
 // Feature Modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -59,6 +60,11 @@ import { AppService } from './app.service';
   controllers: [AppController],
   providers: [
     AppService,
+    RateLimitGuard,
+    {
+      provide: APP_GUARD,
+      useExisting: RateLimitGuard,
+    },
     {
       provide: APP_FILTER,
       useClass: AllExceptionsFilter,

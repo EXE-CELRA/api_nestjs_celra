@@ -40,9 +40,10 @@ export class SepayWebhookDto {
   @IsString()
   accountNumber!: string;
 
-  @ApiProperty({ example: 'CELRA 8f3d1234' })
+  @ApiPropertyOptional({ example: 'CELRA 8f3d1234' })
+  @IsOptional()
   @IsString()
-  code!: string;
+  code?: string;
 
   @ApiProperty({ example: 'CELRA 8f3d1234 nap tien vi' })
   @IsString()
@@ -54,6 +55,7 @@ export class SepayWebhookDto {
 
   @ApiProperty({ example: 500000 })
   @IsNumber()
+  @Min(10000, { message: 'Số tiền nạp tối thiểu qua SePay/VietQR là 10.000đ' })
   transferAmount!: number;
 
   @ApiProperty({ example: 1000000 })
@@ -63,5 +65,15 @@ export class SepayWebhookDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  subAccount?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   referenceCode?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
 }
