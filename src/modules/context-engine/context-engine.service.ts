@@ -13,7 +13,6 @@ const LEGACY_GROUP_MAP: Record<string, any> = {
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { WalletService } from '../wallet/wallet.service';
 import { CreateContextFactDto, UpdateContextFactDto, GenerateChecklistFromFactDto } from './dto/context-fact.dto';
 import { ContextStatus, TaskStatus, Priority, UserRole, WaitingOnRole } from '@prisma/client';
 import { CORE_LEGAL_DOC_LINKS } from '../../common/constants/legal-docs.constant';
@@ -23,7 +22,6 @@ import { calculateTaxDeadline } from '../../common/utils/tax-deadline.util';
 export class ContextEngineService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly walletService: WalletService,
   ) {}
 
   private enrichFactWithVietnamese(fact: any) {
@@ -157,7 +155,6 @@ export class ContextEngineService {
     const factStatus = dto.trangThai || dto.status || fact.status;
     const factConflict = dto.chiTietXungDot !== undefined ? dto.chiTietXungDot : (dto.conflictDetails !== undefined ? dto.conflictDetails : fact.conflictDetails);
     const factNote = dto.ghiChu || dto.note || 'Cập nhật dữ kiện';
-    const historyVal = fact.key === 'cit_financial_records' ? '[Sổ thu chi TNDN - Lưu trữ tối ưu]' : factVal;
 
     const updated = await this.prisma.contextFact.update({
       where: { id },
@@ -224,9 +221,6 @@ export class ContextEngineService {
       throw new NotFoundException('Không tìm thấy thẻ bối cảnh doanh nghiệp');
     }
     targetOrgId = fact.organizationId;
-
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    const userName = user ? user.name : 'Chủ doanh nghiệp';
 
     // 1. Ghi nhận lượt phân tích thẻ bối cảnh theo gói thuê bao
     await this.prisma.organization.update({

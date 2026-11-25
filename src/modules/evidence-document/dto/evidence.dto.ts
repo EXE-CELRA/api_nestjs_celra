@@ -1,5 +1,5 @@
-import { IsNotEmpty, IsEnum, IsOptional, IsString } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { EvidenceStatus } from '@prisma/client';
 
 export class VerifyEvidenceDto {

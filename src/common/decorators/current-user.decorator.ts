@@ -10,9 +10,3 @@ export const CurrentUser = createParamDecorator(
   },
 );
 
-export const CurrentTenant = createParamDecorator(
-  (_data: unknown, ctx: ExecutionContext) => {
-    const request = ctx.switchToHttp().getRequest();
-    return request.organizationId || request.headers['x-organization-id'] || null;
-  },
-);

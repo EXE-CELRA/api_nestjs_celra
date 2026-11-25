@@ -12,9 +12,6 @@
 import { StatutoryCycleType } from '@prisma/client';
 export { StatutoryCycleType };
 
-// Múi giờ chuẩn Việt Nam (UTC+7)
-export const VN_TIMEZONE = 'Asia/Ho_Chi_Minh';
-
 export function addBusinessDays(startDate: Date, businessDays: number): Date {
   const result = new Date(startDate);
   let added = 0;
@@ -165,21 +162,6 @@ export function adjustForWeekendAndHolidays(
 export function adjustForWeekend(date: Date): Date {
   return adjustForWeekendAndHolidays(date);
 }
-
-/**
- * Điều chỉnh ngày nộp thuế nếu rơi vào Thứ 7 hoặc Chủ Nhật -> tự động dời sang Thứ Hai kế tiếp (khoản 5 Điều 148 Bộ luật Dân sự & Luật Quản lý Thuế)
- */
-export function adjustDeadlineForWeekend(targetDate: Date): Date {
-  const result = new Date(targetDate);
-  const day = result.getDay();
-  if (day === 6) {
-    result.setDate(result.getDate() + 2); // Thứ 7 -> Thứ 2
-  } else if (day === 0) {
-    result.setDate(result.getDate() + 1); // Chủ nhật -> Thứ 2
-  }
-  return result;
-}
-
 
 /**
  * Lấy Period Key chuẩn hóa dùng cho Unique Constraint và chống trùng Task

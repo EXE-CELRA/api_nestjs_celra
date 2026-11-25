@@ -5,7 +5,6 @@ import {
   IsOptional,
   IsDateString,
   IsBoolean,
-  IsNumber,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole, WaitingOnRole, TaskStatus, Priority } from '@prisma/client';

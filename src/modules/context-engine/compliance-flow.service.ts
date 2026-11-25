@@ -5,11 +5,9 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { WalletService } from '../wallet/wallet.service';
 import {
   BatchAuditContextDto,
   ConfirmChecklistsDto,
-  ConfirmChecklistItemDto,
 } from './dto/compliance-flow.dto';
 import {
   StatutoryCycleType,
@@ -24,10 +22,9 @@ import {
   TimelineEventType,
 } from '@prisma/client';
 import * as crypto from 'crypto';
-import { CORE_LEGAL_DOC_LINKS, cleanDLPLUrl, matchCoreLegalDocUrl } from '../../common/constants/legal-docs.constant';
+import { CORE_LEGAL_DOC_LINKS, matchCoreLegalDocUrl } from '../../common/constants/legal-docs.constant';
 import {
   calculateComplianceDeadline,
-  getPeriodKey,
 } from '../../common/utils/tax-calendar.util';
 
 export interface AuditFindingResponse {
@@ -67,7 +64,6 @@ export class ComplianceFlowService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly walletService: WalletService,
   ) {}
 
   /**
@@ -100,9 +96,6 @@ export class ComplianceFlowService {
     if (!org) {
       throw new NotFoundException('Không tìm thấy tổ chức/doanh nghiệp hợp lệ');
     }
-
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    const userName = user ? user.name : 'Chủ doanh nghiệp';
 
     // Lọc danh sách thẻ bối cảnh cần rà soát
     let targetFacts = org.contextFacts;
@@ -156,7 +149,7 @@ export class ComplianceFlowService {
 
     // Đánh giá theo Rule Engine và Bản đồ Luật chính thức đã xác minh
     const verifiedNow = new Date();
-    const evaluationResults = this.evaluateStatutoryObligations(org, targetFacts, verifiedNow);
+    const evaluationResults = this.evaluateStatutoryObligations(org, targetFacts);
 
     // Lưu phiên Audit vào Database
     const audit = await this.prisma.complianceAudit.create({
@@ -378,7 +371,7 @@ export class ComplianceFlowService {
    * Đánh giá các nghĩa vụ Thuế Doanh Nghiệp trọng yếu từ Hồ sơ Doanh nghiệp & ContextFacts
    * Hệ thống tuân thủ định hướng chỉ xử lý rà soát chuyên sâu lĩnh vực Thuế Doanh Nghiệp.
    */
-  private evaluateStatutoryObligations(org: any, facts: any[], verifiedNow: Date) {
+  private evaluateStatutoryObligations(org: any, facts: any[]) {
     const isFnb = (org.industry || '').includes('F&B') || (org.industry || '').includes('ăn uống');
     const isEcom = org.hasOnlineSales || (org.industry || '').includes('ECOMMERCE') || (org.industry || '').includes('bán lẻ');
     const isMonthlyRevenue = org.revenueStatus === 'over_50b';
