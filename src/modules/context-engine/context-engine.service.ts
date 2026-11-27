@@ -45,17 +45,17 @@ export class ContextEngineService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const providedBy = user ? user.name : 'Hệ thống';
 
-    const factKey = dto.khoa || dto.key || 'fact_key';
-    const factLabel = dto.nhan || dto.label || 'Dữ kiện';
-    let factGroup = dto.nhom || dto.group;
+    const factKey = dto.key || 'fact_key';
+    const factLabel = dto.label || 'Dữ kiện';
+    let factGroup = dto.group;
     if (factGroup && LEGACY_GROUP_MAP[factGroup]) {
       factGroup = LEGACY_GROUP_MAP[factGroup];
     }
-    const factVal = dto.giaTriHienTai || dto.currentValue || '';
-    const factSource = dto.nguon || dto.source || 'Hệ thống';
-    const factStatus = dto.trangThai || dto.status || ContextStatus.unconfirmed;
-    const factRules = dto.cacQuyTacLienQuan || dto.affectedRules || [];
-    const factConflict = dto.chiTietXungDot || dto.conflictDetails;
+    const factVal = dto.currentValue || '';
+    const factSource = dto.source || 'Hệ thống';
+    const factStatus = dto.status || ContextStatus.unconfirmed;
+    const factRules = dto.affectedRules || [];
+    const factConflict = dto.conflictDetails;
 
     const fact = await this.prisma.contextFact.create({
       data: {
@@ -151,10 +151,10 @@ export class ContextEngineService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const changedBy = user ? `${user.name} (${user.roleTitle || user.role})` : 'Hệ thống';
 
-    const factVal = dto.giaTriHienTai || dto.currentValue || '';
-    const factStatus = dto.trangThai || dto.status || fact.status;
-    const factConflict = dto.chiTietXungDot !== undefined ? dto.chiTietXungDot : (dto.conflictDetails !== undefined ? dto.conflictDetails : fact.conflictDetails);
-    const factNote = dto.ghiChu || dto.note || 'Cập nhật dữ kiện';
+    const factVal = dto.currentValue || '';
+    const factStatus = dto.status || fact.status;
+    const factConflict = dto.conflictDetails !== undefined ? dto.conflictDetails : fact.conflictDetails;
+    const factNote = dto.note || 'Cập nhật dữ kiện';
 
     const updated = await this.prisma.contextFact.update({
       where: { id },

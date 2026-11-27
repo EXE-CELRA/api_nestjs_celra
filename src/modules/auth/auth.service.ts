@@ -432,7 +432,7 @@ export class AuthService {
       throw new BadRequestException('Mã xác thực OTP không chính xác');
     }
 
-    const rawPassword = dto.matKhauMoi || dto.newPassword;
+    const rawPassword = dto.newPassword;
     if (!rawPassword) {
       throw new BadRequestException('Mật khẩu mới không được để trống');
     }
