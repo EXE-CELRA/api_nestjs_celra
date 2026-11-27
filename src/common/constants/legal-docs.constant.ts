@@ -17,28 +17,18 @@ export const CORE_LEGAL_DOC_LINKS: Record<string, string> = {
   '78/2021': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/thong-tu-782021tt-btc-huong-dan-thuc-hien-luat-quan-ly-thue-nghi-dinh-1232020nd-cp-quy-dinh-ve-hoa-don-chung-tu-do-bo-truong-bo-tai-chinh-ban-hanh-1550.html',
 
   // --------------------------------------------------------------------------
-  // NHÓM 3: LAO ĐỘNG, TIỀN LƯƠNG & CHI PHÍ ĐƯỢC TRỪ
+  // NHÓM 3: THUẾ TNDN, CHI PHÍ ĐƯỢC TRỪ & ĐIỀU KIỆN THANH TOÁN KHÔNG TIỀN MẶT
   // --------------------------------------------------------------------------
   '45/2019': 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/bo-luat-lao-dong-2019-45716.html',
-  '145/2020': 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/nghi-dinh-1452020nd-cp-huong-dan-bo-luat-lao-dong-ve-dieu-kien-lao-dong-va-quan-he-lao-dong-20559.html',
   '96/2015': 'https://dulieuphapluat.vn/van-ban/linh-vuc-khac-van-ban/thong-tu-962015tt-btc-huong-dan-ve-thue-thu-nhap-doanh-nghiep-tai-nghi-dinh-122015nd-cp-quy-dinh-chi-tiet-thi-hanh-luat-sua-doi-bo-sung-mot-so-dieu-cua-cac-luat-ve-thue-va-sua-doi-bo-sung-mot-so-dieu-cua-thong-tu-782014tt-btc-thong-tu-1192014tt-btc-thong-tu-1512014tt-btc-do-bo-truong-bo-tai-chinh-ban-hanh-285496.html',
   '219/2013': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/thong-tu-2192013tt-btc-huong-dan-luat-thue-gia-tri-gia-tang-va-nghi-dinh-2092013nd-cp-do-bo-truong-bo-tai-chinh-ban-hanh-323235.html',
   '111/2013': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/thong-tu-1112013tt-btc-huong-dan-luat-thue-thu-nhap-ca-nhan-va-nghi-dinh-652013nd-cp-do-bo-truong-bo-tai-chinh-ban-hanh-334800.html',
+  '48/2024': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/luat-thue-gia-tri-gia-tang-2024-so-482024qh15-1198651.html',
 
   // --------------------------------------------------------------------------
-  // NHÓM 4: BẢO HIỂM XÃ HỘI & AN TOÀN VỆ SINH LAO ĐỘNG (ATVSLĐ)
-  // --------------------------------------------------------------------------
-  '58/2014': 'https://dulieuphapluat.vn/van-ban/bao-hiem-van-ban/luat-bao-hiem-xa-hoi-2014-301054.html',
-  '84/2015': 'https://dulieuphapluat.vn/van-ban/lao-dong-van-ban/luat-an-toan-ve-sinh-lao-dong-2015-285199.html',
-  '12/2022': 'https://dulieuphapluat.vn/van-ban/vi-pham-hanh-chinh-van-ban/nghi-dinh-122022nd-cp-quy-dinh-xu-phat-vi-pham-hanh-chinh-trong-linh-vuc-lao-dong-bao-hiem-xa-hoi-nguoi-lao-dong-viet-nam-di-lam-viec-o-nuoc-ngoai-theo-hop-dong-1090483.html',
-
-  // --------------------------------------------------------------------------
-  // NHÓM 5: DOANH NGHIỆP, AN TOÀN THỰC PHẨM (F&B) & CHẾ TÀI XỬ PHẠT HÀNH CHÍNH
+  // NHÓM 4: PHÁP LÝ DOANH NGHIỆP & CHẾ TÀI XỬ PHẠT HÀNH CHÍNH THUẾ - HÓA ĐƠN
   // --------------------------------------------------------------------------
   '59/2020': 'https://dulieuphapluat.vn/van-ban/linh-vuc-khac-van-ban/luat-doanh-nghiep-2020-32061.html',
-  '55/2010': 'https://dulieuphapluat.vn/van-ban/thuong-mai-van-ban/luat-an-toan-thuc-pham-2010-467013.html',
-  '15/2018': 'https://dulieuphapluat.vn/van-ban/y-te-van-ban/nghi-dinh-152018nd-cp-huong-dan-luat-an-toan-thuc-pham-84461.html',
-  '115/2018': 'https://dulieuphapluat.vn/van-ban/vi-pham-hanh-chinh-van-ban/nghi-dinh-1152018nd-cp-quy-dinh-xu-phat-vi-pham-hanh-chinh-ve-an-toan-thuc-pham-71453.html',
   '122/2021': 'https://dulieuphapluat.vn/van-ban/vi-pham-hanh-chinh-van-ban/nghi-dinh-1222021nd-cp-quy-dinh-ve-xu-phat-vi-pham-hanh-chinh-trong-linh-vuc-ke-hoach-va-dau-tu-838307.html',
   '125/2020': 'https://dulieuphapluat.vn/van-ban/thue-phi-le-phi-van-ban/nghi-dinh-1252020nd-cp-quy-dinh-ve-xu-phat-vi-pham-hanh-chinh-ve-thue-hoa-don-24591.html',
   '98/2020': 'https://dulieuphapluat.vn/van-ban/thuong-mai-van-ban/nghi-dinh-982020nd-cp-quy-dinh-ve-xu-phat-vi-pham-hanh-chinh-trong-hoat-dong-thuong-mai-san-xuat-buon-ban-hang-gia-hang-cam-va-bao-ve-quyen-loi-nguoi-tieu-dung-27595.html',
@@ -172,13 +162,6 @@ export const CANONICAL_LEGAL_DOCS: Record<string, CanonicalLegalDoc> = {
     docNumber: '80/2021/TT-BTC',
     defaultArticle: 'Điều 86',
     sourceUrl: CORE_LEGAL_DOC_LINKS['80/2021'],
-  },
-  '12/2022': {
-    key: '12/2022',
-    title: 'Nghị định 12/2022/NĐ-CP xử phạt vi phạm hành chính lĩnh vực lao động, BHXH',
-    docNumber: '12/2022/NĐ-CP',
-    defaultArticle: 'Điều 38',
-    sourceUrl: CORE_LEGAL_DOC_LINKS['12/2022'],
   },
   '59/2020': {
     key: '59/2020',

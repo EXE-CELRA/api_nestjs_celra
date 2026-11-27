@@ -183,7 +183,7 @@ export class SurveyService {
         {
           key: 'tax_code',
           label: 'Mã số thuế & Định danh pháp lý',
-          group: 'phap_ly_von',
+          group: ContextGroup.boi_canh_co_so,
           currentValue: p.taxCode ? `${p.taxCode} - ${p.companyName || 'Công ty'}` : '',
           source: 'Khảo sát nền tảng Bước 1',
           affectedRules: ['RULE_TAX_REGISTRATION'],
@@ -191,7 +191,7 @@ export class SurveyService {
         {
           key: 'company_type_tag',
           label: 'Hình thức kinh doanh & Loại hình doanh nghiệp',
-          group: 'phap_ly_von',
+          group: ContextGroup.boi_canh_co_so,
           currentValue: p.companyTypeTag === 'TAG_HKD'
             ? 'Hộ kinh doanh cá thể'
             : p.companyTypeTag === 'TAG_TNHH_1TV'
@@ -200,31 +200,31 @@ export class SurveyService {
             ? 'Công ty Cổ phần'
             : 'Công ty TNHH Hai thành viên trở lên',
           source: 'Khảo sát nền tảng Bước 1',
-          affectedRules: ['RULE_CORPORATE_STRUCTURE'],
+          affectedRules: ['RULE_CIT_LEGAL_TYPE'],
         },
         {
           key: 'charter_capital',
           label: 'Vốn điều lệ đăng ký trên ĐKKD',
-          group: 'phap_ly_von',
+          group: ContextGroup.boi_canh_co_so,
           currentValue: `${Number(p.charterCapital || 0).toLocaleString('vi-VN')} VNĐ`,
           source: 'Khảo sát nền tảng Bước 1',
-          affectedRules: ['RULE_CAPITAL_CONTRIBUTION'],
+          affectedRules: ['RULE_CIT_CAPITAL_INTEREST'],
         },
         {
           key: 'employee_scale',
-          label: 'Quy mô nhân sự',
-          group: 'phap_ly_von',
+          label: 'Quy mô nhân sự & Tiêu chí SME (Thuế TNDN)',
+          group: ContextGroup.boi_canh_co_so,
           currentValue: `${p.employeeCount || (p.employeeScale === 'under_10' ? 8 : p.employeeScale === '10_to_50' ? 25 : 60)} nhân sự`,
           source: 'Khảo sát nền tảng Bước 1',
-          affectedRules: p.requiresLaborRuleBook ? ['RULE_LABOR_MANDATORY_REGISTRATION'] : ['RULE_LABOR_GENERAL'],
+          affectedRules: ['RULE_CIT_SME_SCALE'],
         },
         {
           key: 'industry_tags',
           label: 'Ngành nghề & Hoạt động kinh doanh thực tế',
-          group: 'nganh_nghe_van_hanh',
+          group: ContextGroup.boi_canh_co_so,
           currentValue: Array.isArray(p.industryTags) ? p.industryTags.join(', ') : '',
           source: 'Khảo sát nền tảng Bước 1',
-          affectedRules: Array.isArray(p.industryTags) ? p.industryTags.map((t: string) => `RULE_${t}`) : ['RULE_FNB_OPERATIONS'],
+          affectedRules: Array.isArray(p.industryTags) ? p.industryTags.map((t: string) => `RULE_${t}`) : ['RULE_CIT_INDUSTRY'],
         },
       ];
 
@@ -236,6 +236,7 @@ export class SurveyService {
           await this.prisma.contextFact.update({
             where: { id: exist.id },
             data: {
+              group: bf.group,
               currentValue: bf.currentValue,
               source: bf.source,
               status: 'confirmed',
@@ -248,7 +249,7 @@ export class SurveyService {
               organizationId: targetOrgId,
               key: bf.key,
               label: bf.label,
-              group: bf.group as any,
+              group: bf.group,
               currentValue: bf.currentValue,
               source: bf.source,
               providedBy: answeredBy,
@@ -267,7 +268,7 @@ export class SurveyService {
       }
     }
 
-    // 2. Đồng bộ các câu hỏi tình huống Dynamic vào ContextFact
+    // 2. Đồng bộ các câu hỏi tình huống Thuế TNDN vào ContextFact
     if (Array.isArray(dto.questions) && dto.questions.length > 0 && targetOrgId) {
       const submittedKeys = dto.questions.map((q: any) => q.id);
       await this.prisma.contextFact.deleteMany({
@@ -280,7 +281,6 @@ export class SurveyService {
             { key: { startsWith: 'q_ecom_' } },
             { key: { startsWith: 'comp_type_' } },
             { key: { startsWith: 'ind_fnb_' } },
-            { key: { startsWith: 'labor_scale_' } },
             {
               AND: [
                 { key: { startsWith: 'q_' } },
@@ -293,61 +293,8 @@ export class SurveyService {
 
       for (const q of dto.questions) {
         const factKey = q.id;
-
-        // Phân loại nhóm bối cảnh chuẩn xác theo từng Module bao quát 100%
-        let group: ContextGroup = 'thue_ke_toan';
-        if (q.moduleId === 'MODULE_INVOICE_CASHFLOW') {
-          group = 'hoa_don_dong_tien';
-        } else if (q.moduleId === 'MODULE_TAX_CORE') {
-          group = 'thue_ke_toan';
-        } else if (q.moduleId === 'MODULE_LABOR_HR') {
-          group = 'lao_dong_bhxh';
-        } else if (q.moduleId === 'MODULE_PREMISES_PCCC') {
-          group = 'dia_diem_pccc';
-        } else if (q.moduleId === 'MODULE_CONTRACTS') {
-          group = 'hop_dong';
-        } else if (q.moduleId === 'MODULE_DATA_IP' || q.moduleId === 'MODULE_ECOM_DATA_PRIVACY') {
-          group = 'du_lieu_shtt';
-        } else if (q.moduleId === 'MODULE_LICENSING_ATTP' || q.moduleId === 'MODULE_LICENSING_CON') {
-          group = 'giay_phep_con';
-        } else if (q.moduleId === 'MODULE_LEGAL_CORP' || q.id === 'q_corp_capital_90d' || q.id === 'q_corp_amend_10d') {
-          group = 'phap_ly_von';
-        } else if (
-          q.id?.includes('inv') ||
-          q.id?.includes('cashflow') ||
-          q.title?.toLowerCase().includes('hóa đơn') ||
-          q.title?.toLowerCase().includes('doanh thu') ||
-          q.id === 'q_tax_corp_3'
-        ) {
-          group = 'hoa_don_dong_tien';
-        } else if (q.id?.startsWith('q_tax')) {
-          group = 'thue_ke_toan';
-        } else if (q.branchType === 'labor_scale') {
-          group = 'lao_dong_bhxh';
-        } else if (q.branchType === 'company_type') {
-          group = 'phap_ly_von';
-        } else {
-          group = 'nganh_nghe_van_hanh';
-        }
-
-        const moduleTag =
-          group === 'thue_ke_toan'
-            ? 'Thuế Doanh Nghiệp'
-            : group === 'hoa_don_dong_tien'
-            ? 'Hóa Đơn & Dòng Tiền'
-            : group === 'lao_dong_bhxh'
-            ? 'Lao Động & BHXH'
-            : group === 'dia_diem_pccc'
-            ? 'Địa Điểm & PCCC'
-            : group === 'hop_dong'
-            ? 'Hợp Đồng & Giao Kết'
-            : group === 'du_lieu_shtt'
-            ? 'Dữ Liệu & Sở Hữu Trí Tuệ'
-            : group === 'giay_phep_con'
-            ? 'Giấy Phép Con'
-            : group === 'phap_ly_von'
-            ? 'Pháp Lý Doanh Nghiệp & Vốn'
-            : q.branchLabel || q.branchCode || 'Khảo sát tình huống';
+        const group: ContextGroup = ContextGroup.thue_ke_toan;
+        const moduleTag = 'Thuế TNDN';
 
         const exist = await this.prisma.contextFact.findFirst({
           where: { organizationId: targetOrgId, key: factKey },
@@ -363,7 +310,7 @@ export class SurveyService {
             data: {
               currentValue: val,
               label: q.title,
-              group: group as any,
+              group,
               source,
               affectedRules,
               history: {
@@ -381,7 +328,7 @@ export class SurveyService {
               organizationId: targetOrgId,
               key: factKey,
               label: q.title,
-              group: group as any,
+              group,
               currentValue: val,
               source,
               providedBy: answeredBy,

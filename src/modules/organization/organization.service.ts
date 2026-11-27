@@ -12,29 +12,8 @@ import { UserRole, ContextStatus, ContextGroup, TaskStatus, Priority, WaitingOnR
 export class OrganizationService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private enrichOrgWithVietnamese(org: any) {
-    if (!org) return org;
-    return {
-      ...org,
-      tenDoanhNghiep: org.name,
-      maSoThue: org.taxCode,
-      loaiHinhPhapLy: org.legalType,
-      nganhNghe: org.industry,
-      moHinhKinhDoanh: org.businessModel,
-      soNamHoatDong: org.operatingYears,
-      tinhTrangDoanhThu: org.revenueStatus,
-      soLuongNhanSu: org.employeeCount,
-      diaDiemKinhDoanh: org.locations,
-      coBanHangOnline: org.hasOnlineSales,
-      diaChi: org.address,
-      tenNguoiDaiDien: org.representativeName,
-      taoLuc: org.createdAt,
-      capNhatLuc: org.updatedAt,
-    };
-  }
-
   async create(userId: string, dto: CreateOrganizationDto) {
-    const taxCode = dto.maSoThue || dto.taxCode;
+    const taxCode = dto.taxCode;
     if (!taxCode) {
       throw new BadRequestException('Mã số thuế không được để trống');
     }
@@ -49,19 +28,19 @@ export class OrganizationService {
       );
     }
 
-    const companyName = dto.tenDoanhNghiep || dto.name || dto.legalName || 'Doanh nghiệp mới';
-    const city = dto.thanhPho || dto.city || 'TP. Hồ Chí Minh';
-    const legalType = dto.loaiHinhPhapLy || dto.legalType || 'Công ty TNHH';
-    const industry = dto.nganhNghe || dto.industry || 'Dịch vụ ăn uống';
-    const businessModel = dto.moHinhKinhDoanh || dto.businessModel || 'Trực tiếp tại cơ sở và trực tuyến';
-    const operatingYears = dto.soNamHoatDong || dto.operatingYears || '1 - 3 năm';
-    const revenueStatus = dto.tinhTrangDoanhThu || dto.revenueStatus || 'Đã phát sinh doanh thu';
-    const employeeCount = dto.soLuongNhanSu !== undefined ? dto.soLuongNhanSu : (dto.employeeCount || 5);
-    const locations = dto.diaDiemKinhDoanh || dto.locations || city;
-    const hasOnlineSales = dto.coBanHangOnline !== undefined ? dto.coBanHangOnline : (dto.hasOnlineSales || false);
-    const address = dto.diaChi || dto.address || city;
-    const representativeName = dto.tenNguoiDaiDien || dto.representativeName || companyName;
-    const registrantRole = dto.vaiTroDangKy || dto.registrantRole || 'Chủ doanh nghiệp';
+    const companyName = dto.name || dto.legalName || 'Doanh nghiệp mới';
+    const city = dto.city || 'TP. Hồ Chí Minh';
+    const legalType = dto.legalType || 'Công ty TNHH';
+    const industry = dto.industry || 'Dịch vụ ăn uống';
+    const businessModel = dto.businessModel || 'Trực tiếp tại cơ sở và trực tuyến';
+    const operatingYears = dto.operatingYears || '1 - 3 năm';
+    const revenueStatus = dto.revenueStatus || 'Đã phát sinh doanh thu';
+    const employeeCount = dto.employeeCount || 5;
+    const locations = dto.locations || city;
+    const hasOnlineSales = dto.hasOnlineSales || false;
+    const address = dto.address || city;
+    const representativeName = dto.representativeName || companyName;
+    const registrantRole = dto.registrantRole || 'Chủ doanh nghiệp';
 
     return this.prisma.$transaction(async (tx) => {
       // 1. Tạo Doanh nghiệp
@@ -83,31 +62,31 @@ export class OrganizationService {
         },
       });
 
-      // 2. Tạo 3 phòng ban mặc định
-      const hrDept = await tx.department.create({
+      // 2. Tạo 3 phòng ban mặc định phục vụ quản trị & kế toán thuế TNDN
+      const adminDept = await tx.department.create({
         data: {
           organizationId: org.id,
-          name: 'Phòng Nhân sự & Lao động',
-          code: 'HR',
-          description: 'Phụ trách hợp đồng lao động, BHXH và nhân sự',
+          name: 'Ban Giám đốc & Quản trị',
+          code: 'ADM',
+          description: 'Phê duyệt hồ sơ pháp nhân, ký số tờ khai và quyết toán thuế TNDN',
         },
       });
 
       const accDept = await tx.department.create({
         data: {
           organizationId: org.id,
-          name: 'Phòng Kế toán & Tài chính',
+          name: 'Phòng Kế toán & Thuế TNDN',
           code: 'ACC',
-          description: 'Phụ trách hóa đơn, đối chiếu dòng tiền và thuế',
+          description: 'Phụ trách sổ thu chi, bóc tách chi phí Mục B4 và kê khai thuế TNDN',
         },
       });
 
-      const opsDept = await tx.department.create({
+      await tx.department.create({
         data: {
           organizationId: org.id,
-          name: 'Phòng Vận hành & Cơ sở',
+          name: 'Bộ phận Chứng từ & Thanh toán',
           code: 'OPS',
-          description: 'Phụ trách cơ sở kinh doanh, ATTP và giấy phép con',
+          description: 'Tập hợp hóa đơn đầu vào, ủy nhiệm chi ngân hàng và bảng kê chi phí',
         },
       });
 
@@ -118,7 +97,7 @@ export class OrganizationService {
           userId,
           role: UserRole.owner,
           roleTitle: registrantRole,
-          departmentId: hrDept.id,
+          departmentId: adminDept.id,
           permissions: ['all'],
         },
       });
@@ -133,18 +112,14 @@ export class OrganizationService {
         },
       });
 
-      // 5. Tự động sinh 9 Dữ Kiện Ngữ Cảnh (Context Facts) từ Step 1 & Step 2
+      // 5. Tự động sinh các Dữ Kiện Ngữ Cảnh (Context Facts) cốt lõi cho Hồ sơ cơ sở & Thuế TNDN
       const user = await tx.user.findUnique({ where: { id: userId } });
       const providedBy = user ? user.name : 'Hệ thống';
 
-      const accountingRegime = dto.cheDoKeToan || dto.accountingRegime || 'TT133';
-      const vatMethod = dto.phuongPhapVat || dto.vatMethod || 'KHAU_TRU';
-      const taxCycle = dto.kyKhaiThue || dto.taxCycle || 'QUY';
-      const hasLaborContractAndInsurance = dto.hopDongVaBaoHiem || dto.hasLaborContractAndInsurance || 'DA_DONG_DU';
-      const hasElectronicInvoice = dto.coHoaDonDienTu !== undefined ? dto.coHoaDonDienTu : (dto.hasElectronicInvoice ?? true);
-      const hasFireSafetyCert = dto.coChungNhanPccc !== undefined ? dto.coChungNhanPccc : (dto.hasFireSafetyCert ?? true);
-      const hasSectoralPermit = dto.coGiayPhepCon !== undefined ? dto.coGiayPhepCon : (dto.hasSectoralPermit ?? true);
-      const hasTrademarkRegistered = dto.coDangKyNhanHieu !== undefined ? dto.coDangKyNhanHieu : (dto.hasTrademarkRegistered ?? false);
+      const accountingRegime = dto.accountingRegime || 'TT133';
+      const vatMethod = dto.vatMethod || 'KHAU_TRU';
+      const taxCycle = dto.taxCycle || 'QUY';
+      const hasElectronicInvoice = dto.hasElectronicInvoice ?? true;
 
       const initialFacts: Array<{
         key: string;
@@ -155,64 +130,36 @@ export class OrganizationService {
       }> = [
         {
           key: 'tax.accounting_regime',
-          label: 'Chế độ kế toán áp dụng',
+          label: 'Chế độ kế toán áp dụng (Xác định chi phí TNDN)',
           group: ContextGroup.thue_ke_toan,
           currentValue: accountingRegime,
           source: 'Khai báo Onboarding',
         },
         {
           key: 'tax.vat_method',
-          label: 'Phương pháp kê khai thuế GTGT',
+          label: 'Phương pháp hạch toán thuế & hóa đơn đầu vào',
           group: ContextGroup.thue_ke_toan,
           currentValue: vatMethod,
           source: 'Khai báo Onboarding',
         },
         {
           key: 'tax.tax_cycle',
-          label: 'Kỳ kê khai thuế',
+          label: 'Kỳ tạm nộp & đối soát thuế TNDN',
           group: ContextGroup.thue_ke_toan,
           currentValue: taxCycle,
           source: 'Khai báo Onboarding',
         },
         {
           key: 'invoice.electronic_invoice',
-          label: 'Sử dụng Hóa đơn điện tử (NĐ 123)',
-          group: ContextGroup.hoa_don_dong_tien,
+          label: 'Hóa đơn điện tử hợp pháp phục vụ chi phí được trừ TNDN',
+          group: ContextGroup.thue_ke_toan,
           currentValue: hasElectronicInvoice ? 'Đã kích hoạt sử dụng' : 'Chưa đăng ký',
           source: 'Khai báo Onboarding',
         },
         {
-          key: 'labor.insurance_status',
-          label: 'Trích nộp BHXH bắt buộc',
-          group: ContextGroup.lao_dong_bhxh,
-          currentValue: hasLaborContractAndInsurance,
-          source: 'Khai báo Onboarding',
-        },
-        {
-          key: 'safety.fire_prevention',
-          label: 'Hồ sơ quản lý PCCC cơ sở',
-          group: ContextGroup.dia_diem_pccc,
-          currentValue: hasFireSafetyCert ? 'Đạt chuẩn PCCC cơ sở' : 'Chưa có phương án PCCC',
-          source: 'Khai báo Onboarding',
-        },
-        {
-          key: 'permit.sectoral_license',
-          label: 'Giấy phép con theo ngành nghề',
-          group: ContextGroup.giay_phep_con,
-          currentValue: hasSectoralPermit ? 'Có yêu cầu giấy phép con' : 'Không thuộc ngành nghề có điều kiện',
-          source: 'Khai báo Onboarding',
-        },
-        {
-          key: 'ip.trademark_registration',
-          label: 'Đăng ký bảo hộ nhãn hiệu / Logo',
-          group: ContextGroup.du_lieu_shtt,
-          currentValue: hasTrademarkRegistered ? 'Đã đăng ký tại Cục SHTT' : 'Chưa bảo hộ độc quyền',
-          source: 'Khai báo Onboarding',
-        },
-        {
           key: 'legal.entity_profile',
-          label: 'Pháp nhân & Địa bàn hoạt động',
-          group: ContextGroup.phap_ly_von,
+          label: 'Pháp nhân & Địa bàn xét ưu đãi thuế TNDN',
+          group: ContextGroup.boi_canh_co_so,
           currentValue: `${legalType} - ${city}`,
           source: 'Khai báo Onboarding',
         },
@@ -243,7 +190,7 @@ export class OrganizationService {
       // 6. Theo chuẩn Prototype: Không tự ý sinh task/checklist khi chưa qua Rà soát tuân thủ
       // Danh mục Tác vụ (Tasks) ban đầu luôn luôn rỗng (tasks = [])
 
-      return this.enrichOrgWithVietnamese(org);
+      return org;
     });
   }
 
@@ -261,20 +208,13 @@ export class OrganizationService {
       },
     });
 
-    return memberships.map((m) => {
-      const enrichedOrg = this.enrichOrgWithVietnamese(m.organization);
-      return {
-        ...enrichedOrg,
-        legalName: m.organization.name,
-        tenDoanhNghiep: m.organization.name,
-        myRole: m.role,
-        vaiTroCuaToi: m.role,
-        myRoleTitle: m.roleTitle,
-        chucDanhCuaToi: m.roleTitle,
-        myDepartment: m.department,
-        phongBanCuaToi: m.department,
-      };
-    });
+    return memberships.map((m) => ({
+      ...m.organization,
+      legalName: m.organization.name,
+      myRole: m.role,
+      myRoleTitle: m.roleTitle,
+      myDepartment: m.department,
+    }));
   }
 
   async getOne(orgId: string) {
@@ -304,7 +244,7 @@ export class OrganizationService {
       throw new NotFoundException('Không tìm thấy thông tin doanh nghiệp');
     }
 
-    return this.enrichOrgWithVietnamese(org);
+    return org;
   }
 
   async update(orgId: string, dto: UpdateOrganizationDto) {
@@ -313,26 +253,18 @@ export class OrganizationService {
       throw new NotFoundException('Không tìm thấy thông tin doanh nghiệp');
     }
 
-    const name = dto.tenDoanhNghiep || dto.name;
-    const shortName = dto.tenVietTat || dto.shortName;
-    const employeeCount = dto.soLuongNhanSu !== undefined ? dto.soLuongNhanSu : dto.employeeCount;
-    const address = dto.diaChi || dto.address;
-    const representativeName = dto.tenNguoiDaiDien || dto.representativeName;
-    const hasOnlineSales = dto.coBanHangOnline !== undefined ? dto.coBanHangOnline : dto.hasOnlineSales;
-
     const updated = await this.prisma.organization.update({
       where: { id: orgId },
       data: {
-        ...(name !== undefined && { name }),
-        ...(shortName !== undefined && { shortName }),
-        ...(employeeCount !== undefined && { employeeCount }),
-        ...(address !== undefined && { address }),
-        ...(representativeName !== undefined && { representativeName }),
-        ...(hasOnlineSales !== undefined && { hasOnlineSales }),
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.employeeCount !== undefined && { employeeCount: dto.employeeCount }),
+        ...(dto.address !== undefined && { address: dto.address }),
+        ...(dto.representativeName !== undefined && { representativeName: dto.representativeName }),
+        ...(dto.hasOnlineSales !== undefined && { hasOnlineSales: dto.hasOnlineSales }),
       },
     });
 
-    return this.enrichOrgWithVietnamese(updated);
+    return updated;
   }
 
   async resetDemo(userId: string, orgId: string) {

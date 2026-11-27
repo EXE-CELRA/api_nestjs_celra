@@ -204,7 +204,7 @@ export class AIAssistantService implements OnModuleInit, OnModuleDestroy {
     const rawMessage = (dto.message || dto.question || '').trim();
     if (!rawMessage) {
       const welcome =
-        'Xin chào! Tôi là Trợ Lý Pháp Lý & Thuế Doanh Nghiệp CELRA. Bạn cần giải đáp câu hỏi nào về thuế môn bài, thuế GTGT, tạm nộp TNDN, chi phí lương hay quy định pháp lý nào?';
+        'Xin chào! Tôi là Trợ Lý Chuyên Sâu Thuế TNDN CELRA. Bạn cần giải đáp câu hỏi nào về tạm nộp thuế TNDN 80%, quyết toán Mẫu 03/TNDN, bóc tách chi phí được trừ Mục B4 hay ưu đãi thuế suất TNDN?';
       return {
         messageId: `msg-${Date.now()}`,
         sender: 'assistant',

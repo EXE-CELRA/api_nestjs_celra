@@ -152,32 +152,32 @@ export class AdminFinanceService {
       }),
     ]);
 
-    // Thống kê rủi ro pháp lý phổ biến nhất
+    // Thống kê rủi ro tuân thủ Thuế TNDN phổ biến nhất
     const commonRisks = [
       {
-        ruleCode: 'RULE-THUE-80',
-        title: 'Thiếu tạm nộp 80% thuế TNDN 4 quý',
+        ruleCode: 'RULE-TAX-TNDN-80',
+        title: 'Thiếu tạm nộp 80% thuế TNDN 4 quý (Nguy cơ phạt chậm nộp 0,03%/ngày)',
         affectedPercent: 72,
         warningCount: Math.round(totalOrgs * 0.72) || 1,
         severity: 'HIGH',
       },
       {
-        ruleCode: 'RULE-HD-01',
-        title: 'Chưa xuất hóa đơn điện tử từng lần qua máy tính tiền POS',
+        ruleCode: 'RULE-CIT-B4-CASH',
+        title: 'Chi phí ≥ 5 triệu đồng thanh toán tiền mặt bị loại khỏi chi phí được trừ (Mục B4)',
         affectedPercent: 54,
         warningCount: Math.round(totalOrgs * 0.54) || 1,
         severity: 'HIGH',
       },
       {
-        ruleCode: 'RULE-LD-02',
-        title: 'Thiếu phụ lục hợp đồng lao động & đóng thiếu BHXH bắt buộc',
+        ruleCode: 'RULE-CIT-B4-INVOICE',
+        title: 'Khoản chi thiếu hóa đơn điện tử hợp pháp bị xuất toán khi quyết toán 03/TNDN',
         affectedPercent: 38,
         warningCount: Math.round(totalOrgs * 0.38) || 1,
         severity: 'MEDIUM',
       },
       {
-        ruleCode: 'RULE-MONBAI-01',
-        title: 'Chưa nộp hoặc nộp chậm tờ khai Lệ phí môn bài',
+        ruleCode: 'RULE-TAX-FCT-10D',
+        title: 'Chi phí quảng cáo xuyên biên giới chưa khấu trừ thuế nhà thầu (FCT)',
         affectedPercent: 21,
         warningCount: Math.round(totalOrgs * 0.21) || 1,
         severity: 'LOW',

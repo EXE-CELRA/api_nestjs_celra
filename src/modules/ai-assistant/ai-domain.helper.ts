@@ -82,10 +82,10 @@ export function isTaxOrEnterpriseDomain(raw: string): boolean {
       'co phan', 'f&b', 'sme', 'ban le', 'thuong mai dien tu', 'shopee', 'tiktok', 'cod',
       'dai dien phap luat', 'chu so huu', 'ho kinh doanh',
     ],
-    // 5. Lao động, tiền lương gắn với chi phí & thuế TNCN doanh nghiệp
+    // 5. Chi phí tiền lương, thù lao phục vụ xác định chi phí hợp lý được trừ khi tính Thuế TNDN
     [
       'luong', 'tien luong', 'nhan su', 'nhan vien', 'nguoi lao dong', 'hop dong lao dong',
-      'hdld', 'nguoi phu thuoc', 'giam tru gia canh', 'bhxh', 'bao hiem xa hoi', 'bao hiem y te',
+      'hdld', 'nguoi phu thuoc', 'giam tru gia canh',
     ],
     // 6. Tuân thủ, rà soát, rủi ro, pháp luật
     [
@@ -101,12 +101,12 @@ export function isTaxOrEnterpriseDomain(raw: string): boolean {
 export function buildOutOfScopeRejectionResponse() {
   const rejectionReply =
     `**TỪ CHỐI TRẢ LỜI — CÂU HỎI NGOÀI PHẠM VI CHUYÊN MÔN:**\n\n` +
-    `Rất tiếc, tôi là **CELRA AI — Trợ lý Rà soát Tuân thủ Thuế Doanh nghiệp** tại Việt Nam. Tôi chỉ hỗ trợ giải đáp các câu hỏi chuyên sâu về **Doanh nghiệp và Pháp luật Thuế**.\n\n` +
+    `Rất tiếc, tôi là **CELRA AI — Trợ lý Rà soát Tuân thủ Thuế Doanh nghiệp** (chuyên sâu Thuế TNDN) tại Việt Nam. Tôi chỉ hỗ trợ giải đáp các câu hỏi chuyên sâu về **Thuế Thu nhập doanh nghiệp (TNDN) và Chứng từ chi phí hợp lệ**.\n\n` +
     `Câu hỏi của bạn hiện nằm ngoài phạm vi hỗ trợ của hệ thống. Bạn vui lòng đặt câu hỏi liên quan đến:\n` +
-    `- **Nghĩa vụ thuế doanh nghiệp**: Lệ phí môn bài, Thuế TNDN tạm nộp 80%, Thuế GTGT, Thuế TNCN.\n` +
-    `- **Hóa đơn & Chứng từ**: Hóa đơn điện tử máy tính tiền, điều kiện thanh toán không dùng tiền mặt, chi phí hợp lý được trừ.\n` +
-    `- **Kỳ kê khai & Thời hạn tuân thủ**: Lịch nộp tờ khai và tiền thuế định kỳ theo tháng/quý/năm của doanh nghiệp.\n` +
-    `- **Rà soát & Đánh giá rủi ro tuân thủ**: Rà soát nghĩa vụ và kiểm tra hồ sơ thuế thực tế của công ty bạn.`;
+    `- **Nghĩa vụ Thuế TNDN**: Thuế suất TNDN (15%/17%/20%), tạm nộp 4 quý tối thiểu 80%, quyết toán năm Mẫu 03/TNDN.\n` +
+    `- **Chi phí được trừ & Mục B4**: Hóa đơn hợp pháp, điều kiện chuyển khoản từ 5 triệu đồng, chi phí lương và khấu trừ FCT.\n` +
+    `- **Kỳ kê khai & Thời hạn tuân thủ**: Lịch tạm nộp thuế TNDN hàng quý và quyết toán năm của doanh nghiệp.\n` +
+    `- **Rà soát & Đánh giá rủi ro tuân thủ**: Rà soát nghĩa vụ và kiểm tra hồ sơ thuế TNDN thực tế của công ty bạn.`;
 
   return {
     messageId: `msg-${Date.now()}`,

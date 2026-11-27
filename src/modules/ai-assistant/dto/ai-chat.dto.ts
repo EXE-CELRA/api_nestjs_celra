@@ -13,12 +13,12 @@ export class ChatHistoryItemDto {
   content!: string;
 }
 export class AIChatMessageDto {
-  @ApiPropertyOptional({ example: 'Doanh nghiệp tôi F&B có 5 nhân sự thì cần làm gì về hợp đồng lao động và BHXH?' })
+  @ApiPropertyOptional({ example: 'Doanh nghiệp tôi F&B doanh thu 2.5 tỷ thì áp dụng thuế suất TNDN bao nhiêu %?' })
   @IsOptional()
   @IsString()
   message?: string;
 
-  @ApiPropertyOptional({ example: 'Doanh nghiệp tôi F&B có 5 nhân sự thì cần làm gì về thuế TNDN?' })
+  @ApiPropertyOptional({ example: 'Doanh nghiệp tôi F&B có khoản chi 8 triệu trả tiền mặt có bị loại Mục B4 thuế TNDN không?' })
   @IsOptional()
   @IsString()
   question?: string;
@@ -42,7 +42,7 @@ export class AcceptProposalDto {
   @IsString()
   proposalId?: string;
 
-  @ApiProperty({ example: 'Rà soát hợp đồng lao động & đóng BHXH bắt buộc' })
+  @ApiProperty({ example: 'Tạm nộp thuế TNDN Quý đạt tối thiểu 80% quyết toán năm' })
   @IsString()
   @IsNotEmpty()
   title!: string;
@@ -52,7 +52,7 @@ export class AcceptProposalDto {
   @IsNotEmpty()
   code!: string;
 
-  @ApiProperty({ example: 'Lao động & BHXH' })
+  @ApiProperty({ example: 'Thuế TNDN' })
   @IsString()
   @IsNotEmpty()
   category!: string;
@@ -61,17 +61,17 @@ export class AcceptProposalDto {
   @IsNotEmpty()
   priority!: Priority;
 
-  @ApiProperty({ example: 'Phát hiện thiếu điều khoản BHXH bắt buộc cho nhân sự' })
+  @ApiProperty({ example: 'Cần đối soát chi phí được trừ và tạm nộp đủ ngưỡng 80% thuế TNDN' })
   @IsString()
   @IsNotEmpty()
   reason!: string;
 
-  @ApiProperty({ example: 'Bộ luật Lao động 2019 và Luật BHXH 2014' })
+  @ApiProperty({ example: 'Khoản 3 Điều 1 Nghị định 91/2022/NĐ-CP và Điều 4 Thông tư 96/2015/TT-BTC' })
   @IsString()
   @IsNotEmpty()
   legalBasis!: string;
 
-  @ApiPropertyOptional({ enum: UserRole, default: UserRole.hr_staff })
+  @ApiPropertyOptional({ enum: UserRole, default: UserRole.internal_accountant })
   @IsOptional()
   assigneeRole?: UserRole;
 }
@@ -102,7 +102,7 @@ export class UpdateLegalRuleDto {
   @IsString()
   conditionSummary?: string;
 
-  @ApiPropertyOptional({ example: 'Quy định thuế môn bài mới' })
+  @ApiPropertyOptional({ example: 'Quy định tạm nộp thuế TNDN 80% và quyết toán Mẫu 03/TNDN' })
   @IsOptional()
   @IsString()
   title?: string;

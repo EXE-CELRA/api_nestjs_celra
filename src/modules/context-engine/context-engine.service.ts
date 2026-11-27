@@ -1,23 +1,18 @@
-
-const LEGACY_GROUP_MAP: Record<string, any> = {
-  tax_accounting: 'thue_ke_toan',
-  legal: 'phap_ly_von',
-  operations: 'nganh_nghe_van_hanh',
-  revenue_invoices: 'hoa_don_dong_tien',
-  hr_labor: 'lao_dong_bhxh',
-  premises: 'dia_diem_pccc',
-  conditional_licensing: 'giay_phep_con',
-  contracts: 'hop_dong',
-  tech_data: 'du_lieu_shtt',
-};
-
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { WalletService } from '../wallet/wallet.service';
 import { CreateContextFactDto, UpdateContextFactDto, GenerateChecklistFromFactDto } from './dto/context-fact.dto';
-import { ContextStatus, TaskStatus, Priority, UserRole, WaitingOnRole } from '@prisma/client';
+import { ContextGroup, ContextStatus, TaskStatus, Priority, UserRole, WaitingOnRole } from '@prisma/client';
 import { CORE_LEGAL_DOC_LINKS } from '../../common/constants/legal-docs.constant';
 import { calculateTaxDeadline } from '../../common/utils/tax-deadline.util';
+
+const LEGACY_GROUP_MAP: Record<string, ContextGroup> = {
+  base_profile: 'boi_canh_co_so',
+  boi_canh_co_so: 'boi_canh_co_so',
+  tax_accounting: 'thue_ke_toan',
+  thue_ke_toan: 'thue_ke_toan',
+  revenue_invoices: 'thue_ke_toan',
+};
 
 @Injectable()
 export class ContextEngineService {
@@ -26,38 +21,21 @@ export class ContextEngineService {
     private readonly walletService: WalletService,
   ) {}
 
-  private enrichFactWithVietnamese(fact: any) {
-    if (!fact) return fact;
-    return {
-      ...fact,
-      khoa: fact.key,
-      nhan: fact.label,
-      nhom: fact.group,
-      giaTriHienTai: fact.currentValue,
-      nguon: fact.source,
-      trangThai: fact.status,
-      cacQuyTacLienQuan: fact.affectedRules,
-      chiTietXungDot: fact.conflictDetails,
-      taoLuc: fact.createdAt,
-      capNhatLuc: fact.updatedAt,
-    };
-  }
-
   async create(orgId: string, userId: string, dto: CreateContextFactDto) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const providedBy = user ? user.name : 'Hệ thống';
 
-    const factKey = dto.khoa || dto.key || 'fact_key';
-    const factLabel = dto.nhan || dto.label || 'Dữ kiện';
-    let factGroup = dto.nhom || dto.group;
+    const factKey = dto.key || 'fact_key';
+    const factLabel = dto.label || 'Dữ kiện';
+    let factGroup = dto.group;
     if (factGroup && LEGACY_GROUP_MAP[factGroup]) {
       factGroup = LEGACY_GROUP_MAP[factGroup];
     }
-    const factVal = dto.giaTriHienTai || dto.currentValue || '';
-    const factSource = dto.nguon || dto.source || 'Hệ thống';
-    const factStatus = dto.trangThai || dto.status || ContextStatus.unconfirmed;
-    const factRules = dto.cacQuyTacLienQuan || dto.affectedRules || [];
-    const factConflict = dto.chiTietXungDot || dto.conflictDetails;
+    const factVal = dto.currentValue || '';
+    const factSource = dto.source || 'Hệ thống';
+    const factStatus = dto.status || ContextStatus.unconfirmed;
+    const factRules = dto.affectedRules || [];
+    const factConflict = dto.conflictDetails;
 
     const fact = await this.prisma.contextFact.create({
       data: {
@@ -84,7 +62,7 @@ export class ContextEngineService {
       },
     });
 
-    return this.enrichFactWithVietnamese(fact);
+    return fact;
   }
 
   async findAll(orgId: string, userId?: string) {
@@ -101,12 +79,16 @@ export class ContextEngineService {
       return [];
     }
 
+    // Lưu ý tối ưu Pool: Không chạy deleteMany ghi DB trên mỗi lượt đọc GET /context-facts
+    // (việc dọn key cũ đã được thực hiện khi submit survey và lọc qua mệnh đề notIn bên dưới)
+    /*
     await this.prisma.contextFact.deleteMany({
       where: {
         organizationId: targetOrgId,
         key: { in: ['tax_filing_cycle', 'annual_revenue', 'employee_count'] },
       },
     }).catch(() => {});
+    */
 
     const facts = await this.prisma.contextFact.findMany({
       where: {
@@ -124,7 +106,7 @@ export class ContextEngineService {
     });
 
     // Trả về danh sách thẻ bối cảnh thực tế (không tự động tạo dữ liệu giả khi trống)
-    return facts.map((f) => this.enrichFactWithVietnamese(f));
+    return facts;
   }
 
   async findOne(id: string) {
@@ -141,7 +123,7 @@ export class ContextEngineService {
       throw new NotFoundException('Không tìm thấy dữ kiện bối cảnh');
     }
 
-    return this.enrichFactWithVietnamese(fact);
+    return fact;
   }
 
   async update(id: string, userId: string, dto: UpdateContextFactDto) {
@@ -153,11 +135,10 @@ export class ContextEngineService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const changedBy = user ? `${user.name} (${user.roleTitle || user.role})` : 'Hệ thống';
 
-    const factVal = dto.giaTriHienTai || dto.currentValue || '';
-    const factStatus = dto.trangThai || dto.status || fact.status;
-    const factConflict = dto.chiTietXungDot !== undefined ? dto.chiTietXungDot : (dto.conflictDetails !== undefined ? dto.conflictDetails : fact.conflictDetails);
-    const factNote = dto.ghiChu || dto.note || 'Cập nhật dữ kiện';
-    const historyVal = fact.key === 'cit_financial_records' ? '[Sổ thu chi TNDN - Lưu trữ tối ưu]' : factVal;
+    const factVal = dto.currentValue || '';
+    const factStatus = dto.status || fact.status;
+    const factConflict = dto.conflictDetails !== undefined ? dto.conflictDetails : fact.conflictDetails;
+    const factNote = dto.note || 'Cập nhật dữ kiện';
 
     const updated = await this.prisma.contextFact.update({
       where: { id },
@@ -180,7 +161,7 @@ export class ContextEngineService {
       },
     });
 
-    return this.enrichFactWithVietnamese(updated);
+    return updated;
   }
 
   async confirm(id: string, userId: string) {
@@ -201,7 +182,7 @@ export class ContextEngineService {
       },
     });
 
-    return this.enrichFactWithVietnamese(confirmed);
+    return confirmed;
   }
 
   /**
@@ -233,22 +214,22 @@ export class ContextEngineService {
       where: { id: targetOrgId },
       data: { docAnalysesUsedThisMonth: { increment: 1 } },
     }).catch(() => {});
-    // 2. Tra cứu Căn cứ pháp lý chính thức từ Database (đồng bộ từ DLPL API)
+    // 2. Tra cứu Căn cứ pháp lý Thuế TNDN chính thức từ Database (đồng bộ từ DLPL API)
     const ruleCodeMap: Record<string, string> = {
-      tax_code: 'RULE-TAX-MB',
-      company_type_tag: 'RULE-TAX-GTGT',
-      employee_scale: 'RULE-LABOR-UNDER10',
+      tax_code: 'RULE-TAX-TNDN-80',
+      company_type_tag: 'RULE-TAX-TNDN-80',
+      employee_scale: 'RULE-TAX-EXP-20M',
       industry_tags: 'RULE-TAX-POS-FNB',
-      q_tax_corp_1: 'RULE-TAX-GTGT',
+      q_tax_corp_1: 'RULE-TAX-TNDN-80',
       q_tax_corp_2: 'RULE-TAX-TNDN-80',
       q_tax_corp_3: 'RULE-TAX-EXP-20M',
       q_fnb_tax_1: 'RULE-TAX-POS-FNB',
       q_tax_salary_1: 'RULE-TAX-EXP-20M',
-      q_tax_salary_2: 'RULE-LABOR-10TO50',
+      q_tax_corp_fct_ads: 'RULE-TAX-FCT-10D',
     };
 
     const firstAffectedRule = Array.isArray(fact.affectedRules) ? String(fact.affectedRules[0]) : undefined;
-    const targetCode = ruleCodeMap[fact.key] || firstAffectedRule || 'RULE-TAX-GTGT';
+    const targetCode = ruleCodeMap[fact.key] || firstAffectedRule || 'RULE-TAX-TNDN-80';
     let dbRule = await this.prisma.rule.findFirst({
       where: { code: targetCode },
     });

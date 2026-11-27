@@ -44,9 +44,9 @@ export class RuleEngineService {
    * Bao quát toàn bộ 11 đợt theo luật định:
    * 1. Hàng Tháng (Ngày 20)
    * 2. Hàng Quý (30/04, 31/07, 31/10, 31/01)
-   * 3. 6 Tháng / Bán niên (05/06 & 05/12)
-   * 4. Cả Năm (30/01 Môn bài, 31/03 Quyết toán)
-   * 5. Đợt 10 ngày (Thuế nhà thầu Ads FCT, ĐK NQLĐ)
+   * 3. 6 Tháng / Bán niên (Đối soát chứng từ bán niên)
+   * 4. Cả Năm (31/03 Quyết toán thuế TNDN & BCTC)
+   * 5. Đợt 10 ngày (Thuế nhà thầu Ads FCT bảo vệ chi phí được trừ TNDN)
    * 6. Đợt 20 ngày (Chuyển kỳ kê khai theo NĐ 126/2020)
    * 7. Đợt 45 ngày (Quyết toán giải thể, chia tách theo Luật QLT)
    * 8. Đợt 03 ngày làm việc (Tạm ngừng / HĐĐT sai sót Mẫu 04/SS-HĐĐT)
@@ -73,11 +73,11 @@ export class RuleEngineService {
         category: 'Kỳ Hàng Quý',
       },
       {
-        code: 'RULE-TAX-MB',
-        title: 'Kê khai và nộp Lệ phí môn bài hàng năm',
-        conditionSummary: 'Chậm nhất ngày 30/01 hàng năm; Vốn > 10 tỷ nộp 3 triệu, Vốn ≤ 10 tỷ nộp 2 triệu. Miễn năm đầu thành lập.',
-        legalReference: `Khoản 9 Điều 18 Nghị định 126/2020/NĐ-CP & Nghị định 139/2016/NĐ-CP (${CORE_LEGAL_DOC_LINKS['139/2016']})`,
-        priority: Priority.high,
+        code: 'RULE-TAX-TNDN-FINAL',
+        title: 'Quyết toán thuế Thu nhập doanh nghiệp (TNDN) năm theo Mẫu 03/TNDN và nộp BCTC',
+        conditionSummary: 'Chậm nhất ngày cuối cùng của tháng thứ 3 kể từ ngày kết thúc năm dương lịch hoặc năm tài chính (31/03).',
+        legalReference: `Điểm a Khoản 2 Điều 44 Luật QLT số 38/2019/QH14 (${CORE_LEGAL_DOC_LINKS['38/2019']})`,
+        priority: Priority.urgent,
         category: 'Kỳ Cả Năm',
       },
       {
@@ -206,18 +206,9 @@ export class RuleEngineService {
       } else if (rule.code === 'RULE-TAX-TNDN-80') {
         isMatched = true;
         cycleType = 'QUARTERLY';
-      } else if (rule.code === 'RULE-TAX-MB') {
-        // LƯU Ý PHÁP LÝ QUAN TRỌNG:
-        // Từ ngày 01/01/2026, lệ phí môn bài chính thức bị BÃI BỎ HOÀN TOÀN.
-        // Căn cứ: Khoản 7 Điều 10 Nghị quyết 198/2025/QH15 của Quốc hội
-        //         & Nghị định 362/2025/NĐ-CP của Chính phủ hướng dẫn thi hành.
-        // → Từ năm 2026 trở đi, doanh nghiệp KHÔNG CÒN nghĩa vụ kê khai,
-        //   nộp lệ phí môn bài định kỳ hàng năm.
-        // → Chỉ giữ lại task này cho dữ liệu lịch sử (năm tài chính < 2026).
-        const currentFiscalYear = new Date().getFullYear();
-        isMatched = currentFiscalYear < 2026;
+      } else if (rule.code === 'RULE-TAX-TNDN-FINAL') {
+        isMatched = true;
         cycleType = 'ANNUAL';
-
       } else if (rule.code === 'RULE-TAX-FCT-10D') {
         isMatched = isEcom || isFnb;
         cycleType = 'EVENT_10D';
