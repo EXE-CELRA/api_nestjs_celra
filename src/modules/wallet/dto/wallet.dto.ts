@@ -7,10 +7,17 @@ export class DepositDto {
   @Min(10000, { message: 'Số tiền nạp tối thiểu là 10.000đ' })
   amount!: number;
 
-  @ApiPropertyOptional({ example: 'Nạp tiền thanh toán dịch vụ thẩm định ATTP' })
+  @ApiPropertyOptional({ example: 'Nạp tiền gia hạn gói quản trị tuân thủ Thuế TNDN', description: 'Ghi chú giao dịch' })
   @IsOptional()
   @IsString()
   note?: string;
+}
+
+export class GenerateVietQrDto {
+  @ApiProperty({ example: 500000, description: 'Số tiền cần nạp (VND)' })
+  @IsNumber()
+  @Min(10000)
+  amount!: number;
 }
 
 export class BuyPackageDto {
@@ -19,7 +26,7 @@ export class BuyPackageDto {
   @IsString()
   packageId!: string;
 
-  @ApiPropertyOptional({ example: 'Nạp gói 120 Credit qua VietQR' })
+  @ApiPropertyOptional({ example: 'Nạp gói 120 Credit qua VietQR', description: 'Ghi chú mua gói' })
   @IsOptional()
   @IsString()
   note?: string;
@@ -56,7 +63,7 @@ export class SandboxPaymentDto {
   @IsString()
   failureReason?: string;
 
-  @ApiPropertyOptional({ example: 'MBBank - 0987654321', description: 'Tên ngân hàng ảo' })
+  @ApiPropertyOptional({ example: 'MBBank - 0987654321', description: 'Tên ngân hàng mô phỏng' })
   @IsOptional()
   @IsString()
   bankName?: string;

@@ -23,7 +23,7 @@ import {
 export class TaskService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private enrichTaskWithVietnamese(task: any) {
+  private formatTaskWithPriority(task: any) {
     if (!task) return task;
     const basis = (task.calculationBasisJson as Record<string, any>) || {};
     const customPriority = basis.customPriority || null;
@@ -33,41 +33,12 @@ export class TaskService {
     return {
       ...task,
       priority: effectivePriority,
-      doUuTien: effectivePriority,
       customPriority,
       statutoryPriority,
       legalRisk: statutoryPriority,
       customPriorityReason: basis.customPriorityReason || null,
       customPriorityUpdatedAt: basis.customPriorityUpdatedAt || null,
       customPriorityUpdatedBy: basis.customPriorityUpdatedBy || null,
-      maNhiemVu: task.code,
-      tieuDe: task.title,
-      danhMuc: task.category,
-      trangThai: task.status,
-      hanChot: task.dueDate,
-      moTa: task.description,
-      canCuPhapLy: task.legalBasis,
-      maQuyTac: task.ruleCode,
-      tenNguoiXuLy: task.assigneeName,
-      vaiTroNguoiXuLy: task.assigneeRole,
-      tenNguoiChoDoi: task.waitingOnName,
-      vaiTroChoDoi: task.waitingOnRole,
-      taoLuc: task.createdAt,
-      capNhatLuc: task.updatedAt,
-    };
-  }
-
-  private enrichCalendarNoteWithVietnamese(note: any) {
-    if (!note) return note;
-    return {
-      ...note,
-      ngay: note.date,
-      tieuDe: note.title,
-      noiDung: note.content,
-      danhMuc: note.category,
-      daHoanThanh: note.isCompleted,
-      taoLuc: note.createdAt,
-      capNhatLuc: note.updatedAt,
     };
   }
 
@@ -131,7 +102,7 @@ export class TaskService {
       },
     });
 
-    return this.enrichTaskWithVietnamese(task);
+    return this.formatTaskWithPriority(task);
   }
 
   async findAll(
@@ -171,7 +142,7 @@ export class TaskService {
       orderBy: [{ createdAt: 'desc' }],
     });
 
-    return tasks.map((t) => this.enrichTaskWithVietnamese(t));
+    return tasks.map((t) => this.formatTaskWithPriority(t));
   }
 
   async findOne(id: string, orgId?: string) {
@@ -198,7 +169,7 @@ export class TaskService {
       throw new ForbiddenException('Bạn không có quyền truy cập tác vụ của doanh nghiệp khác.');
     }
 
-    return this.enrichTaskWithVietnamese(task);
+    return this.formatTaskWithPriority(task);
   }
 
   async updateStatus(id: string, userId: string, dto: UpdateTaskStatusDto, orgId?: string) {
@@ -243,7 +214,7 @@ export class TaskService {
       },
     });
 
-    return this.enrichTaskWithVietnamese(updated);
+    return this.formatTaskWithPriority(updated);
   }
 
   /**
@@ -306,7 +277,7 @@ export class TaskService {
       },
     });
 
-    return this.enrichTaskWithVietnamese(updated);
+    return this.formatTaskWithPriority(updated);
   }
 
   async addComment(taskId: string, userId: string, dto: AddTaskCommentDto, orgId?: string) {
@@ -323,7 +294,7 @@ export class TaskService {
     const authorRole = user ? user.role : UserRole.owner;
 
     const content = dto.content || '';
-    const isInternalOnly = dto.isInternalOnly ?? false;
+    const isInternalOnly = dto.isInternalOnly || false;
 
     const comment = await this.prisma.taskComment.create({
       data: {
@@ -349,14 +320,7 @@ export class TaskService {
       },
     });
 
-    return {
-      ...comment,
-      noiDung: comment.content,
-      tacGia: comment.authorName,
-      vaiTroTacGia: comment.authorRole,
-      chiNoiBo: comment.isInternalOnly,
-      taoLuc: comment.createdAt,
-    };
+    return comment;
   }
 
   async selfCertify(taskId: string, userId: string, dto: SelfCertifyTaskDto, orgId?: string) {
@@ -393,7 +357,7 @@ export class TaskService {
       },
     });
 
-    return this.enrichTaskWithVietnamese(updated);
+    return this.formatTaskWithPriority(updated);
   }
 
   /**
@@ -423,32 +387,15 @@ export class TaskService {
       return {
         id: chk.id,
         code: chk.code,
-        maChecklist: chk.code,
         title: chk.title,
-        tieuDe: chk.title,
         category: chk.category,
-        danhMuc: chk.category,
         status: chk.status,
-        trangThai: chk.status,
         itemCount: chk.items.length,
-        soLuongMuc: chk.items.length,
         totalTasks,
-        tongSoNhiemVu: totalTasks,
         completedTasks,
-        nhiemVuHoanThanh: completedTasks,
         progressPercent,
-        tiLeTienDo: progressPercent,
-        items: chk.items.map((it) => ({
-          ...it,
-          maQuyTac: it.ruleCode,
-          tieuDe: it.title,
-          loaiChuKy: it.cycleType,
-          canCuPhapLy: it.legalBasis,
-          yeuCauChungTu: it.evidenceRequirement,
-          kichHoat: it.isActive,
-        })),
+        items: chk.items,
         createdAt: chk.createdAt,
-        taoLuc: chk.createdAt,
       };
     });
   }
@@ -461,7 +408,7 @@ export class TaskService {
     if (month) {
       where.date = { startsWith: month };
     }
-    const notes = await this.prisma.calendarNote.findMany({
+    return this.prisma.calendarNote.findMany({
       where,
       orderBy: { date: 'asc' },
       include: {
@@ -470,8 +417,6 @@ export class TaskService {
         },
       },
     });
-
-    return notes.map((n) => this.enrichCalendarNoteWithVietnamese(n));
   }
 
   /**
@@ -488,7 +433,7 @@ export class TaskService {
     const content = dto.content;
     const category = dto.category || 'general';
 
-    const note = await this.prisma.calendarNote.create({
+    return this.prisma.calendarNote.create({
       data: {
         organizationId: orgId,
         authorId,
@@ -504,8 +449,6 @@ export class TaskService {
         },
       },
     });
-
-    return this.enrichCalendarNoteWithVietnamese(note);
   }
 
   /**
@@ -529,7 +472,7 @@ export class TaskService {
     const category = dto.category !== undefined ? dto.category : note.category;
     const isCompleted = dto.isCompleted !== undefined ? dto.isCompleted : note.isCompleted;
 
-    const updated = await this.prisma.calendarNote.update({
+    return this.prisma.calendarNote.update({
       where: { id: noteId },
       data: {
         date,
@@ -544,8 +487,6 @@ export class TaskService {
         },
       },
     });
-
-    return this.enrichCalendarNoteWithVietnamese(updated);
   }
 
   /**

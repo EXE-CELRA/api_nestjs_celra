@@ -425,25 +425,25 @@ export class ComplianceFlowService {
       suggestedPriority: Priority.urgent,
     });
 
-    // 3. RULE-TAX-MB: Lệ phí môn bài hàng năm
+    // 3. RULE-TAX-TNDN-FINAL: Quyết toán thuế TNDN năm (Mẫu 03/TNDN)
     findings.push({
       factId: null,
-      ruleCode: 'RULE-TAX-MB',
-      obligationTitle: 'Kê khai và nộp Lệ phí môn bài hàng năm',
+      ruleCode: 'RULE-TAX-TNDN-FINAL',
+      obligationTitle: 'Quyết toán thuế TNDN năm (Mẫu 03/TNDN) & Bóc tách chi phí loại trừ Mục B4',
       category: 'Kỳ Cả Năm',
       applicableStatus: ApplicableStatus.applicable,
-      actionRequired: 'Nộp tiền lệ phí môn bài vào NSNN chậm nhất ngày 30/01 hàng năm (Miễn năm đầu thành lập).',
-      evidenceRequired: 'Giấy nộp tiền lệ phí môn bài tiểu mục 2862, 2863.',
-      legalBasis: `Khoản 9 Điều 18 Nghị định 126/2020/NĐ-CP & Nghị định 139/2016/NĐ-CP`,
-      legalDocNumber: '139/2016/NĐ-CP',
-      legalArticle: 'Khoản 9 Điều 18 NĐ 126/2020',
-      legalDocUrl: CORE_LEGAL_DOC_LINKS['139/2016'],
+      actionRequired: 'Tổng hợp doanh thu, rà soát điều kiện chi phí được trừ theo Thông tư 96/2015/TT-BTC và nộp tờ khai 03/TNDN chậm nhất ngày 31/03 năm sau.',
+      evidenceRequired: 'Tờ khai quyết toán thuế TNDN Mẫu 03/TNDN, Báo cáo tài chính năm và Bảng kê bóc tách Mục B4.',
+      legalBasis: `Điểm a Khoản 2 Điều 44 Luật Quản lý thuế số 38/2019/QH14 & Điều 4 Thông tư 96/2015/TT-BTC`,
+      legalDocNumber: '38/2019/QH14',
+      legalArticle: 'Điểm a Khoản 2 Điều 44',
+      legalDocUrl: CORE_LEGAL_DOC_LINKS['38/2019'],
       legalValidity: LegalValidity.in_force,
       resultSource: ResultSource.rule_based,
       cycleType: 'ANNUAL' as StatutoryCycleType,
-      calculationMethod: 'Hạn cố định ngày 30/01 hàng năm.',
+      calculationMethod: 'Hạn chậm nhất ngày 31/03 năm tiếp theo.',
       missingDataNotice: null,
-      suggestedPriority: Priority.high,
+      suggestedPriority: Priority.urgent,
     });
 
     // 4. RULE-TAX-FCT-10D: Thuế nhà thầu Ads quốc tế (10 ngày)

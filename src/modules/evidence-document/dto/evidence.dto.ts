@@ -8,42 +8,42 @@ export class VerifyEvidenceDto {
   @IsEnum(EvidenceStatus)
   status?: EvidenceStatus;
 
-  @ApiPropertyOptional({ example: 'Hợp đồng lao động còn thiếu điều khoản đóng BHXH bắt buộc', description: 'Lý do từ chối' })
+  @ApiPropertyOptional({ example: 'Hóa đơn mua vào từ 5 triệu đồng trở lên chưa kèm Ủy nhiệm chi ngân hàng công ty', description: 'Lý do từ chối' })
   @IsOptional()
   @IsString()
   rejectionReason?: string;
 }
 
 export class UploadEvidenceDto {
-  @ApiPropertyOptional({ example: 'Bảng kê Doanh thu & Chi phí Quý 1/2026' })
+  @ApiPropertyOptional({ example: 'Bảng kê Doanh thu & Chi phí TNDN Quý 4/2026', description: 'Tiêu đề chứng từ' })
   @IsOptional()
   @IsString()
   title?: string;
 
-  @ApiPropertyOptional({ example: 'Thuế Doanh Nghiệp' })
+  @ApiPropertyOptional({ example: 'Thuế TNDN', description: 'Danh mục phân loại' })
   @IsOptional()
   @IsString()
   category?: string;
 
-  @ApiPropertyOptional({ example: 'LEGAL_LICENSE', description: 'Loại chứng từ tải lên' })
+  @ApiPropertyOptional({ example: 'TAX_DECLARATION', description: 'Loại chứng từ tải lên' })
   @IsOptional()
   @IsString()
   documentType?: string;
 
-  @ApiPropertyOptional({ example: 'Bảng kê thu - chi' })
+  @ApiPropertyOptional({ example: 'Bảng kê thu - chi', description: 'Nhãn gắn thẻ' })
   @IsOptional()
   @IsString()
   tag?: string;
 
-  @ApiPropertyOptional({ example: '1' })
+  @ApiPropertyOptional({ example: '4', description: 'Kỳ quý áp dụng' })
   @IsOptional()
   quarter?: string | number;
 
-  @ApiPropertyOptional({ example: 2026 })
+  @ApiPropertyOptional({ example: 2026, description: 'Năm tài chính áp dụng' })
   @IsOptional()
   year?: string | number;
 
-  @ApiPropertyOptional({ description: 'ID Tác vụ liên kết' })
+  @ApiPropertyOptional({ description: 'ID tác vụ liên kết' })
   @IsOptional()
   @IsString()
   taskId?: string;

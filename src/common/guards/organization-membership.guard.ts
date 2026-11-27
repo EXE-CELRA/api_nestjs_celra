@@ -6,10 +6,14 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { UserRole, MembershipStatus } from '@prisma/client';
+import { UserRole, MembershipStatus, Membership } from '@prisma/client';
 
 @Injectable()
 export class OrganizationMembershipGuard implements CanActivate {
+  // Bộ nhớ đệm ngắn hạn (30 giây) giảm tải các truy vấn membership song song trên cùng 1 trang
+  private readonly membershipCache = new Map<string, { membership: Membership; expiresAt: number }>();
+  private readonly MEMBERSHIP_CACHE_TTL_MS = 30 * 1000;
+
   constructor(private readonly prisma: PrismaService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -58,15 +62,39 @@ export class OrganizationMembershipGuard implements CanActivate {
       return true;
     }
 
-    // Kiểm tra membership thực tế trong cơ sở dữ liệu
-    const membership = await this.prisma.membership.findUnique({
-      where: {
-        organizationId_userId: {
-          organizationId: targetOrgId,
-          userId: user.sub,
+    // Kiểm tra membership thực tế trong cơ sở dữ liệu (kết hợp cache ngắn hạn 30s)
+    const cacheKey = `${targetOrgId}::${user.sub}`;
+    const now = Date.now();
+    const cached = this.membershipCache.get(cacheKey);
+
+    let membership: Membership | null = null;
+    if (cached && cached.expiresAt > now) {
+      membership = cached.membership;
+    } else {
+      membership = await this.prisma.membership.findUnique({
+        where: {
+          organizationId_userId: {
+            organizationId: targetOrgId,
+            userId: user.sub,
+          },
         },
-      },
-    });
+      });
+
+      if (membership && membership.status === MembershipStatus.active) {
+        if (this.membershipCache.size >= 1000) {
+          const oldestKey = this.membershipCache.keys().next().value;
+          if (oldestKey) {
+            this.membershipCache.delete(oldestKey);
+          }
+        }
+        this.membershipCache.set(cacheKey, {
+          membership,
+          expiresAt: now + this.MEMBERSHIP_CACHE_TTL_MS,
+        });
+      } else {
+        this.membershipCache.delete(cacheKey);
+      }
+    }
 
     if (!membership || membership.status !== MembershipStatus.active) {
       throw new ForbiddenException(

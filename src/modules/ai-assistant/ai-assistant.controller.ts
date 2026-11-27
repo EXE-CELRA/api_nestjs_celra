@@ -63,7 +63,7 @@ export class AIAssistantController {
   }
 
   @Put('legal-rules/:code')
-  @ApiParam({ name: 'code', description: 'Mã quy định pháp luật (ví dụ: RULE-TAX-MB)' })
+  @ApiParam({ name: 'code', description: 'Mã quy định pháp luật (ví dụ: RULE-TAX-TNDN-80)' })
   @ApiOperation({ summary: 'Admin cập nhật Nghị định/Thông tư mới hoặc nội dung hướng dẫn cho 1 điều luật' })
   async updateLegalRule(
     @Param('code') code: string,

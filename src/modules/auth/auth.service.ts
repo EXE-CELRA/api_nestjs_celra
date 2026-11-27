@@ -37,18 +37,6 @@ export class AuthService {
 
   ) { }
 
-  private enrichUserWithVietnamese(user: any) {
-    if (!user) return user;
-    return {
-      ...user,
-      hoVaTen: user.name,
-      soDienThoai: user.phone,
-      vaiTro: user.role,
-      chucDanh: user.roleTitle,
-      anhDaiDien: user.avatar,
-      taoLuc: user.createdAt,
-    };
-  }
   async sendRegisterOtp(dto: SendOtpDto) {
     const email = dto.email.toLowerCase().trim();
     const existingUser = await this.prisma.user.findUnique({
@@ -156,7 +144,7 @@ export class AuthService {
     const token = await this.generateToken(user);
 
     return {
-      user: this.enrichUserWithVietnamese(user),
+      user,
       accessToken: token,
     };
   }
@@ -187,7 +175,7 @@ export class AuthService {
       const token = await this.generateToken(virtualAdmin);
 
       return {
-        user: this.enrichUserWithVietnamese(virtualAdmin),
+        user: virtualAdmin,
         accessToken: token,
       };
     }
@@ -221,7 +209,7 @@ export class AuthService {
     const { passwordHash: _, ...safeUser } = user;
 
     return {
-      user: this.enrichUserWithVietnamese(safeUser),
+      user: safeUser,
       accessToken: token,
     };
   }
@@ -272,7 +260,7 @@ export class AuthService {
         memberships: [],
         isSuperAdmin: true,
       };
-      return this.enrichUserWithVietnamese(virtualAdmin);
+      return virtualAdmin;
     }
 
     const user = await this.prisma.user.findUnique({
@@ -300,7 +288,7 @@ export class AuthService {
       throw new UnauthorizedException('Tài khoản không tồn tại hoặc đã bị xóa khỏi hệ thống');
     }
 
-    return this.enrichUserWithVietnamese(user);
+    return user;
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
@@ -345,7 +333,7 @@ export class AuthService {
     return {
       success: true,
       message: 'Cập nhật thông tin cá nhân thành công',
-      user: this.enrichUserWithVietnamese(updatedUser),
+      user: updatedUser,
     };
   }
 

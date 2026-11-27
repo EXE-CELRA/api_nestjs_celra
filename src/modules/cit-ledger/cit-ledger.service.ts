@@ -120,30 +120,28 @@ export class CitLedgerService {
       ...quarterFilter,
     };
 
-    // Lấy doanh thu
-    const [revAgg, revCount] = await Promise.all([
+    // Lấy doanh thu & chi phí gộp _sum + _count trong 3 câu aggregate (giảm 50% số kết nối đồng thời so với 6 câu rời)
+    const [revAgg, expAgg, expDisallowedAgg] = await Promise.all([
       this.prisma.citRevenue.aggregate({
         where: whereBase,
         _sum: { amount: true },
+        _count: { _all: true },
       }),
-      this.prisma.citRevenue.count({ where: whereBase }),
-    ]);
-
-    // Lấy chi phí
-    const [expAgg, expCount, expDisallowedAgg, expDisallowedCount] = await Promise.all([
       this.prisma.citExpense.aggregate({
         where: whereBase,
         _sum: { amount: true },
+        _count: { _all: true },
       }),
-      this.prisma.citExpense.count({ where: whereBase }),
       this.prisma.citExpense.aggregate({
         where: { ...whereBase, isDisallowedB4: true },
         _sum: { amount: true },
-      }),
-      this.prisma.citExpense.count({
-        where: { ...whereBase, isDisallowedB4: true },
+        _count: { _all: true },
       }),
     ]);
+
+    const revCount = revAgg._count._all;
+    const expCount = expAgg._count._all;
+    const expDisallowedCount = expDisallowedAgg._count._all;
 
     const totalRevenue = revAgg._sum.amount || 0;
     const totalAccountingExpense = expAgg._sum.amount || 0;

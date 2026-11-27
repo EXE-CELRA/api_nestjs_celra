@@ -94,7 +94,7 @@ export function simulateHypotheticalChatConfirmation(
       : isNo
         ? 'Không bán hàng trực tiếp đến người tiêu dùng (Áp dụng HĐĐT thông thường)'
         : 'Chưa xác định rõ hình thức bán hàng trực tiếp';
-    simulateFact('q_fnb_tax_1', 'Hóa đơn điện tử máy tính tiền', ContextGroup.hoa_don_dong_tien, posVal);
+    simulateFact('q_fnb_tax_1', 'Hóa đơn điện tử máy tính tiền', ContextGroup.thue_ke_toan, posVal);
     if (isYes || isNo) {
       simulatedOrg.hasOnlineSales = isYes;
     }
@@ -115,7 +115,7 @@ export function simulateHypotheticalChatConfirmation(
     } else if (/(dang lam|đang hoàn thiện)/i.test(confirmText)) {
       salaryVal = 'Đang hoàn thiện đăng ký MST cá nhân cho nhân viên';
     }
-    simulateFact('q_tax_salary_1', 'Hồ sơ chi phí tiền lương & thuế TNCN', ContextGroup.lao_dong_bhxh, salaryVal);
+    simulateFact('q_tax_salary_1', 'Hồ sơ chi phí tiền lương được trừ TNDN', ContextGroup.thue_ke_toan, salaryVal);
   }
 
   logger.log(
