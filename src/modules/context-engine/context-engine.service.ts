@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { WalletService } from '../wallet/wallet.service';
 import { CreateContextFactDto, UpdateContextFactDto, GenerateChecklistFromFactDto } from './dto/context-fact.dto';
 import { ContextGroup, ContextStatus, TaskStatus, Priority, UserRole, WaitingOnRole } from '@prisma/client';
 import { CORE_LEGAL_DOC_LINKS } from '../../common/constants/legal-docs.constant';
@@ -18,7 +17,6 @@ const LEGACY_GROUP_MAP: Record<string, ContextGroup> = {
 export class ContextEngineService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly walletService: WalletService,
   ) {}
 
   async create(orgId: string, userId: string, dto: CreateContextFactDto) {
@@ -205,9 +203,6 @@ export class ContextEngineService {
       throw new NotFoundException('Không tìm thấy thẻ bối cảnh doanh nghiệp');
     }
     targetOrgId = fact.organizationId;
-
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    const userName = user ? user.name : 'Chủ doanh nghiệp';
 
     // 1. Ghi nhận lượt phân tích thẻ bối cảnh theo gói thuê bao
     await this.prisma.organization.update({

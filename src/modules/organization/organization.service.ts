@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateOrganizationDto, UpdateOrganizationDto } from './dto/organization.dto';
-import { UserRole, ContextStatus, ContextGroup, TaskStatus, Priority, WaitingOnRole } from '@prisma/client';
+import { UserRole, ContextStatus, ContextGroup } from '@prisma/client';
 
 @Injectable()
 export class OrganizationService {
@@ -72,7 +72,7 @@ export class OrganizationService {
         },
       });
 
-      const accDept = await tx.department.create({
+      await tx.department.create({
         data: {
           organizationId: org.id,
           name: 'Phòng Kế toán & Thuế TNDN',
