@@ -23,7 +23,6 @@ import { TaxLookupModule } from './modules/tax-lookup/tax-lookup.module';
 import { CitLedgerModule } from './modules/cit-ledger/cit-ledger.module';
 import { HealthModule } from './modules/health/health.module';
 import { SubscriptionModule } from './modules/subscription/subscription.module';
-import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
 @Module({
@@ -56,7 +55,7 @@ import { AppService } from './app.service';
     SubscriptionModule,
     HealthModule,
   ],
-  controllers: [AppController],
+  controllers: [],
   providers: [
     AppService,
     {

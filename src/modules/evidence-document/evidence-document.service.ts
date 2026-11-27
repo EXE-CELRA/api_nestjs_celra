@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { VerifyEvidenceDto } from './dto/evidence.dto';
-import { EvidenceStatus, TaskStatus, TimelineEventType, UserRole, WaitingOnRole, ContextGroup, ContextStatus } from '@prisma/client';
+import { EvidenceStatus, TaskStatus, TimelineEventType, UserRole, WaitingOnRole } from '@prisma/client';
 import { existsSync } from 'fs';
 import { extname, resolve, basename } from 'path';
 

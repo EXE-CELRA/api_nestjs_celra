@@ -72,28 +72,28 @@ export class TaskService {
   }
 
   async create(orgId: string, dto: CreateTaskDto) {
-    const departmentId = dto.maPhongBan || dto.departmentId;
+    const departmentId = dto.departmentId;
     let departmentName = 'Phòng ban';
     if (departmentId) {
       const dept = await this.prisma.department.findUnique({ where: { id: departmentId } });
       if (dept) departmentName = dept.name;
     }
 
-    const code = dto.maNhiemVu || dto.code || `TASK-${Date.now()}`;
-    const title = dto.tieuDe || dto.title || 'Nhiệm vụ mới';
-    const category = dto.danhMuc || dto.category || 'Chung';
-    const rawPriority = String(dto.doUuTien || dto.priority || 'medium').toLowerCase();
+    const code = dto.code || `TASK-${Date.now()}`;
+    const title = dto.title || 'Nhiệm vụ mới';
+    const category = dto.category || 'Chung';
+    const rawPriority = String(dto.priority || 'medium').toLowerCase();
     const priority = (rawPriority === 'critical' ? 'urgent' : rawPriority) as Priority;
-    const status = dto.trangThai || dto.status || TaskStatus.need_info;
-    const assigneeId = dto.maNguoiXuLy || dto.assigneeId;
-    const assigneeName = dto.tenNguoiXuLy || dto.assigneeName || 'Người dùng';
-    const assigneeRole = dto.vaiTroNguoiXuLy || dto.assigneeRole || UserRole.owner;
-    const waitingOnRole = dto.vaiTroChoDoi || dto.waitingOnRole || WaitingOnRole.none;
-    const waitingOnName = dto.tenNguoiChoDoi || dto.waitingOnName;
-    const dueDate = new Date(dto.hanChot || dto.dueDate || new Date());
-    const description = dto.moTa || dto.description || '';
-    const ruleCode = dto.maQuyTac || dto.ruleCode || 'MANUAL';
-    const legalBasis = dto.canCuPhapLy || dto.legalBasis || 'Nội bộ doanh nghiệp';
+    const status = dto.status || TaskStatus.need_info;
+    const assigneeId = dto.assigneeId;
+    const assigneeName = dto.assigneeName || 'Người dùng';
+    const assigneeRole = dto.assigneeRole || UserRole.owner;
+    const waitingOnRole = dto.waitingOnRole || WaitingOnRole.none;
+    const waitingOnName = dto.waitingOnName;
+    const dueDate = new Date(dto.dueDate || new Date());
+    const description = dto.description || '';
+    const ruleCode = dto.ruleCode || 'MANUAL';
+    const legalBasis = dto.legalBasis || 'Nội bộ doanh nghiệp';
 
     const task = await this.prisma.task.create({
       data: {
@@ -215,10 +215,10 @@ export class TaskService {
     const actorName = user ? user.name : 'Người dùng';
     const actorRole = user ? user.role : UserRole.owner;
 
-    const targetStatus = dto.trangThai || dto.status || task.status;
-    const targetWaitingOnRole = dto.vaiTroChoDoi !== undefined ? dto.vaiTroChoDoi : (dto.waitingOnRole !== undefined ? dto.waitingOnRole : task.waitingOnRole);
-    const targetWaitingOnName = dto.tenNguoiChoDoi !== undefined ? dto.tenNguoiChoDoi : (dto.waitingOnName !== undefined ? dto.waitingOnName : task.waitingOnName);
-    const note = dto.ghiChu || dto.note;
+    const targetStatus = dto.status || task.status;
+    const targetWaitingOnRole = dto.waitingOnRole !== undefined ? dto.waitingOnRole : task.waitingOnRole;
+    const targetWaitingOnName = dto.waitingOnName !== undefined ? dto.waitingOnName : task.waitingOnName;
+    const note = dto.note;
 
     const updated = await this.prisma.task.update({
       where: { id },
@@ -322,8 +322,8 @@ export class TaskService {
     const authorName = user ? user.name : 'Người dùng';
     const authorRole = user ? user.role : UserRole.owner;
 
-    const content = dto.noiDung || dto.content || '';
-    const isInternalOnly = dto.chiNoiBo !== undefined ? dto.chiNoiBo : (dto.isInternalOnly || false);
+    const content = dto.content || '';
+    const isInternalOnly = dto.isInternalOnly ?? false;
 
     const comment = await this.prisma.taskComment.create({
       data: {
@@ -370,7 +370,7 @@ export class TaskService {
     }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const actorName = user ? user.name : 'Chủ doanh nghiệp';
-    const reason = dto.lyDo || dto.reason;
+    const reason = dto.reason;
 
     const updated = await this.prisma.task.update({
       where: { id: taskId },
@@ -483,10 +483,10 @@ export class TaskService {
     authorName: string,
     dto: CreateCalendarNoteDto,
   ) {
-    const date = dto.ngay || dto.date || new Date().toISOString().split('T')[0];
-    const title = dto.tieuDe || dto.title || 'Ghi chú mới';
-    const content = dto.noiDung || dto.content;
-    const category = dto.danhMuc || dto.category || 'general';
+    const date = dto.date || new Date().toISOString().split('T')[0];
+    const title = dto.title || 'Ghi chú mới';
+    const content = dto.content;
+    const category = dto.category || 'general';
 
     const note = await this.prisma.calendarNote.create({
       data: {
@@ -523,11 +523,11 @@ export class TaskService {
       throw new NotFoundException('Không tìm thấy ghi chú lịch');
     }
 
-    const date = dto.ngay !== undefined ? dto.ngay : (dto.date !== undefined ? dto.date : note.date);
-    const title = dto.tieuDe !== undefined ? dto.tieuDe : (dto.title !== undefined ? dto.title : note.title);
-    const content = dto.noiDung !== undefined ? dto.noiDung : (dto.content !== undefined ? dto.content : note.content);
-    const category = dto.danhMuc !== undefined ? dto.danhMuc : (dto.category !== undefined ? dto.category : note.category);
-    const isCompleted = dto.daHoanThanh !== undefined ? dto.daHoanThanh : (dto.isCompleted !== undefined ? dto.isCompleted : note.isCompleted);
+    const date = dto.date !== undefined ? dto.date : note.date;
+    const title = dto.title !== undefined ? dto.title : note.title;
+    const content = dto.content !== undefined ? dto.content : note.content;
+    const category = dto.category !== undefined ? dto.category : note.category;
+    const isCompleted = dto.isCompleted !== undefined ? dto.isCompleted : note.isCompleted;
 
     const updated = await this.prisma.calendarNote.update({
       where: { id: noteId },

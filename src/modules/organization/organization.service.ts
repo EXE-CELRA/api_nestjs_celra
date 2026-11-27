@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateOrganizationDto, UpdateOrganizationDto } from './dto/organization.dto';
-import { UserRole, ContextStatus, ContextGroup, TaskStatus, Priority, WaitingOnRole } from '@prisma/client';
+import { UserRole, ContextStatus, ContextGroup } from '@prisma/client';
 
 @Injectable()
 export class OrganizationService {
@@ -34,7 +34,7 @@ export class OrganizationService {
   }
 
   async create(userId: string, dto: CreateOrganizationDto) {
-    const taxCode = dto.maSoThue || dto.taxCode;
+    const taxCode = dto.taxCode;
     if (!taxCode) {
       throw new BadRequestException('Mã số thuế không được để trống');
     }
@@ -49,19 +49,19 @@ export class OrganizationService {
       );
     }
 
-    const companyName = dto.tenDoanhNghiep || dto.name || dto.legalName || 'Doanh nghiệp mới';
-    const city = dto.thanhPho || dto.city || 'TP. Hồ Chí Minh';
-    const legalType = dto.loaiHinhPhapLy || dto.legalType || 'Công ty TNHH';
-    const industry = dto.nganhNghe || dto.industry || 'Dịch vụ ăn uống';
-    const businessModel = dto.moHinhKinhDoanh || dto.businessModel || 'Trực tiếp tại cơ sở và trực tuyến';
-    const operatingYears = dto.soNamHoatDong || dto.operatingYears || '1 - 3 năm';
-    const revenueStatus = dto.tinhTrangDoanhThu || dto.revenueStatus || 'Đã phát sinh doanh thu';
-    const employeeCount = dto.soLuongNhanSu !== undefined ? dto.soLuongNhanSu : (dto.employeeCount || 5);
-    const locations = dto.diaDiemKinhDoanh || dto.locations || city;
-    const hasOnlineSales = dto.coBanHangOnline !== undefined ? dto.coBanHangOnline : (dto.hasOnlineSales || false);
-    const address = dto.diaChi || dto.address || city;
-    const representativeName = dto.tenNguoiDaiDien || dto.representativeName || companyName;
-    const registrantRole = dto.vaiTroDangKy || dto.registrantRole || 'Chủ doanh nghiệp';
+    const companyName = dto.name || dto.legalName || 'Doanh nghiệp mới';
+    const city = dto.city || 'TP. Hồ Chí Minh';
+    const legalType = dto.legalType || 'Công ty TNHH';
+    const industry = dto.industry || 'Dịch vụ ăn uống';
+    const businessModel = dto.businessModel || 'Trực tiếp tại cơ sở và trực tuyến';
+    const operatingYears = dto.operatingYears || '1 - 3 năm';
+    const revenueStatus = dto.revenueStatus || 'Đã phát sinh doanh thu';
+    const employeeCount = dto.employeeCount ?? 5;
+    const locations = dto.locations || city;
+    const hasOnlineSales = dto.hasOnlineSales ?? false;
+    const address = dto.address || city;
+    const representativeName = dto.representativeName || companyName;
+    const registrantRole = dto.registrantRole || 'Chủ doanh nghiệp';
 
     return this.prisma.$transaction(async (tx) => {
       // 1. Tạo Doanh nghiệp
@@ -93,7 +93,7 @@ export class OrganizationService {
         },
       });
 
-      const accDept = await tx.department.create({
+      await tx.department.create({
         data: {
           organizationId: org.id,
           name: 'Phòng Kế toán & Tài chính',
@@ -102,7 +102,7 @@ export class OrganizationService {
         },
       });
 
-      const opsDept = await tx.department.create({
+      await tx.department.create({
         data: {
           organizationId: org.id,
           name: 'Phòng Vận hành & Cơ sở',
@@ -137,14 +137,14 @@ export class OrganizationService {
       const user = await tx.user.findUnique({ where: { id: userId } });
       const providedBy = user ? user.name : 'Hệ thống';
 
-      const accountingRegime = dto.cheDoKeToan || dto.accountingRegime || 'TT133';
-      const vatMethod = dto.phuongPhapVat || dto.vatMethod || 'KHAU_TRU';
-      const taxCycle = dto.kyKhaiThue || dto.taxCycle || 'QUY';
-      const hasLaborContractAndInsurance = dto.hopDongVaBaoHiem || dto.hasLaborContractAndInsurance || 'DA_DONG_DU';
-      const hasElectronicInvoice = dto.coHoaDonDienTu !== undefined ? dto.coHoaDonDienTu : (dto.hasElectronicInvoice ?? true);
-      const hasFireSafetyCert = dto.coChungNhanPccc !== undefined ? dto.coChungNhanPccc : (dto.hasFireSafetyCert ?? true);
-      const hasSectoralPermit = dto.coGiayPhepCon !== undefined ? dto.coGiayPhepCon : (dto.hasSectoralPermit ?? true);
-      const hasTrademarkRegistered = dto.coDangKyNhanHieu !== undefined ? dto.coDangKyNhanHieu : (dto.hasTrademarkRegistered ?? false);
+      const accountingRegime = dto.accountingRegime || 'TT133';
+      const vatMethod = dto.vatMethod || 'KHAU_TRU';
+      const taxCycle = dto.taxCycle || 'QUY';
+      const hasLaborContractAndInsurance = dto.hasLaborContractAndInsurance || 'DA_DONG_DU';
+      const hasElectronicInvoice = dto.hasElectronicInvoice ?? true;
+      const hasFireSafetyCert = dto.hasFireSafetyCert ?? true;
+      const hasSectoralPermit = dto.hasSectoralPermit ?? true;
+      const hasTrademarkRegistered = dto.hasTrademarkRegistered ?? false;
 
       const initialFacts: Array<{
         key: string;
@@ -313,12 +313,12 @@ export class OrganizationService {
       throw new NotFoundException('Không tìm thấy thông tin doanh nghiệp');
     }
 
-    const name = dto.tenDoanhNghiep || dto.name;
-    const shortName = dto.tenVietTat || dto.shortName;
-    const employeeCount = dto.soLuongNhanSu !== undefined ? dto.soLuongNhanSu : dto.employeeCount;
-    const address = dto.diaChi || dto.address;
-    const representativeName = dto.tenNguoiDaiDien || dto.representativeName;
-    const hasOnlineSales = dto.coBanHangOnline !== undefined ? dto.coBanHangOnline : dto.hasOnlineSales;
+    const name = dto.name;
+    const shortName = dto.shortName;
+    const employeeCount = dto.employeeCount;
+    const address = dto.address;
+    const representativeName = dto.representativeName;
+    const hasOnlineSales = dto.hasOnlineSales;
 
     const updated = await this.prisma.organization.update({
       where: { id: orgId },
