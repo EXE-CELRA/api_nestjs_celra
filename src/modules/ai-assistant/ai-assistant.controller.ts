@@ -5,9 +5,14 @@ import {
   Put,
   Param,
   Body,
+  Headers,
+  Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader, ApiParam } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader, ApiParam, ApiConsumes } from '@nestjs/swagger';
 import { AIAssistantService } from './ai-assistant.service';
 import { AIChatMessageDto, AcceptProposalDto, UpdateLegalRuleDto } from './dto/ai-chat.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -15,6 +20,10 @@ import { OrganizationMembershipGuard } from '../../common/guards/organization-me
 import { AdminOnlyGuard } from '../../common/guards/admin-only.guard';
 import { CurrentUser, ValidatedOrgId } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+
+interface AuthenticatedOrgRequest {
+  validatedOrgId?: string;
+}
 
 @ApiTags('AI Compliance Assistant (Trợ lý AI Tuân thủ OpenCode)')
 @Controller('ai-assistant')

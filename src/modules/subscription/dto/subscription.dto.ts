@@ -13,6 +13,11 @@ export class SubscribePlanDto {
   @IsString()
   paymentMethod?: 'VietQR' | 'Sandbox' | 'BankTransfer' = 'VietQR';
 
+  @ApiPropertyOptional({ example: 'MONTHLY', enum: ['MONTHLY', 'YEARLY'] })
+  @IsOptional()
+  @IsIn(['MONTHLY', 'YEARLY'])
+  billingCycle?: 'MONTHLY' | 'YEARLY' = 'MONTHLY';
+
   @ApiPropertyOptional({ example: 'Gia hạn gói Professional 30 ngày' })
   @IsOptional()
   @IsString()

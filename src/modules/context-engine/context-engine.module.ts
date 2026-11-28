@@ -4,9 +4,10 @@ import { ContextEngineController } from './context-engine.controller';
 import { ComplianceFlowService } from './compliance-flow.service';
 import { AuthModule } from '../auth/auth.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { SubscriptionModule } from '../subscription/subscription.module';
 
 @Module({
-  imports: [AuthModule, WalletModule],
+  imports: [AuthModule, WalletModule, SubscriptionModule],
   controllers: [ContextEngineController],
   providers: [ContextEngineService, ComplianceFlowService],
   exports: [ContextEngineService, ComplianceFlowService],

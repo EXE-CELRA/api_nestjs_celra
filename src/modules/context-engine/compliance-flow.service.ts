@@ -3,8 +3,10 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { SubscriptionService } from '../subscription/subscription.service';
 import {
   BatchAuditContextDto,
   ConfirmChecklistsDto,
@@ -64,6 +66,7 @@ export class ComplianceFlowService {
 
   constructor(
     private readonly prisma: PrismaService,
+    @Optional() private readonly subscriptionService?: SubscriptionService,
   ) {}
 
   /**
@@ -137,15 +140,18 @@ export class ComplianceFlowService {
       };
     }
 
-    // Subscription Check: Kiểm tra thời hạn gói thuê bao của doanh nghiệp
-    if (org.subscriptionExpiresAt && new Date(org.subscriptionExpiresAt) < new Date()) {
-      throw new BadRequestException('Gói thuê bao của bạn đã hết hạn. Vui lòng gia hạn gói để thực hiện rà soát bối cảnh.');
+    // Subscription Check: Kiểm tra thời hạn & trừ hạn mức phân tích hồ sơ theo gói thuê bao
+    if (this.subscriptionService) {
+      await this.subscriptionService.consumeDocAnalysisQuota(org.id, targetFacts.length);
+    } else {
+      if (org.subscriptionExpiresAt && new Date(org.subscriptionExpiresAt) < new Date()) {
+        throw new BadRequestException('Gói thuê bao của bạn đã hết hạn. Vui lòng gia hạn gói để thực hiện rà soát bối cảnh.');
+      }
+      await this.prisma.organization.update({
+        where: { id: org.id },
+        data: { docAnalysesUsedThisMonth: { increment: targetFacts.length } },
+      }).catch(() => {});
     }
-    // Ghi nhận lượt phân tích theo gói thuê bao (không trừ Credit lẻ)
-    await this.prisma.organization.update({
-      where: { id: org.id },
-      data: { docAnalysesUsedThisMonth: { increment: targetFacts.length } },
-    }).catch(() => {});
 
     // Đánh giá theo Rule Engine và Bản đồ Luật chính thức đã xác minh
     const verifiedNow = new Date();

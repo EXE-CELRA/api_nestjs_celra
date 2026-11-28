@@ -10,7 +10,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
 import { ContextEngineService } from './context-engine.service';
 import { ComplianceFlowService } from './compliance-flow.service';
-import { CreateContextFactDto, UpdateContextFactDto, GenerateChecklistFromFactDto } from './dto/context-fact.dto';
+import { CreateContextFactDto, UpdateContextFactDto, GenerateChecklistFromFactDto, AcknowledgeLegalUpdateDto } from './dto/context-fact.dto';
 import { BatchAuditContextDto, ConfirmChecklistsDto } from './dto/compliance-flow.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OrganizationMembershipGuard } from '../../common/guards/organization-membership.guard';
@@ -67,6 +67,24 @@ export class ContextEngineController {
     @Body() dto: ConfirmChecklistsDto,
   ) {
     return this.complianceFlowService.confirmChecklists(orgId, userId, dto);
+  }
+
+  @Get('legal-updates/pending')
+  @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
+  @ApiOperation({ summary: 'Lấy danh sách văn bản/quy định pháp luật mới cập nhật chờ doanh nghiệp xác nhận' })
+  async getPendingLegalUpdates(@ValidatedOrgId() orgId: string) {
+    return this.contextService.getPendingLegalUpdates(orgId);
+  }
+
+  @Post('legal-updates/acknowledge')
+  @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
+  @ApiOperation({ summary: 'Lưu xác nhận hoặc tạm hoãn cập nhật pháp luật mới vào DB' })
+  async acknowledgeLegalUpdate(
+    @ValidatedOrgId() orgId: string,
+    @CurrentUser('sub') userId: string,
+    @Body() dto: AcknowledgeLegalUpdateDto,
+  ) {
+    return this.contextService.acknowledgeLegalUpdate(orgId, userId, dto);
   }
 
   @Get(':id')
