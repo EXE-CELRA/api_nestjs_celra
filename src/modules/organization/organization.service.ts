@@ -77,7 +77,7 @@ export class OrganizationService {
         },
       });
 
-      const accDept = await tx.department.create({
+      await tx.department.create({
         data: {
           organizationId: org.id,
           name: 'Phòng Kế toán & Thuế TNDN',

@@ -63,10 +63,6 @@ export const COMPLIANCE_STATUS_SHORT_LABELS: Record<string, string> = {
 export function formatComplianceStatus(status: string): string {
   return COMPLIANCE_STATUS_LABELS[status] || status;
 }
-
-export function formatComplianceStatusShort(status: string): string {
-  return COMPLIANCE_STATUS_SHORT_LABELS[status] || status;
-}
 export interface VerificationOption {
   label: string;
   value: string;

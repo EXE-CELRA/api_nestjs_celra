@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, IsNotEmpty, IsBoolean, IsIn, Min } from 'class-validator';
+import { IsString, IsOptional, IsNotEmpty, IsIn, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class QueryCitSummaryDto {

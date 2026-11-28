@@ -123,7 +123,6 @@ export class SurveyService {
     // 1. Đồng bộ các thông tin nền tảng (Base Profile) vào ContextFact & Organization
     if (dto.baseProfile && targetOrgId) {
       const p = dto.baseProfile;
-      const isQuarterly = p.isNewlyEstablished || (p.annualRevenue || 0) <= 50000000000;
 
       // Kiểm tra chủ động: Mã số thuế mới có bị trùng với Organization khác hay không
       if (p.taxCode) {
