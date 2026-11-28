@@ -46,6 +46,14 @@ enum MembershipStatus {
 enum ContextGroup {
   boi_canh_co_so
   thue_ke_toan
+  phap_ly_von
+  nganh_nghe_van_hanh
+  hoa_don_dong_tien
+  lao_dong_bhxh
+  dia_diem_pccc
+  giay_phep_con
+  hop_dong
+  du_lieu_shtt
 }
 
 enum ContextStatus {

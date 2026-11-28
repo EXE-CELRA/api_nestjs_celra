@@ -93,6 +93,13 @@ export function isTaxOrEnterpriseDomain(raw: string): boolean {
       'tuan thu', 'ra soat', 'kiem tra', 'ho so', 'nghia vu', 'rui ro', 'xu phat', 'vi pham',
       'han chot', 'thoi han', 'ky han', 'con thieu', 'chua lam', 'chua nop', 'xac minh',
     ],
+    // 7. Đọc, phân tích, tóm tắt, hỏi đáp tệp tin/tài liệu đính kèm
+    [
+      'file', 'tai lieu', 'tep', 'tep tin', 'dinh kem', 'tom tat', 'doc file',
+      'phan tich file', 'so sanh', 'noi dung file', 'trong file', 'tai len',
+      'bang luong', 'hop dong', 'to khai', 'bien ban', 'bang tinh', 'sheet',
+      'docx', 'pdf', 'xlsx', 'excel', 'file nay', 'tep nay',
+    ],
   ];
 
   return keywordGroups.some((group) => group.some((kw) => normalized.includes(kw)));
@@ -134,60 +141,61 @@ export function tryBuildDirectDbResponse(
   fin: CitFinancialSnapshot,
 ) {
   const isComplianceOrTaxAsk =
-    /(thue|tuan thu|can lam gi|lam gi|ra soat|nghia vu|chung tu|phat sinh|huong dan|can nop)/i.test(
+    /(thue|tuan thu|can lam gi|lam gi|ra soat|nghia vu|chung tu|phat sinh|huong dan|can nop|hoa don|may tinh tien|xuat toan|tien mat|chuyen khoan|ngan hang|bhxh|bao hiem|luong|nop phat|vi pham|co can|co phai|can khong|phai khong|nhu the nao|the nao|ra sao|luat|nghi dinh|thong tu|quy dinh|dieu kien|muc b4|chuyen nhuong|khau tru|tai lieu|ho so thieu|con thieu)/i.test(
       normalized,
     );
 
   const isNameQuery =
     !isComplianceOrTaxAsk &&
     ((isSelfOrgSubject &&
-      /(ten gi|la gi|ten la gi|ten cong ty|ten doanh nghiep|ten dn)/i.test(normalized)) ||
+      /(ten phap ly|ten cong ty cua toi|ten doanh nghiep cua toi|cong ty toi ten gi)/i.test(normalized)) ||
       /^(ten|ten gi|ten cong ty|ten doanh nghiep|ten phap ly)$/i.test(normalized));
 
   const isTaxCodeQuery =
     !isComplianceOrTaxAsk &&
-    ((isSelfOrgSubject && /(mst|ma so thue|tax code)/i.test(normalized)) ||
+    ((isSelfOrgSubject && /(mst cua (toi|dn|cong ty)|ma so thue cua (toi|dn|cong ty))/i.test(normalized)) ||
       /^(mst|ma so thue|tax code|so thue)$/i.test(normalized) ||
       /^(tra cuu mst|xin mst|cho xin mst|cho toi mst|xem mst|xem ma so thue)$/i.test(normalized));
 
   const isStaffQuery =
     !isComplianceOrTaxAsk &&
     ((isSelfOrgSubject &&
-      /(bao nhieu|may|co bao nhieu|so luong|quy mo nhan su|nhan su cua toi|nhan vien cua toi)/i.test(
+      /(quy mo nhan su cua (toi|dn|cong ty)|cong ty toi co bao nhieu (nguoi|nhan vien|nhan su))/i.test(
         normalized,
-      ) &&
-      /(nhan su|nhan vien|nguoi)/i.test(normalized)) ||
+      )) ||
       /^(nhan su|nhan vien|quy mo|quy mo nhan su|so luong nhan vien|bao nhieu nguoi)$/i.test(
         normalized,
       ));
 
   const isAddressQuery =
     !isComplianceOrTaxAsk &&
-    ((isSelfOrgSubject && /(dia chi|o dau|tru so|o cho nao)/i.test(normalized)) ||
+    ((isSelfOrgSubject && /(dia chi cua (toi|dn|cong ty)|tru so cua (toi|dn|cong ty)|cong ty toi o dau)/i.test(normalized)) ||
       /^(dia chi|tru so|dia chi tru so|o dau)$/i.test(normalized));
 
   const isIndustryQuery =
     !isComplianceOrTaxAsk &&
-    ((isSelfOrgSubject && /(nganh nghe|linh vuc|kinh doanh gi|mo hinh)/i.test(normalized)) ||
+    ((isSelfOrgSubject && /(nganh nghe cua (toi|dn|cong ty)|linh vuc cua (toi|dn|cong ty)|cong ty toi kinh doanh gi|nganh nghe dang ky cua toi)/i.test(normalized)) ||
       /^(nganh nghe|linh vuc|kinh doanh gi|mo hinh kinh doanh)$/i.test(normalized));
 
   const isGeneralProfileQuery =
     !isComplianceOrTaxAsk &&
-    ((isSelfOrgSubject && /(thong tin|ho so)/i.test(normalized)) ||
+    ((isSelfOrgSubject && /(thong tin doanh nghiep cua toi|ho so doanh nghiep cua toi|thong tin cong ty toi|ho so phap ly cua toi)/i.test(normalized)) ||
       /^(thong tin|ho so|thong tin dn|ho so dn|thong tin cong ty|thong tin doanh nghiep)$/i.test(
         normalized,
       ));
 
   const isRevenueQuery =
-    !isComplianceOrTaxAsk && isSelfOrgSubject && /(doanh thu|thu nhap|tong thu|da thu)/i.test(normalized);
+    !isComplianceOrTaxAsk &&
+    ((isSelfOrgSubject && /(doanh thu cua (toi|dn|cong ty)|tong thu cua (toi|dn|cong ty)|doanh thu nam nay cua toi)/i.test(normalized)) ||
+      /^(doanh thu|tong doanh thu)$/i.test(normalized));
   const isExpenseQuery =
     !isComplianceOrTaxAsk &&
-    isSelfOrgSubject &&
-    /(chi phi|khoan chi|tong chi|da chi|muc b4|xuat toan)/i.test(normalized);
+    ((isSelfOrgSubject && /(tong chi phi cua (toi|dn|cong ty)|chi phi nam nay cua toi)/i.test(normalized)) ||
+      /^(chi phi|tong chi phi)$/i.test(normalized));
   const isTaxEstimateQuery =
     !isComplianceOrTaxAsk &&
-    isSelfOrgSubject &&
-    /(thue tndn|tam nop 80|tien thue phai nop|tam tinh thue)/i.test(normalized);
+    ((isSelfOrgSubject && /(tam tinh thue tndn cua (toi|dn|cong ty)|uoc tinh thue tndn cua (toi|dn|cong ty))/i.test(normalized)) ||
+      /^(uoc tinh thue|tam tinh thue)$/i.test(normalized));
 
   if (isRevenueQuery) {
     const content = `Doanh thu năm ${fin.currentYear} của **${org.name}** ghi nhận trên hệ thống CELRA hiện tại là: **${fin.totalRevenue.toLocaleString('vi-VN')} VNĐ** (Tổng cộng ${fin.citRevenues.length} khoản thu đã kê khai trong Sổ Doanh thu).`;
