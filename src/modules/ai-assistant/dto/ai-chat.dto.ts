@@ -28,6 +28,17 @@ export class AIChatMessageDto {
   @IsString()
   conversationId?: string;
 
+  @ApiPropertyOptional({ example: 'file-uuid-12345', description: 'ID tệp tin người dùng tải lên trong phiên chat' })
+  @IsOptional()
+  @IsString()
+  fileId?: string;
+
+  @ApiPropertyOptional({ type: [String], example: ['file-1', 'file-2'], description: 'Danh sách ID các tệp tin đính kèm trong hội thoại' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  fileIds?: string[];
+
   @ApiPropertyOptional({ type: [ChatHistoryItemDto], description: 'Lịch sử hội thoại gần nhất (10 messages)' })
   @IsOptional()
   @IsArray()
