@@ -182,6 +182,7 @@ model User {
   timelineEvents       TaskTimelineEvent[]
   notifications        ComplianceNotification[]
   calendarNotes        CalendarNote[]
+  tablePreferences     UserTablePreference[]
 
   @@map("nguoi_dung")
 }
@@ -750,4 +751,22 @@ model AiSystem {
   @@index([organizationId, createdAt])
   @@index([createdAt])
   @@map("cau_hinh_va_luu_luong_ai")
+}
+
+// ===================== CẤU HÌNH GIAO DIỆN BẢNG THEO NGƯỜI DÙNG (ĐỒNG BỘ ĐA THIẾT BỊ) =====================
+
+model UserTablePreference {
+  id                String   @id @default(uuid())
+  userId            String   @map("id_nguoi_dung")
+  organizationScope String   @default("GLOBAL") @map("pham_vi_doanh_nghiep")
+  tableKey          String   @map("ma_bang")
+  columnsConfig     Json     @map("cau_hinh_cot")
+  createdAt         DateTime @default(now()) @map("ngay_tao")
+  updatedAt         DateTime @updatedAt @map("ngay_cap_nhat")
+
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationScope, tableKey])
+  @@index([userId, tableKey])
+  @@map("cau_hinh_bang_nguoi_dung")
 }
