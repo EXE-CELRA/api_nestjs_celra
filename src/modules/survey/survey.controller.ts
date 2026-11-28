@@ -4,8 +4,10 @@ import {
   Body,
   UseGuards,
   Headers,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
 import { SurveyService } from './survey.service';
 import { SubmitSurveyDto } from './dto/survey.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -24,8 +26,12 @@ export class SurveyController {
   async submitAnswers(
     @Headers('x-organization-id') orgId: string,
     @CurrentUser('sub') userId: string,
+    @CurrentUser('role') userRole: string,
     @Body() dto: SubmitSurveyDto,
   ) {
+    if (userRole === UserRole.admin) {
+      throw new ForbiddenException('Tài khoản Quản trị viên hệ thống không được phép sửa đổi khảo sát của doanh nghiệp.');
+    }
     return this.surveyService.submitAnswers(orgId, userId, dto);
   }
 }

@@ -6,24 +6,16 @@ import {
   Param,
   Body,
   UseGuards,
-  Headers,
-  Req,
-  UseInterceptors,
-  UploadedFile,
 } from '@nestjs/common';
-import type { Request } from 'express';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader, ApiParam, ApiConsumes } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader, ApiParam } from '@nestjs/swagger';
 import { AIAssistantService } from './ai-assistant.service';
 import { AIChatMessageDto, AcceptProposalDto, UpdateLegalRuleDto } from './dto/ai-chat.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OrganizationMembershipGuard } from '../../common/guards/organization-membership.guard';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AdminOnlyGuard } from '../../common/guards/admin-only.guard';
+import { CurrentUser, ValidatedOrgId } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 
-interface AuthenticatedOrgRequest extends Request {
-  validatedOrgId?: string;
-}
 @ApiTags('AI Compliance Assistant (Trợ lý AI Tuân thủ OpenCode)')
 @Controller('ai-assistant')
 @UseGuards(JwtAuthGuard)
@@ -57,11 +49,9 @@ export class AIAssistantController {
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Gửi câu hỏi tuân thủ đến Trợ lý AI (kèm nạp bối cảnh Context Facts)' })
   async chat(
-    @Req() req: AuthenticatedOrgRequest,
-    @Headers('x-organization-id') orgId: string,
+    @ValidatedOrgId() targetOrgId: string,
     @Body() dto: AIChatMessageDto,
   ) {
-    const targetOrgId = req.validatedOrgId || orgId;
     return this.aiService.chat(targetOrgId, dto);
   }
 
@@ -70,12 +60,10 @@ export class AIAssistantController {
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Chấp nhận đề xuất của AI để tự động tạo Checklist và Task vào DB' })
   async acceptProposal(
-    @Req() req: AuthenticatedOrgRequest,
-    @Headers('x-organization-id') orgId: string,
+    @ValidatedOrgId() targetOrgId: string,
     @CurrentUser('sub') userId: string,
     @Body() dto: AcceptProposalDto,
   ) {
-    const targetOrgId = req.validatedOrgId || orgId;
     return this.aiService.acceptProposal(targetOrgId, userId, dto);
   }
 
@@ -87,6 +75,7 @@ export class AIAssistantController {
   }
 
   @Put('legal-rules/:code')
+  @UseGuards(AdminOnlyGuard)
   @ApiParam({ name: 'code', description: 'Mã quy định pháp luật (ví dụ: RULE-TAX-TNDN-80)' })
   @ApiOperation({ summary: 'Admin cập nhật Nghị định/Thông tư mới hoặc nội dung hướng dẫn cho 1 điều luật' })
   async updateLegalRule(
@@ -97,13 +86,15 @@ export class AIAssistantController {
   }
 
   @Post('sync-legal-rules')
-  @ApiOperation({ summary: 'Kích hoạt đồng bộ cập nhật luật mới và làm mới chu kỳ Cache 30 ngày' })
+  @UseGuards(AdminOnlyGuard)
+  @ApiOperation({ summary: 'Kích hoạt đồng bộ cập nhật luật mới và làm mới chu kỳ Cache 30 ngày (Chỉ Admin)' })
   async syncLegalRules() {
     return this.aiService.syncLegalRulesFromExternalApi();
   }
 
   @Get('dlpl-quota')
-  @ApiOperation({ summary: 'Kiểm tra hạn ngạch và số lượt còn lại của API Dữ Liệu Pháp Luật (0 tốn lượt)' })
+  @UseGuards(AdminOnlyGuard)
+  @ApiOperation({ summary: 'Kiểm tra hạn ngạch và số lượt còn lại của API Dữ Liệu Pháp Luật (Chỉ Admin)' })
   async getDLPLQuota() {
     return this.aiService.getDLPLQuota();
   }

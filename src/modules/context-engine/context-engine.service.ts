@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateContextFactDto, UpdateContextFactDto, GenerateChecklistFromFactDto } from './dto/context-fact.dto';
 import { ContextGroup, ContextStatus, TaskStatus, Priority, UserRole, WaitingOnRole } from '@prisma/client';
@@ -107,7 +107,7 @@ export class ContextEngineService {
     return facts;
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, orgId?: string) {
     const fact = await this.prisma.contextFact.findUnique({
       where: { id },
       include: {
@@ -121,13 +121,21 @@ export class ContextEngineService {
       throw new NotFoundException('Không tìm thấy dữ kiện bối cảnh');
     }
 
+    if (orgId && fact.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền truy cập dữ kiện bối cảnh của doanh nghiệp khác.');
+    }
+
     return fact;
   }
 
-  async update(id: string, userId: string, dto: UpdateContextFactDto) {
+  async update(id: string, userId: string, dto: UpdateContextFactDto, orgId?: string) {
     const fact = await this.prisma.contextFact.findUnique({ where: { id } });
     if (!fact) {
       throw new NotFoundException('Không tìm thấy dữ kiện bối cảnh');
+    }
+
+    if (orgId && fact.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền chỉnh sửa dữ kiện bối cảnh của doanh nghiệp khác.');
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -162,10 +170,14 @@ export class ContextEngineService {
     return updated;
   }
 
-  async confirm(id: string, userId: string) {
+  async confirm(id: string, userId: string, orgId?: string) {
     const fact = await this.prisma.contextFact.findUnique({ where: { id } });
     if (!fact) {
       throw new NotFoundException('Không tìm thấy dữ kiện');
+    }
+
+    if (orgId && fact.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền xác nhận dữ kiện bối cảnh của doanh nghiệp khác.');
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });

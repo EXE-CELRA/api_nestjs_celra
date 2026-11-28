@@ -6,26 +6,33 @@ import {
   Body,
   Param,
   UseGuards,
-  Headers,
   UseInterceptors,
   UploadedFile,
   Res,
+  Req,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import { existsSync, mkdirSync } from 'fs';
+import { memoryStorage } from 'multer';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader, ApiConsumes } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
 import { EvidenceDocumentService } from './evidence-document.service';
 import { VerifyEvidenceDto, UploadEvidenceDto } from './dto/evidence.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OrganizationMembershipGuard } from '../../common/guards/organization-membership.guard';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser, ValidatedOrgId } from '../../common/decorators/current-user.decorator';
+
+interface TenantRequest extends Request {
+  activeMembership?: {
+    role?: UserRole;
+  };
+}
 
 @ApiTags('Evidence & Documents (Bằng chứng số & Thẩm tra)')
 @Controller('evidence-documents')
-@UseGuards(JwtAuthGuard, OrganizationMembershipGuard)
+@UseGuards(JwtAuthGuard, OrganizationMembershipGuard, RolesGuard)
 @ApiBearerAuth()
 export class EvidenceDocumentController {
   constructor(private readonly evidenceService: EvidenceDocumentService) {}
@@ -33,30 +40,15 @@ export class EvidenceDocumentController {
   @Post('upload')
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Tải lên tệp đính kèm bằng chứng tuân thủ thật' })
+  @ApiOperation({ summary: 'Tải lên chứng từ tuân thủ (Xử lý trên RAM -> Mã hóa AES-256-GCM -> Lưu thẳng lên Supabase Private Cloud)' })
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: (_req, _file, cb) => {
-          const uploadPath = './uploads/evidence';
-          if (!existsSync(uploadPath)) {
-            mkdirSync(uploadPath, { recursive: true });
-          }
-          cb(null, uploadPath);
-        },
-        filename: (_req, file, cb) => {
-          const randomName = Array(32)
-            .fill(null)
-            .map(() => Math.round(Math.random() * 16).toString(16))
-            .join('');
-          cb(null, `${randomName}${extname(file.originalname)}`);
-        },
-      }),
-      limits: { fileSize: 25 * 1024 * 1024 }, // 25MB max
+      storage: memoryStorage(),
+      limits: { fileSize: 25 * 1024 * 1024 }, // 25MB max trên RAM, 0 byte ghi xuống ổ đĩa máy chủ
     }),
   )
   async uploadFile(
-    @Headers('x-organization-id') orgId: string,
+    @ValidatedOrgId() orgId: string,
     @CurrentUser('sub') userId: string,
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadEvidenceDto,
@@ -86,7 +78,7 @@ export class EvidenceDocumentController {
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Lấy kho lưu trữ tất cả bằng chứng số của Doanh nghiệp' })
   async findAll(
-    @Headers('x-organization-id') orgId: string,
+    @ValidatedOrgId() orgId: string,
     @CurrentUser('sub') userId: string,
   ) {
     return this.evidenceService.findAll(orgId, userId);
@@ -97,32 +89,48 @@ export class EvidenceDocumentController {
   @ApiOperation({ summary: 'Lấy chi tiết bằng chứng số theo ID' })
   async findOne(
     @Param('id') id: string,
-    @Headers('x-organization-id') orgId?: string,
+    @ValidatedOrgId() orgId: string,
   ) {
     return this.evidenceService.findOne(id, orgId);
   }
 
   @Get(':id/download')
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
-  @ApiOperation({ summary: 'Tải về tệp bằng chứng số' })
+  @ApiOperation({ summary: 'Tải về tệp bằng chứng số (Giải mã AES-256-GCM & kiểm tra toàn vẹn SHA-256)' })
   async downloadFile(
     @Param('id') id: string,
     @Res() res: Response,
-    @Headers('x-organization-id') orgId?: string,
+    @ValidatedOrgId() orgId: string,
   ) {
     const fileInfo = await this.evidenceService.getFileForDownload(id, orgId);
-    return res.download(fileInfo.absolutePath, fileInfo.fileName);
+    const encodedName = encodeURIComponent(fileInfo.fileName);
+    const asciiFallback = fileInfo.fileName.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');
+
+    res.setHeader('Content-Type', fileInfo.mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodedName}`,
+    );
+    res.setHeader('Content-Length', String(fileInfo.buffer.length));
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    if (fileInfo.sha256Checksum) {
+      res.setHeader('X-Evidence-SHA256', fileInfo.sha256Checksum);
+    }
+    return res.send(fileInfo.buffer);
   }
 
   @Patch(':id/verify')
+  @Roles(UserRole.owner, UserRole.internal_accountant, UserRole.service_accountant)
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
-  @ApiOperation({ summary: 'Thẩm tra bằng chứng (Xác nhận ĐẠT hoặc TỪ CHỐI kèm lý do)' })
+  @ApiOperation({ summary: 'Thẩm tra bằng chứng (Chỉ Chủ DN & Kế toán — Khóa bảo toàn sau khi ĐẠT)' })
   async verify(
     @Param('id') id: string,
     @CurrentUser('sub') userId: string,
     @Body() dto: VerifyEvidenceDto,
-    @Headers('x-organization-id') orgId?: string,
+    @ValidatedOrgId() orgId: string,
+    @Req() req: TenantRequest,
   ) {
-    return this.evidenceService.verify(id, userId, dto, orgId);
+    return this.evidenceService.verify(id, userId, dto, orgId, req.activeMembership?.role);
   }
 }
