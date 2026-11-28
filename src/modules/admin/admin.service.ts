@@ -129,7 +129,6 @@ export class AdminService {
       where: whereClause,
       include: {
         wallet: true,
-        contextFacts: true,
         _count: {
           select: { tasks: true, evidenceDocuments: true },
         },

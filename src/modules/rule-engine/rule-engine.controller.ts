@@ -1,21 +1,21 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Headers } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
 import { RuleEngineService } from './rule-engine.service';
 import { CreateRuleDto } from './dto/rule.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { UserRole } from '@prisma/client';
+import { OrganizationMembershipGuard } from '../../common/guards/organization-membership.guard';
+import { AdminOnlyGuard } from '../../common/guards/admin-only.guard';
+import { ValidatedOrgId } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Rule Engine (Động cơ Quy tắc Tuân thủ)')
 @Controller('rules')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class RuleEngineController {
   constructor(private readonly ruleService: RuleEngineService) {}
 
   @Post()
-  @Roles(UserRole.admin)
+  @UseGuards(AdminOnlyGuard)
   @ApiOperation({ summary: 'Tạo quy tắc tuân thủ mới (Chỉ Admin)' })
   async create(@Body() dto: CreateRuleDto) {
     return this.ruleService.create(dto);
@@ -34,9 +34,10 @@ export class RuleEngineController {
   }
 
   @Post('trigger-evaluation')
+  @UseGuards(OrganizationMembershipGuard)
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Kích hoạt động cơ đánh giá quy tắc & tự động tạo Tasks' })
-  async evaluate(@Headers('x-organization-id') orgId: string) {
+  async evaluate(@ValidatedOrgId() orgId: string) {
     return this.ruleService.evaluateAndTrigger(orgId);
   }
 }
