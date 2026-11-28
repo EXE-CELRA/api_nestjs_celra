@@ -148,7 +148,7 @@ export function tryBuildDirectDbResponse(
   const isNameQuery =
     !isComplianceOrTaxAsk &&
     ((isSelfOrgSubject &&
-      /(ten phap ly|ten cong ty cua toi|ten doanh nghiep cua toi|cong ty toi ten gi)/i.test(normalized)) ||
+      /(ten phap ly|ten cong ty cua toi|ten doanh nghiep cua toi|(cong ty|doanh nghiep) toi ten (la )?gi)/i.test(normalized)) ||
       /^(ten|ten gi|ten cong ty|ten doanh nghiep|ten phap ly)$/i.test(normalized));
 
   const isTaxCodeQuery =
@@ -186,11 +186,12 @@ export function tryBuildDirectDbResponse(
 
   const isRevenueQuery =
     !isComplianceOrTaxAsk &&
-    ((isSelfOrgSubject && /(doanh thu cua (toi|dn|cong ty)|tong thu cua (toi|dn|cong ty)|doanh thu nam nay cua toi)/i.test(normalized)) ||
+    ((isSelfOrgSubject && /(doanh thu (cua )?(toi|dn|cong ty|doanh nghiep)|tong thu cua (toi|dn|cong ty)|doanh thu nam nay cua toi)/i.test(normalized)) ||
       /^(doanh thu|tong doanh thu)$/i.test(normalized));
   const isExpenseQuery =
-    !isComplianceOrTaxAsk &&
-    ((isSelfOrgSubject && /(tong chi phi cua (toi|dn|cong ty)|chi phi nam nay cua toi)/i.test(normalized)) ||
+    ((isSelfOrgSubject &&
+      !/(can lam gi|nhu the nao|huong dan|co bi loai|co duoc tru)/i.test(normalized) &&
+      /((tong )?chi phi (cua )?(toi|dn|cong ty|doanh nghiep)|chi phi nam nay cua toi)/i.test(normalized)) ||
       /^(chi phi|tong chi phi)$/i.test(normalized));
   const isTaxEstimateQuery =
     !isComplianceOrTaxAsk &&

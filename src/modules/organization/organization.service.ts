@@ -3,19 +3,14 @@ import {
   BadRequestException,
   NotFoundException,
   ConflictException,
-  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateOrganizationDto, UpdateOrganizationDto } from './dto/organization.dto';
-import { EvidenceVaultService } from '../evidence-document/evidence-vault.service';
 import { UserRole, ContextStatus, ContextGroup } from '@prisma/client';
 
 @Injectable()
 export class OrganizationService {
-  constructor(
-    private readonly prisma: PrismaService,
-    @Optional() private readonly vaultService?: EvidenceVaultService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async create(userId: string, dto: CreateOrganizationDto) {
     const taxCode = dto.taxCode;
@@ -270,30 +265,5 @@ export class OrganizationService {
     });
 
     return updated;
-  }
-
-  async resetDemo(userId: string, orgId: string) {
-    const membership = await this.prisma.membership.findFirst({
-      where: { organizationId: orgId, userId, role: { in: [UserRole.owner, UserRole.admin] } },
-    });
-
-    if (!membership) {
-      throw new BadRequestException('Bạn không có quyền quản trị để xóa dữ liệu doanh nghiệp này');
-    }
-
-    const cloudDocs = await this.prisma.evidenceDocument.findMany({
-      where: { organizationId: orgId, filePath: { startsWith: 'supabase://' } },
-      select: { filePath: true },
-    });
-
-    await this.prisma.organization.delete({
-      where: { id: orgId },
-    });
-
-    if (this.vaultService && cloudDocs.length > 0) {
-      await this.vaultService.deleteSupabaseUris(cloudDocs.map((d) => d.filePath));
-    }
-
-    return { success: true, message: 'Đã xóa sạch dữ liệu và chứng từ đám mây của doanh nghiệp để chuẩn bị demo lại' };
   }
 }

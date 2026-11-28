@@ -121,9 +121,9 @@ export class EvidenceDocumentController {
   }
 
   @Patch(':id/verify')
-  @Roles(UserRole.owner, UserRole.internal_accountant, UserRole.service_accountant)
+  @Roles(UserRole.owner)
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
-  @ApiOperation({ summary: 'Thẩm tra bằng chứng (Chỉ Chủ DN & Kế toán — Khóa bảo toàn sau khi ĐẠT)' })
+  @ApiOperation({ summary: 'Thẩm tra bằng chứng (Chỉ Chủ doanh nghiệp)' })
   async verify(
     @Param('id') id: string,
     @CurrentUser('sub') userId: string,
