@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { AIAssistantService } from './ai-assistant.service';
+import { ChatFileService } from './chat-file.service';
 import { PrismaService } from '../../database/prisma.service';
 
 describe('AIAssistantService Intent & Prompt Conditioning', () => {
@@ -76,6 +77,13 @@ describe('AIAssistantService Intent & Prompt Conditioning', () => {
         AIAssistantService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: ConfigService, useValue: mockConfig },
+        {
+          provide: ChatFileService,
+          useValue: {
+            getFilesByContext: jest.fn().mockReturnValue([]),
+            processAndStoreFile: jest.fn(),
+          },
+        },
       ],
     }).compile();
 

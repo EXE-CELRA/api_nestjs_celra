@@ -43,13 +43,11 @@ export class AIAssistantController {
     }),
   )
   async uploadChatFile(
-    @Req() req: AuthenticatedOrgRequest,
-    @Headers('x-organization-id') orgId: string,
+    @ValidatedOrgId() targetOrgId: string,
     @CurrentUser('sub') userId: string,
     @UploadedFile() file: Express.Multer.File,
     @Body('conversationId') conversationId?: string,
   ) {
-    const targetOrgId = req.validatedOrgId || orgId;
     return this.aiService.uploadChatFile(targetOrgId, userId, file, conversationId);
   }
 

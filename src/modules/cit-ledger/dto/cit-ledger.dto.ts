@@ -208,7 +208,7 @@ export class SyncCitComplianceChecklistDto {
   year: number;
 
   @IsNotEmpty()
-  quarter: number | string; // 1, 2, 3, 4 ho?c 'ALL'
+  quarter: number | string; // 1, 2, 3, 4 hoặc 'ALL'
 
   @IsOptional()
   @Type(() => Number)

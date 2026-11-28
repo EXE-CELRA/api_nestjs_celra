@@ -16,7 +16,7 @@ export class MembershipService {
 
   async invite(orgId: string, dto: InviteMemberDto) {
     // Chặn leo thang đặc quyền: Không cho phép mời thành viên với vai trò admin hệ thống
-    const safeRole = dto.role === UserRole.admin ? UserRole.internal_accountant : dto.role;
+    const safeRole = dto.role === UserRole.admin ? UserRole.staff : dto.role;
 
     if (dto.departmentId) {
       const dept = await this.prisma.department.findFirst({
@@ -139,7 +139,7 @@ export class MembershipService {
 
     const sanitizedDto: UpdateMemberDto = {
       ...dto,
-      ...(dto.role === UserRole.admin ? { role: UserRole.internal_accountant } : {}),
+      ...(dto.role === UserRole.admin ? { role: UserRole.staff } : {}),
     };
 
     const updated = await this.prisma.membership.update({

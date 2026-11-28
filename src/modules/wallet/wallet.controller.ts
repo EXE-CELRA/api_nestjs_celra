@@ -43,7 +43,7 @@ export class WalletController {
   }
 
   @Post('buy-package')
-  @Roles(UserRole.owner, UserRole.internal_accountant)
+  @Roles(UserRole.owner)
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Mua và kích hoạt gói Credit vào ví' })
   async buyPackage(
@@ -55,7 +55,7 @@ export class WalletController {
   }
 
   @Post('deposit')
-  @Roles(UserRole.owner, UserRole.internal_accountant)
+  @Roles(UserRole.owner)
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Nạp tiền thủ công / xác nhận nạp tiền vào ví' })
   async deposit(

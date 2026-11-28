@@ -42,7 +42,7 @@ export class SubscriptionController {
   }
 
   @Post('subscribe')
-  @Roles(UserRole.owner, UserRole.internal_accountant)
+  @Roles(UserRole.owner)
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Đăng ký hoặc nâng cấp gói dịch vụ (Starter, Professional, Enterprise)' })
   async subscribe(
@@ -53,7 +53,7 @@ export class SubscriptionController {
   }
 
   @Patch('auto-renew')
-  @Roles(UserRole.owner, UserRole.internal_accountant)
+  @Roles(UserRole.owner)
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Bật / Tắt tự động gia hạn gói' })
   async toggleAutoRenew(
