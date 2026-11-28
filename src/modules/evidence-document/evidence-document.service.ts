@@ -1,15 +1,17 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { VerifyEvidenceDto } from './dto/evidence.dto';
 import { EvidenceVaultService } from './evidence-vault.service';
 import { EvidenceStatus, TaskStatus, TimelineEventType, UserRole, WaitingOnRole } from '@prisma/client';
 import { extname } from 'path';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 @Injectable()
 export class EvidenceDocumentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly vaultService: EvidenceVaultService,
+    @Optional() private readonly subscriptionService?: SubscriptionService,
   ) {}
 
   async saveFile(
@@ -50,6 +52,10 @@ export class EvidenceDocumentService {
     }
     if (!targetOrgId) {
       throw new BadRequestException('Không tìm thấy doanh nghiệp hợp lệ để lưu trữ bằng chứng');
+    }
+
+    if (this.subscriptionService) {
+      await this.subscriptionService.assertStorageAvailable(targetOrgId, file.size);
     }
 
     const fileSizeFormatted = `${(file.size / (1024 * 1024)).toFixed(2)} MB`;

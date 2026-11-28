@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { CreateContextFactDto, UpdateContextFactDto, GenerateChecklistFromFactDto } from './dto/context-fact.dto';
+import { CreateContextFactDto, UpdateContextFactDto, GenerateChecklistFromFactDto, AcknowledgeLegalUpdateDto } from './dto/context-fact.dto';
 import { ContextGroup, ContextStatus, TaskStatus, Priority, UserRole, WaitingOnRole } from '@prisma/client';
 import { CORE_LEGAL_DOC_LINKS } from '../../common/constants/legal-docs.constant';
 import { calculateTaxDeadline } from '../../common/utils/tax-deadline.util';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 const LEGACY_GROUP_MAP: Record<string, ContextGroup> = {
   base_profile: 'boi_canh_co_so',
@@ -17,6 +18,7 @@ const LEGACY_GROUP_MAP: Record<string, ContextGroup> = {
 export class ContextEngineService {
   constructor(
     private readonly prisma: PrismaService,
+    @Optional() private readonly subscriptionService?: SubscriptionService,
   ) {}
 
   async create(orgId: string, userId: string, dto: CreateContextFactDto) {
@@ -216,11 +218,15 @@ export class ContextEngineService {
     }
     targetOrgId = fact.organizationId;
 
-    // 1. Ghi nhận lượt phân tích thẻ bối cảnh theo gói thuê bao
-    await this.prisma.organization.update({
-      where: { id: targetOrgId },
-      data: { docAnalysesUsedThisMonth: { increment: 1 } },
-    }).catch(() => {});
+    // 1. Kiểm tra & ghi nhận lượt phân tích thẻ bối cảnh theo gói thuê bao
+    if (this.subscriptionService) {
+      await this.subscriptionService.consumeDocAnalysisQuota(targetOrgId, 1);
+    } else {
+      await this.prisma.organization.update({
+        where: { id: targetOrgId },
+        data: { docAnalysesUsedThisMonth: { increment: 1 } },
+      }).catch(() => {});
+    }
     // 2. Tra cứu Căn cứ pháp lý Thuế TNDN chính thức từ Database (đồng bộ từ DLPL API)
     const ruleCodeMap: Record<string, string> = {
       tax_code: 'RULE-TAX-TNDN-80',
@@ -412,6 +418,210 @@ export class ContextEngineService {
       success: true,
       message: `Đã khởi tạo thành công ${createdTasks.length} nhiệm vụ kiểm tra mới!`,
       tasks: createdTasks,
+    };
+  }
+
+  /**
+   * Kéo các văn bản / quy định pháp luật mới được cập nhật từ Cổng Dữ Liệu Pháp Luật hoặc Admin
+   * mà doanh nghiệp hiện tại chưa xác nhận / chưa bỏ qua.
+   */
+  async getPendingLegalUpdates(orgId: string) {
+    if (!orgId) {
+      return { pendingUpdates: [], totalPending: 0 };
+    }
+
+    const [legalDocs, updatedRules, acks] = await Promise.all([
+      this.prisma.legalDocument.findMany({
+        orderBy: { syncedAt: 'desc' },
+        take: 10,
+      }),
+      this.prisma.rule.findMany({
+        orderBy: { updatedAt: 'desc' },
+        take: 10,
+      }),
+      this.prisma.orgLegalUpdateAck.findMany({
+        where: { organizationId: orgId },
+      }),
+    ]);
+
+    const ackedKeySet = new Set(acks.map((a) => `${a.sourceCode}::${a.sourceVersion}`));
+    const pendingUpdates: Array<{
+      id: string;
+      sourceType: 'LEGAL_DOCUMENT' | 'RULE';
+      sourceCode: string;
+      sourceVersion: string;
+      title: string;
+      legalReference: string;
+      issuedBy: string;
+      effectiveDate: string;
+      sourceUrl?: string;
+      syncedAt: string;
+      question: string;
+      options: string[];
+    }> = [];
+
+    // 1. Văn bản mới đồng bộ từ Cổng Dữ Liệu Pháp Luật (bảng van_ban_phap_luat)
+    for (const doc of legalDocs) {
+      const version = doc.syncedAt.toISOString();
+      if (ackedKeySet.has(`${doc.code}::${version}`)) continue;
+
+      pendingUpdates.push({
+        id: `doc_${doc.id}`,
+        sourceType: 'LEGAL_DOCUMENT',
+        sourceCode: doc.code,
+        sourceVersion: version,
+        title: doc.name,
+        legalReference: `${doc.code} — ${doc.name}`,
+        issuedBy: doc.issuedBy || 'Cổng Dữ Liệu Pháp Luật',
+        effectiveDate: doc.effectiveDate || 'Đang có hiệu lực',
+        sourceUrl: doc.sourceUrl,
+        syncedAt: doc.syncedAt.toISOString(),
+        question: `Doanh nghiệp đã rà soát và áp dụng các yêu cầu của văn bản "${doc.code} — ${doc.name}" vào hồ sơ tuân thủ kỳ hiện tại chưa?`,
+        options: [
+          'Đã hoàn thành / Tuân thủ đầy đủ',
+          'Đang chuẩn bị / Có một phần',
+          'Chưa thực hiện / Chưa có',
+          'Chưa rõ quy định',
+        ],
+      });
+    }
+
+    // 2. Quy tắc được Admin cập nhật phiên bản mới (version !== '1.0' hoặc vừa cập nhật sau khởi tạo)
+    for (const rule of updatedRules) {
+      const isUpgraded =
+        rule.version !== '1.0' ||
+        rule.updatedAt.getTime() - rule.createdAt.getTime() > 5000;
+      if (!isUpgraded) continue;
+
+      const version = `${rule.version}_${rule.updatedAt.toISOString()}`;
+      if (ackedKeySet.has(`${rule.code}::${version}`)) continue;
+
+      pendingUpdates.push({
+        id: `rule_${rule.id}`,
+        sourceType: 'RULE',
+        sourceCode: rule.code,
+        sourceVersion: version,
+        title: rule.title,
+        legalReference: rule.legalReference,
+        issuedBy: `Phiên bản quy tắc ${rule.version}`,
+        effectiveDate: rule.effectiveDate
+          ? new Date(rule.effectiveDate).toLocaleDateString('vi-VN')
+          : 'Đang áp dụng',
+        syncedAt: rule.updatedAt.toISOString(),
+        question: rule.conditionSummary || `Doanh nghiệp đã đáp ứng điều kiện tuân thủ cho "${rule.title}" chưa?`,
+        options: [
+          'Đã hoàn thành / Tuân thủ đầy đủ',
+          'Đang chuẩn bị / Có một phần',
+          'Chưa thực hiện / Chưa có',
+          'Chưa rõ quy định',
+        ],
+      });
+    }
+
+    pendingUpdates.sort((a, b) => new Date(b.syncedAt).getTime() - new Date(a.syncedAt).getTime());
+
+    return {
+      pendingUpdates,
+      totalPending: pendingUpdates.length,
+    };
+  }
+
+  /**
+   * Lưu xác nhận (CONFIRMED) hoặc tạm ẩn (DISMISSED) cho văn bản / quy định pháp luật mới vào DB.
+   * Nếu CONFIRMED, đồng thời lưu/nâng cấp dữ kiện bối cảnh và ghi nhận lịch sử không hồi tố.
+   */
+  async acknowledgeLegalUpdate(
+    orgId: string,
+    userId: string,
+    dto: AcknowledgeLegalUpdateDto,
+  ) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const actorName = user ? user.name : 'Chủ doanh nghiệp';
+
+    const ack = await this.prisma.orgLegalUpdateAck.upsert({
+      where: {
+        organizationId_sourceCode_sourceVersion: {
+          organizationId: orgId,
+          sourceCode: dto.sourceCode,
+          sourceVersion: dto.sourceVersion,
+        },
+      },
+      create: {
+        organizationId: orgId,
+        sourceType: dto.sourceType,
+        sourceCode: dto.sourceCode,
+        sourceVersion: dto.sourceVersion,
+        status: dto.status,
+        selectedOption: dto.selectedOption || null,
+        confirmedById: userId,
+      },
+      update: {
+        status: dto.status,
+        selectedOption: dto.selectedOption || null,
+        confirmedById: userId,
+        confirmedAt: new Date(),
+      },
+    });
+
+    if (dto.status === 'CONFIRMED' && dto.selectedOption) {
+      const factKey = `law_ack_${dto.sourceCode.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60)}`;
+      const existingFact = await this.prisma.contextFact.findFirst({
+        where: { organizationId: orgId, key: factKey },
+      });
+
+      const nextStatus =
+        dto.selectedOption === 'Đã hoàn thành / Tuân thủ đầy đủ'
+          ? ContextStatus.confirmed
+          : ContextStatus.unconfirmed;
+
+      if (existingFact) {
+        await this.prisma.contextFact.update({
+          where: { id: existingFact.id },
+          data: {
+            currentValue: dto.selectedOption,
+            status: nextStatus,
+            source: `Xác nhận cập nhật ${dto.sourceCode}`,
+            providedBy: actorName,
+            history: {
+              create: {
+                value: dto.selectedOption,
+                changedBy: actorName,
+                note: `Cập nhật theo ${dto.legalReference || dto.sourceCode} (phiên bản ${dto.sourceVersion})`,
+              },
+            },
+          },
+        });
+      } else {
+        await this.prisma.contextFact.create({
+          data: {
+            organizationId: orgId,
+            key: factKey,
+            label: dto.title || `Tuân thủ ${dto.sourceCode}`,
+            group: ContextGroup.thue_ke_toan,
+            currentValue: dto.selectedOption,
+            source: `Xác nhận cập nhật ${dto.sourceCode}`,
+            providedBy: actorName,
+            status: nextStatus,
+            affectedRules: [dto.sourceCode],
+            history: {
+              create: {
+                value: dto.selectedOption,
+                changedBy: actorName,
+                note: `Xác nhận lần đầu theo ${dto.legalReference || dto.sourceCode}`,
+              },
+            },
+          },
+        });
+      }
+    }
+
+    return {
+      success: true,
+      ack,
+      message:
+        dto.status === 'CONFIRMED'
+          ? `Đã ghi nhận xác nhận tuân thủ cho ${dto.sourceCode} vào cơ sở dữ liệu!`
+          : `Đã tạm hoãn thông báo cho ${dto.sourceCode}.`,
     };
   }
 }

@@ -5,6 +5,7 @@ import {
   OnModuleInit,
   OnModuleDestroy,
   ForbiddenException,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
@@ -34,6 +35,7 @@ import {
   type LegalCitation,
 } from './ai-prompt-fallback.helper';
 import { ChatFileService } from './chat-file.service';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 interface CachedAnswer {
   content: string;
@@ -65,6 +67,7 @@ export class AIAssistantService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly chatFileService: ChatFileService,
+    @Optional() private readonly subscriptionService?: SubscriptionService,
   ) {}
 
   async uploadChatFile(
@@ -73,6 +76,9 @@ export class AIAssistantService implements OnModuleInit, OnModuleDestroy {
     file: Express.Multer.File,
     conversationId?: string,
   ) {
+    if (orgId && this.subscriptionService) {
+      await this.subscriptionService.consumeDocAnalysisQuota(orgId, 1);
+    }
     return this.chatFileService.processAndStoreFile(orgId, userId, file, conversationId);
   }
 
@@ -240,6 +246,11 @@ export class AIAssistantService implements OnModuleInit, OnModuleDestroy {
     if (!isTaxOrEnterpriseDomain(rawMessage)) {
       this.logger.log(`[OUT OF SCOPE] Câu hỏi ngoài phạm vi thuế & doanh nghiệp: "${rawMessage}"`);
       return buildOutOfScopeRejectionResponse();
+    }
+
+    // 3.1. Kiểm tra và trừ hạn mức AI Chatbox theo gói thuê bao trong DB
+    if (this.subscriptionService) {
+      await this.subscriptionService.consumeAiQuota(org.id);
     }
 
     const normalized = normalizeVietnameseText(rawMessage);

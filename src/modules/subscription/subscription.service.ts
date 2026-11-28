@@ -32,6 +32,32 @@ export interface SubscriptionResponse {
 export class SubscriptionService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Chuyển đổi fileSize lưu trong DB (số bytes hoặc chuỗi "0.25 MB", "512 KB", "1.2 GB") về số bytes */
+  private parseFileSizeToBytes(raw: unknown): number {
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      return Math.max(0, raw);
+    }
+    const text = String(raw || '').trim();
+    if (!text) return 0;
+    const numericOnly = Number(text);
+    if (!Number.isNaN(numericOnly) && Number.isFinite(numericOnly)) {
+      return Math.max(0, numericOnly);
+    }
+    const match = text.match(/^([\d.,]+)\s*(B|KB|MB|GB|TB)?$/i);
+    if (!match) return 0;
+    const value = Number(match[1].replace(',', '.'));
+    if (Number.isNaN(value)) return 0;
+    const unit = (match[2] || 'B').toUpperCase();
+    const multipliers: Record<string, number> = {
+      B: 1,
+      KB: 1024,
+      MB: 1024 * 1024,
+      GB: 1024 * 1024 * 1024,
+      TB: 1024 * 1024 * 1024 * 1024,
+    };
+    return Math.round(value * (multipliers[unit] || 1));
+  }
+
   /**
    * 1. LẤY THÔNG TIN GÓI HIỆN TẠI & HẠN MỨC SỬ DỤNG
    */
@@ -99,9 +125,13 @@ export class SubscriptionService {
 
     const planConfig = SUBSCRIPTION_PLANS_BACKEND[planCode];
 
-    // Tính tổng dung lượng chứng từ đã lưu trữ (đổi sang GB)
-    const totalBytes = (org.evidenceDocuments || []).reduce((sum, d) => sum + Number(d.fileSize || 0), 0);
-    const storageUsedGb = Math.round((totalBytes / (1024 * 1024 * 1024)) * 10) / 10;
+    // Tính tổng dung lượng chứng từ đã lưu trữ (đổi sang GB, chính xác cả số bytes lẫn chuỗi MB/KB)
+    const totalBytes = (org.evidenceDocuments || []).reduce(
+      (sum, d) => sum + this.parseFileSizeToBytes(d.fileSize),
+      0,
+    );
+    const rawGb = totalBytes / (1024 * 1024 * 1024);
+    const storageUsedGb = totalBytes > 0 ? Math.max(0.01, Math.round(rawGb * 100) / 100) : 0;
 
     // Tính số ngày còn lại
     const diffMs = new Date(expiresAt).getTime() - now.getTime();
@@ -124,7 +154,7 @@ export class SubscriptionService {
         aiChatboxLimit: planConfig.aiChatboxMonthlyLimit,
         docAnalysisUsed: docUsed,
         docAnalysisLimit: planConfig.docAnalysisMonthlyLimit,
-        storageUsedGb: Math.max(0.1, storageUsedGb),
+        storageUsedGb,
         storageLimitGb: planConfig.storageGbLimit,
         daysRemaining,
       },
@@ -186,10 +216,15 @@ export class SubscriptionService {
     }
 
     const now = new Date();
-    // Nếu gói hiện tại còn hạn và cùng gói -> cộng thêm 30 ngày vào ngày hết hạn
-    let newExpiresAt = new Date(now.getTime() + 30 * 86400 * 1000);
+    const isYearly = dto.billingCycle === 'YEARLY';
+    const billingMonths = isYearly ? 12 : 1;
+    const durationDays = isYearly ? 365 : 30;
+    const finalAmountVnd = isYearly ? Math.round(plan.priceVnd * 12 * 0.85) : plan.priceVnd;
+
+    // Nếu gói hiện tại còn hạn và cùng gói -> cộng thêm chu kỳ vào ngày hết hạn
+    let newExpiresAt = new Date(now.getTime() + durationDays * 86400 * 1000);
     if (org.subscriptionExpiresAt && new Date(org.subscriptionExpiresAt) > now && org.subscriptionPlan === dto.planCode) {
-      newExpiresAt = new Date(new Date(org.subscriptionExpiresAt).getTime() + 30 * 86400 * 1000);
+      newExpiresAt = new Date(new Date(org.subscriptionExpiresAt).getTime() + durationDays * 86400 * 1000);
     }
 
     const invoiceCode = `SUB-${Date.now().toString().slice(-6)}`;
@@ -218,14 +253,16 @@ export class SubscriptionService {
           code: invoiceCode,
           planCode: plan.code,
           planName: plan.name,
-          amountVnd: plan.priceVnd,
-          billingMonths: 1,
+          amountVnd: finalAmountVnd,
+          billingMonths,
           paymentMethod: dto.paymentMethod || 'VietQR',
           status: 'SUCCESS',
           paidAt: now,
           periodStart: now,
           periodEnd: newExpiresAt,
-          taxNote: dto.note || `Kích hoạt ${plan.name} qua ${dto.paymentMethod || 'VietQR'} thành công`,
+          taxNote:
+            dto.note ||
+            `Kích hoạt ${plan.name} (${isYearly ? '12 tháng - Tiết kiệm 15%' : '30 ngày'}) qua ${dto.paymentMethod || 'VietQR'} thành công`,
         },
       });
     });
@@ -291,17 +328,27 @@ export class SubscriptionService {
   async consumeAiQuota(orgId: string) {
     const org = await this.prisma.organization.findUnique({
       where: { id: orgId },
-      select: { subscriptionPlan: true, aiQueriesUsedThisMonth: true, subscriptionExpiresAt: true },
+      select: {
+        subscriptionPlan: true,
+        aiQueriesUsedThisMonth: true,
+        subscriptionExpiresAt: true,
+      },
     });
 
     if (!org) return;
+
+    if (org.subscriptionExpiresAt && new Date(org.subscriptionExpiresAt) < new Date()) {
+      throw new ForbiddenException(
+        'Gói dịch vụ của bạn đã hết hạn. Vui lòng gia hạn gói để tiếp tục sử dụng Trợ lý AI.',
+      );
+    }
 
     const planCode = (org.subscriptionPlan as SubscriptionPlanCode) || 'STARTER';
     const plan = SUBSCRIPTION_PLANS_BACKEND[planCode] || SUBSCRIPTION_PLANS_BACKEND.STARTER;
 
     if (org.aiQueriesUsedThisMonth >= plan.aiChatboxMonthlyLimit) {
       throw new ForbiddenException(
-        `Doanh nghiệp của bạn đã sử dụng hết hạn mức ${plan.aiChatboxMonthlyLimit} câu hỏi AI trong tháng này. Vui lòng nâng cấp gói hoặc chờ chu kỳ tháng tiếp theo.`
+        `Doanh nghiệp của bạn đã sử dụng hết hạn mức ${plan.aiChatboxMonthlyLimit} câu hỏi AI trong tháng này. Vui lòng nâng cấp gói hoặc chờ chu kỳ tháng tiếp theo.`,
       );
     }
 
@@ -314,26 +361,75 @@ export class SubscriptionService {
   /**
    * 8. TIÊU THỤ HẠN MỨC PHÂN TÍCH HỒ SƠ
    */
-  async consumeDocAnalysisQuota(orgId: string) {
+  async consumeDocAnalysisQuota(orgId: string, count = 1) {
+    const step = Math.max(1, Math.round(count));
     const org = await this.prisma.organization.findUnique({
       where: { id: orgId },
-      select: { subscriptionPlan: true, docAnalysesUsedThisMonth: true },
+      select: {
+        subscriptionPlan: true,
+        docAnalysesUsedThisMonth: true,
+        subscriptionExpiresAt: true,
+      },
     });
 
     if (!org) return;
 
+    if (org.subscriptionExpiresAt && new Date(org.subscriptionExpiresAt) < new Date()) {
+      throw new ForbiddenException(
+        'Gói dịch vụ của bạn đã hết hạn. Vui lòng gia hạn gói để tiếp tục phân tích hồ sơ.',
+      );
+    }
+
     const planCode = (org.subscriptionPlan as SubscriptionPlanCode) || 'STARTER';
     const plan = SUBSCRIPTION_PLANS_BACKEND[planCode] || SUBSCRIPTION_PLANS_BACKEND.STARTER;
 
-    if (org.docAnalysesUsedThisMonth >= plan.docAnalysisMonthlyLimit) {
+    if (org.docAnalysesUsedThisMonth >= plan.docAnalysisMonthlyLimit || org.docAnalysesUsedThisMonth + step > plan.docAnalysisMonthlyLimit) {
       throw new ForbiddenException(
-        `Doanh nghiệp của bạn đã sử dụng hết hạn mức ${plan.docAnalysisMonthlyLimit} lượt phân tích hồ sơ trong tháng. Vui lòng nâng cấp gói để tiếp tục.`
+        `Doanh nghiệp của bạn đã sử dụng hết hạn mức ${plan.docAnalysisMonthlyLimit} lượt phân tích hồ sơ trong tháng. Vui lòng nâng cấp gói để tiếp tục.`,
       );
     }
 
     await this.prisma.organization.update({
       where: { id: orgId },
-      data: { docAnalysesUsedThisMonth: { increment: 1 } },
+      data: { docAnalysesUsedThisMonth: { increment: step } },
     });
+  }
+
+  /**
+   * 9. KIỂM TRA DUNG LƯỢNG LƯU TRỮ CÒN TRỐNG TRƯỚC KHI TẢI BẰNG CHỨNG
+   */
+  async assertStorageAvailable(orgId: string, incomingBytes = 0) {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: orgId },
+      select: {
+        subscriptionPlan: true,
+        subscriptionExpiresAt: true,
+        evidenceDocuments: { select: { fileSize: true } },
+      },
+    });
+
+    if (!org) return true;
+
+    if (org.subscriptionExpiresAt && new Date(org.subscriptionExpiresAt) < new Date()) {
+      throw new ForbiddenException(
+        'Gói dịch vụ của bạn đã hết hạn. Vui lòng gia hạn gói để tiếp tục tải lên hồ sơ & bằng chứng.',
+      );
+    }
+
+    const planCode = (org.subscriptionPlan as SubscriptionPlanCode) || 'STARTER';
+    const plan = SUBSCRIPTION_PLANS_BACKEND[planCode] || SUBSCRIPTION_PLANS_BACKEND.STARTER;
+    const limitBytes = plan.storageGbLimit * 1024 * 1024 * 1024;
+    const usedBytes = (org.evidenceDocuments || []).reduce(
+      (sum, d) => sum + this.parseFileSizeToBytes(d.fileSize),
+      0,
+    );
+
+    if (usedBytes + Math.max(0, incomingBytes) > limitBytes) {
+      throw new ForbiddenException(
+        `Dung lượng lưu trữ đã đạt giới hạn ${plan.storageGbLimit} GB của ${plan.name}. Vui lòng xóa bớt tệp cũ hoặc nâng cấp gói để mở rộng dung lượng.`,
+      );
+    }
+
+    return true;
   }
 }

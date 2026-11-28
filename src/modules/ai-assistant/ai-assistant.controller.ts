@@ -5,9 +5,11 @@ import {
   Put,
   Param,
   Body,
+  Headers,
+  Req,
+  UploadedFile,
   UseGuards,
   UseInterceptors,
-  UploadedFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader, ApiParam, ApiConsumes } from '@nestjs/swagger';
@@ -18,6 +20,10 @@ import { OrganizationMembershipGuard } from '../../common/guards/organization-me
 import { AdminOnlyGuard } from '../../common/guards/admin-only.guard';
 import { CurrentUser, ValidatedOrgId } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+
+interface AuthenticatedOrgRequest {
+  validatedOrgId?: string;
+}
 
 @ApiTags('AI Compliance Assistant (Trợ lý AI Tuân thủ OpenCode)')
 @Controller('ai-assistant')

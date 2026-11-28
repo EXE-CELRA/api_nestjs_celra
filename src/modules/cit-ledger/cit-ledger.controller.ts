@@ -8,10 +8,12 @@ import {
   Param,
   Query,
   UseGuards,
+  Optional,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { CitLedgerService } from './cit-ledger.service';
+import { SubscriptionService } from '../subscription/subscription.service';
 import {
   QueryCitSummaryDto,
   QueryCitRevenueDto,
@@ -35,7 +37,10 @@ import { ValidatedOrgId } from '../../common/decorators/current-user.decorator';
 @UseGuards(JwtAuthGuard, OrganizationMembershipGuard, RolesGuard)
 @ApiBearerAuth()
 export class CitLedgerController {
-  constructor(private readonly citService: CitLedgerService) {}
+  constructor(
+    private readonly citService: CitLedgerService,
+    @Optional() private readonly subscriptionService?: SubscriptionService,
+  ) {}
 
   @Get('summary')
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
@@ -54,6 +59,9 @@ export class CitLedgerController {
     @ValidatedOrgId() orgId: string,
     @Body() dto: SyncCitComplianceChecklistDto,
   ) {
+    if (this.subscriptionService) {
+      await this.subscriptionService.assertFeatureAccess(orgId, 'autoTaskChecklist');
+    }
     return this.citService.syncComplianceChecklist(orgId, dto);
   }
 
@@ -130,6 +138,9 @@ export class CitLedgerController {
     @ValidatedOrgId() orgId: string,
     @Body() dto: CreateCitExpenseDto,
   ) {
+    if (this.subscriptionService) {
+      await this.subscriptionService.assertFeatureAccess(orgId, 'citLedgerTaxAnalysis');
+    }
     return this.citService.createExpense(orgId, dto);
   }
 
@@ -162,6 +173,9 @@ export class CitLedgerController {
     @ValidatedOrgId() orgId: string,
     @Body() dto: BatchImportExpensesDto,
   ) {
+    if (this.subscriptionService) {
+      await this.subscriptionService.assertFeatureAccess(orgId, 'citLedgerTaxAnalysis');
+    }
     return this.citService.batchImportExpenses(orgId, dto);
   }
 

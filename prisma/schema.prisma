@@ -183,6 +183,7 @@ model User {
   timelineEvents       TaskTimelineEvent[]
   notifications        ComplianceNotification[]
   calendarNotes        CalendarNote[]
+  tablePreferences     UserTablePreference[]
 
   @@map("nguoi_dung")
 }
@@ -231,6 +232,7 @@ model Organization {
   citExpenses        CitExpense[]
   aiLogs             AiSystem[]
   subscriptionInvoices SubscriptionInvoice[]
+  legalUpdateAcks    OrgLegalUpdateAck[]
 
   @@map("doanh_nghiep")
 }
@@ -751,4 +753,42 @@ model AiSystem {
   @@index([organizationId, createdAt])
   @@index([createdAt])
   @@map("cau_hinh_va_luu_luong_ai")
+}
+
+// ===================== CẤU HÌNH GIAO DIỆN BẢNG THEO NGƯỜI DÙNG (ĐỒNG BỘ ĐA THIẾT BỊ) =====================
+
+model UserTablePreference {
+  id                String   @id @default(uuid())
+  userId            String   @map("id_nguoi_dung")
+  organizationScope String   @default("GLOBAL") @map("pham_vi_doanh_nghiep")
+  tableKey          String   @map("ma_bang")
+  columnsConfig     Json     @map("cau_hinh_cot")
+  createdAt         DateTime @default(now()) @map("ngay_tao")
+  updatedAt         DateTime @updatedAt @map("ngay_cap_nhat")
+
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationScope, tableKey])
+  @@index([userId, tableKey])
+  @@map("cau_hinh_bang_nguoi_dung")
+}
+
+// ===================== XÁC NHẬN CẬP NHẬT VĂN BẢN PHÁP LUẬT THEO DOANH NGHIỆP =====================
+
+model OrgLegalUpdateAck {
+  id             String       @id @default(uuid())
+  organizationId String       @map("id_doanh_nghiep")
+  sourceType     String       @map("loai_nguon")
+  sourceCode     String       @map("ma_nguon")
+  sourceVersion  String       @map("phien_ban_nguon")
+  status         String       @default("CONFIRMED") @map("trang_thai")
+  selectedOption String?      @map("lua_chon_xac_nhan")
+  confirmedById  String?      @map("id_nguoi_xac_nhan")
+  confirmedAt    DateTime     @default(now()) @map("ngay_xac_nhan")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, sourceCode, sourceVersion])
+  @@index([organizationId, status])
+  @@map("xac_nhan_cap_nhat_phap_luat")
 }
