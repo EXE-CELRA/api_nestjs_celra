@@ -342,8 +342,8 @@ export class TaskService {
         isSelfCertifiedNoUpload: true,
         notApplicableReason: reason,
         status: TaskStatus.waiting_verification,
-        waitingOnRole: WaitingOnRole.service_accountant,
-        waitingOnName: 'Kế toán dịch vụ',
+        waitingOnRole: WaitingOnRole.owner,
+        waitingOnName: 'Chủ doanh nghiệp',
         timeline: {
           create: {
             title: 'Doanh nghiệp xác nhận tự chịu trách nhiệm (Không tải file)',

@@ -14,10 +14,7 @@ export function normalizeUserRole(val: any): UserRole {
   if (!val) return UserRole.owner;
   const s = String(val).toUpperCase();
   if (s === 'BUSINESS_OWNER' || s === 'OWNER') return UserRole.owner;
-  if (s === 'INTERNAL_ACCOUNTANT') return UserRole.internal_accountant;
-  if (s === 'OUTSOURCED_AGENT' || s === 'SERVICE_ACCOUNTANT') return UserRole.service_accountant;
-  if (s === 'HR_OFFICER' || s === 'HR_STAFF') return UserRole.hr_staff;
-  if (s === 'EXPERT' || s === 'VERIFIER_EXPERT') return UserRole.expert;
+  if (s === 'STAFF') return UserRole.staff;
   if (s === 'ADMIN' || s === 'SUPER_ADMIN') return UserRole.admin;
   if (Object.values(UserRole).includes(val)) return val;
   return UserRole.owner;

@@ -13,19 +13,13 @@ generator client {
 
 enum UserRole {
   owner
-  hr_staff
-  internal_accountant
-  service_accountant
-  expert
+  staff
   admin
 }
 
 enum WaitingOnRole {
   owner
-  hr_staff
-  internal_accountant
-  service_accountant
-  expert
+  staff
   admin
   none
 }
@@ -69,7 +63,6 @@ enum TaskStatus {
   pending_assignee
   in_progress
   waiting_verification
-  need_expert
   completed
   cancelled
 }

@@ -91,7 +91,7 @@ export class CitLedgerController {
   }
 
   @Delete('revenues/:id')
-  @Roles(UserRole.owner, UserRole.internal_accountant)
+  @Roles(UserRole.owner)
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Xóa 1 khoản doanh thu' })
   async deleteRevenue(
@@ -145,7 +145,7 @@ export class CitLedgerController {
   }
 
   @Delete('expenses/:id')
-  @Roles(UserRole.owner, UserRole.internal_accountant)
+  @Roles(UserRole.owner)
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Xóa 1 khoản chi phí' })
   async deleteExpense(
@@ -166,7 +166,7 @@ export class CitLedgerController {
   }
 
   @Delete('clear')
-  @Roles(UserRole.owner, UserRole.internal_accountant)
+  @Roles(UserRole.owner)
   @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
   @ApiOperation({ summary: 'Xóa toàn bộ dữ liệu của 1 Quý để nạp lại' })
   async clearPeriod(

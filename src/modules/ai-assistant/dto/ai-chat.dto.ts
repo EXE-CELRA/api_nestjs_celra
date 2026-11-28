@@ -24,6 +24,15 @@ export class AIChatMessageDto {
   conversationId?: string;
 
   @IsOptional()
+  @IsString()
+  fileId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  fileIds?: string[];
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ChatHistoryItemDto)

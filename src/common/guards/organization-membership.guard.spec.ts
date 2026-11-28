@@ -125,13 +125,13 @@ describe('Layer 1 Multi-Tenant Isolation & RBAC Guards', () => {
 
     const rolesGuard = new RolesGuard(reflector);
 
-    // User có global role = owner (ở công ty riêng), nhưng sang org-b chỉ là service_accountant -> phải bị chặn!
+    // User có global role = owner (ở công ty riêng), nhưng sang org-b chỉ là staff -> phải bị chặn!
     const crossOrgCtx = createMockContext({
       user: { sub: 'user-1', role: UserRole.owner },
       activeMembership: {
         organizationId: 'org-b',
         userId: 'user-1',
-        role: UserRole.service_accountant,
+        role: UserRole.staff,
         status: MembershipStatus.active,
       },
     });

@@ -242,15 +242,13 @@ export class RuleEngineService {
       }
 
       if (isMatched) {
-        // 3. Tìm department tương ứng (Mặc định phòng Kế toán thuế ACC)
+        // 3. Tìm department tương ứng (Mặc định phòng Quản trị / Thuế TNDN)
         let targetDept = org.departments.find((d) => d.code === 'ACC');
-        let assigneeRole: UserRole = UserRole.internal_accountant;
-        let waitingOnRole: WaitingOnRole = WaitingOnRole.owner;
+        const assigneeRole: UserRole = UserRole.owner;
+        const waitingOnRole: WaitingOnRole = WaitingOnRole.none;
 
         if (rule.code.includes('POS') || rule.code === 'RULE-FNB-04') {
           targetDept = org.departments.find((d) => d.code === 'OPS') || targetDept;
-          assigneeRole = UserRole.owner;
-          waitingOnRole = WaitingOnRole.internal_accountant;
         }
 
         const taskCode = `TASK-${rule.code.replace('RULE-', '')}`;

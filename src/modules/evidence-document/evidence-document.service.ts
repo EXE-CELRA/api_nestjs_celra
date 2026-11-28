@@ -157,12 +157,12 @@ export class EvidenceDocumentService {
         where: { id: verifiedTaskId },
         data: {
           status: TaskStatus.waiting_verification,
-          waitingOnRole: WaitingOnRole.service_accountant,
-          waitingOnName: 'Kế toán dịch vụ',
+          waitingOnRole: WaitingOnRole.owner,
+          waitingOnName: 'Chủ doanh nghiệp',
           timeline: {
             create: {
               title: 'Tải lên bằng chứng mới',
-              description: `Đã đính kèm tệp ${docName} (${fileSizeFormatted}). Chờ kế toán dịch vụ đối chiếu`,
+              description: `Đã đính kèm tệp ${docName} (${fileSizeFormatted}). Chờ Chủ doanh nghiệp đối soát & xác nhận`,
               actorId: userId,
               actorName: uploadedBy,
               actorRole: uploadedRole,
@@ -322,8 +322,8 @@ export class EvidenceDocumentService {
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    const actorName = user ? user.name : 'Người thẩm định';
-    const actorRole = memberRole || (user ? user.role : UserRole.service_accountant);
+    const actorName = user ? user.name : 'Chủ doanh nghiệp';
+    const actorRole = memberRole || (user ? user.role : UserRole.owner);
 
     const updatedDoc = await this.prisma.evidenceDocument.update({
       where: { id },

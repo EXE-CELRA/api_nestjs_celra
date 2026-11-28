@@ -6,8 +6,11 @@ import {
   Param,
   Body,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader, ApiParam } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader, ApiParam, ApiConsumes } from '@nestjs/swagger';
 import { AIAssistantService } from './ai-assistant.service';
 import { AIChatMessageDto, AcceptProposalDto, UpdateLegalRuleDto } from './dto/ai-chat.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -34,13 +37,11 @@ export class AIAssistantController {
     }),
   )
   async uploadChatFile(
-    @Req() req: AuthenticatedOrgRequest,
-    @Headers('x-organization-id') orgId: string,
+    @ValidatedOrgId() targetOrgId: string,
     @CurrentUser('sub') userId: string,
     @UploadedFile() file: Express.Multer.File,
     @Body('conversationId') conversationId?: string,
   ) {
-    const targetOrgId = req.validatedOrgId || orgId;
     return this.aiService.uploadChatFile(targetOrgId, userId, file, conversationId);
   }
 
