@@ -4,7 +4,6 @@ import {
   Body,
   Get,
   Patch,
-  Delete,
   Param,
   UseGuards,
   ForbiddenException,
@@ -71,17 +70,5 @@ export class OrganizationController {
     @Body() dto: UpdateOrganizationDto,
   ) {
     return this.orgService.update(orgId, dto);
-  }
-
-  @Delete(':orgId/reset-demo')
-  @UseGuards(OrganizationMembershipGuard, RolesGuard)
-  @Roles(UserRole.owner)
-  @ApiOperation({ summary: 'Xóa hoàn toàn doanh nghiệp để phục vụ demo lại từ đầu' })
-  async resetDemo(
-    @CurrentUser('sub') userId: string,
-    @Param('orgId') _orgIdParam: string,
-    @ValidatedOrgId() orgId: string,
-  ) {
-    return this.orgService.resetDemo(userId, orgId);
   }
 }

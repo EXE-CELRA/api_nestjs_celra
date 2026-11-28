@@ -25,7 +25,7 @@ export class SurveyService {
         if (existingTargetOrg) {
           throw new ForbiddenException('Bạn không có quyền cập nhật hồ sơ khảo sát của doanh nghiệp khác.');
         }
-        // Trường hợp ID cũ đã bị xóa sau reset-demo -> cho phép khởi tạo mới sạch sẽ
+        // Trường hợp ID doanh nghiệp cũ không còn tồn tại trong hệ thống -> cho phép khởi tạo hồ sơ mới
         this.logger.warn(`Organization ${targetOrgId} không còn tồn tại. Khởi tạo hồ sơ khảo sát mới cho user ${userId}.`);
         targetOrgId = undefined;
       }

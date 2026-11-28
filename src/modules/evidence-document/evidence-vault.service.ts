@@ -425,43 +425,6 @@ export class EvidenceVaultService {
     };
   }
 
-  /**
-   * Xóa danh sách chứng từ đám mây của một doanh nghiệp (dùng khi reset-demo để tránh rác tồn đọng)
-   */
-  public async deleteSupabaseUris(uris: string[]): Promise<void> {
-    const supabaseItems = (uris || []).filter((u) => typeof u === 'string' && u.startsWith('supabase://'));
-    if (supabaseItems.length === 0) {
-      return;
-    }
-
-    let supabaseUrl: string;
-    let secretKey: string;
-    try {
-      const cfg = this.getSupabaseConfig();
-      supabaseUrl = cfg.supabaseUrl;
-      secretKey = cfg.secretKey;
-    } catch {
-      return;
-    }
-
-    const headers = this.buildSupabaseAuthHeaders(secretKey);
-    await Promise.allSettled(
-      supabaseItems.map(async (uri) => {
-        const withoutScheme = uri.slice('supabase://'.length);
-        const slashIdx = withoutScheme.indexOf('/');
-        if (slashIdx <= 0) return;
-        const bucket = withoutScheme.slice(0, slashIdx);
-        const objectKey = withoutScheme.slice(slashIdx + 1);
-        if (!objectKey || objectKey.includes('..')) return;
-        const encodedPath = objectKey.split('/').map(encodeURIComponent).join('/');
-        await fetch(`${supabaseUrl}/storage/v1/object/${encodeURIComponent(bucket)}/${encodedPath}`, {
-          method: 'DELETE',
-          headers,
-        });
-      }),
-    );
-  }
-
   public async retrieveAndVerifyPlainBuffer(
     filePathOrUri: string,
     organizationId: string,
