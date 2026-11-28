@@ -1,4 +1,7 @@
-import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import { createParamDecorator, ExecutionContext, SetMetadata } from '@nestjs/common';
+
+export const SKIP_ORG_MEMBERSHIP_KEY = 'skipOrgMembership';
+export const SkipOrgMembership = () => SetMetadata(SKIP_ORG_MEMBERSHIP_KEY, true);
 
 export const CurrentUser = createParamDecorator(
   (data: string | undefined, ctx: ExecutionContext) => {
@@ -10,9 +13,16 @@ export const CurrentUser = createParamDecorator(
   },
 );
 
+export const ValidatedOrgId = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): string => {
+    const request = ctx.switchToHttp().getRequest();
+    return request.validatedOrgId || '';
+  },
+);
+
 export const CurrentTenant = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext) => {
     const request = ctx.switchToHttp().getRequest();
-    return request.organizationId || request.headers['x-organization-id'] || null;
+    return request.validatedOrgId || request.organizationId || request.headers['x-organization-id'] || null;
   },
 );

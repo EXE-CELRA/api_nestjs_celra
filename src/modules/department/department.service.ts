@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateDepartmentDto, UpdateDepartmentDto } from './dto/department.dto';
 
@@ -38,17 +38,20 @@ export class DepartmentService {
         _count: {
           select: {
             tasks: true,
-            findings: true,
           },
         },
       },
     });
   }
 
-  async update(deptId: string, dto: UpdateDepartmentDto) {
+  async update(deptId: string, dto: UpdateDepartmentDto, orgId?: string) {
     const dept = await this.prisma.department.findUnique({ where: { id: deptId } });
     if (!dept) {
       throw new NotFoundException('Không tìm thấy phòng ban');
+    }
+
+    if (orgId && dept.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền chỉnh sửa phòng ban của doanh nghiệp khác.');
     }
 
     return this.prisma.department.update({
@@ -57,10 +60,14 @@ export class DepartmentService {
     });
   }
 
-  async remove(deptId: string) {
+  async remove(deptId: string, orgId?: string) {
     const dept = await this.prisma.department.findUnique({ where: { id: deptId } });
     if (!dept) {
       throw new NotFoundException('Không tìm thấy phòng ban');
+    }
+
+    if (orgId && dept.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền xóa phòng ban của doanh nghiệp khác.');
     }
 
     return this.prisma.department.delete({ where: { id: deptId } });

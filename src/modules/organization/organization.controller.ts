@@ -7,19 +7,21 @@ import {
   Delete,
   Param,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { OrganizationService } from './organization.service';
 import { CreateOrganizationDto, UpdateOrganizationDto } from './dto/organization.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OrganizationMembershipGuard } from '../../common/guards/organization-membership.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentUser, ValidatedOrgId } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 
 @ApiTags('Organizations / Workspaces')
 @Controller('organizations')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class OrganizationController {
   constructor(private readonly orgService: OrganizationService) {}
@@ -28,8 +30,12 @@ export class OrganizationController {
   @ApiOperation({ summary: 'Khởi tạo Doanh nghiệp mới (Onboarding Wizard)' })
   async create(
     @CurrentUser('sub') userId: string,
+    @CurrentUser('role') userRole: string,
     @Body() dto: CreateOrganizationDto,
   ) {
+    if (userRole === UserRole.admin) {
+      throw new ForbiddenException('Tài khoản Quản trị viên hệ thống không thể khởi tạo doanh nghiệp khách hàng.');
+    }
     return this.orgService.create(userId, dto);
   }
 
@@ -45,28 +51,36 @@ export class OrganizationController {
     return this.orgService.getMyOrganizations(userId);
   }
 
-  @Get(':id')
-  @ApiOperation({ summary: 'Lấy chi tiết thông tin Doanh nghiệp theo ID' })
-  async getOne(@Param('id') id: string) {
-    return this.orgService.getOne(id);
+  @Get(':orgId')
+  @UseGuards(OrganizationMembershipGuard)
+  @ApiOperation({ summary: 'Lấy chi tiết thông tin Doanh nghiệp theo ID (Chỉ thành viên hợp lệ)' })
+  async getOne(
+    @Param('orgId') _orgIdParam: string,
+    @ValidatedOrgId() orgId: string,
+  ) {
+    return this.orgService.getOne(orgId);
   }
 
-  @Patch(':id')
-  @Roles(UserRole.owner, UserRole.admin)
-  @ApiOperation({ summary: 'Cập nhật thông tin Doanh nghiệp (Chỉ Owner & Admin)' })
+  @Patch(':orgId')
+  @UseGuards(OrganizationMembershipGuard, RolesGuard)
+  @Roles(UserRole.owner)
+  @ApiOperation({ summary: 'Cập nhật thông tin Doanh nghiệp (Chỉ Chủ doanh nghiệp)' })
   async update(
-    @Param('id') id: string,
+    @Param('orgId') _orgIdParam: string,
+    @ValidatedOrgId() orgId: string,
     @Body() dto: UpdateOrganizationDto,
   ) {
-    return this.orgService.update(id, dto);
+    return this.orgService.update(orgId, dto);
   }
 
-  @Delete(':id/reset-demo')
-  @Roles(UserRole.owner, UserRole.admin)
+  @Delete(':orgId/reset-demo')
+  @UseGuards(OrganizationMembershipGuard, RolesGuard)
+  @Roles(UserRole.owner)
   @ApiOperation({ summary: 'Xóa hoàn toàn doanh nghiệp để phục vụ demo lại từ đầu' })
   async resetDemo(
     @CurrentUser('sub') userId: string,
-    @Param('id') orgId: string,
+    @Param('orgId') _orgIdParam: string,
+    @ValidatedOrgId() orgId: string,
   ) {
     return this.orgService.resetDemo(userId, orgId);
   }

@@ -2,17 +2,32 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../database/prisma.service';
 import { InviteMemberDto, UpdateMemberDto } from './dto/membership.dto';
-import { MembershipStatus } from '@prisma/client';
+import { MembershipStatus, UserRole } from '@prisma/client';
+import { OrganizationMembershipGuard } from '../../common/guards/organization-membership.guard';
 
 @Injectable()
 export class MembershipService {
   constructor(private readonly prisma: PrismaService) {}
 
   async invite(orgId: string, dto: InviteMemberDto) {
+    // Chặn leo thang đặc quyền: Không cho phép mời thành viên với vai trò admin hệ thống
+    const safeRole = dto.role === UserRole.admin ? UserRole.internal_accountant : dto.role;
+
+    if (dto.departmentId) {
+      const dept = await this.prisma.department.findFirst({
+        where: { id: dto.departmentId, organizationId: orgId },
+        select: { id: true },
+      });
+      if (!dept) {
+        throw new ForbiddenException('Phòng ban được chọn không thuộc doanh nghiệp hiện tại.');
+      }
+    }
+
     let user = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
     });
@@ -25,7 +40,7 @@ export class MembershipService {
           email: dto.email.toLowerCase(),
           passwordHash: defaultPasswordHash,
           name: dto.name,
-          role: dto.role,
+          role: safeRole,
           roleTitle: dto.roleTitle || 'Thành viên',
           phone: dto.phone,
         },
@@ -49,7 +64,7 @@ export class MembershipService {
       data: {
         organizationId: orgId,
         userId: user.id,
-        role: dto.role,
+        role: safeRole,
         roleTitle: dto.roleTitle || 'Thành viên',
         departmentId: dto.departmentId,
         status: MembershipStatus.active,
@@ -76,6 +91,7 @@ export class MembershipService {
       });
     }
 
+    OrganizationMembershipGuard.invalidateMembershipCache(orgId, user.id);
     return membership;
   }
 
@@ -98,7 +114,7 @@ export class MembershipService {
     });
   }
 
-  async update(membershipId: string, dto: UpdateMemberDto) {
+  async update(membershipId: string, dto: UpdateMemberDto, orgId?: string) {
     const membership = await this.prisma.membership.findUnique({
       where: { id: membershipId },
     });
@@ -107,9 +123,28 @@ export class MembershipService {
       throw new NotFoundException('Không tìm thấy thành viên trong tổ chức');
     }
 
-    return this.prisma.membership.update({
+    if (orgId && membership.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền chỉnh sửa thành viên của doanh nghiệp khác.');
+    }
+
+    if (dto.departmentId) {
+      const dept = await this.prisma.department.findFirst({
+        where: { id: dto.departmentId, organizationId: membership.organizationId },
+        select: { id: true },
+      });
+      if (!dept) {
+        throw new ForbiddenException('Phòng ban được chọn không thuộc doanh nghiệp hiện tại.');
+      }
+    }
+
+    const sanitizedDto: UpdateMemberDto = {
+      ...dto,
+      ...(dto.role === UserRole.admin ? { role: UserRole.internal_accountant } : {}),
+    };
+
+    const updated = await this.prisma.membership.update({
       where: { id: membershipId },
-      data: dto,
+      data: sanitizedDto,
       include: {
         user: {
           select: {
@@ -122,15 +157,22 @@ export class MembershipService {
         department: true,
       },
     });
+
+    OrganizationMembershipGuard.invalidateMembershipCache(membership.organizationId, membership.userId);
+    return updated;
   }
 
-  async remove(membershipId: string) {
+  async remove(membershipId: string, orgId?: string) {
     const membership = await this.prisma.membership.findUnique({
       where: { id: membershipId },
     });
 
     if (!membership) {
       throw new NotFoundException('Không tìm thấy thành viên');
+    }
+
+    if (orgId && membership.organizationId !== orgId) {
+      throw new ForbiddenException('Bạn không có quyền xóa thành viên của doanh nghiệp khác.');
     }
 
     if (membership.departmentId) {
@@ -140,6 +182,8 @@ export class MembershipService {
       });
     }
 
-    return this.prisma.membership.delete({ where: { id: membershipId } });
+    const deleted = await this.prisma.membership.delete({ where: { id: membershipId } });
+    OrganizationMembershipGuard.invalidateMembershipCache(membership.organizationId, membership.userId);
+    return deleted;
   }
 }

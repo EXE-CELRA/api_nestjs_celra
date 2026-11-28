@@ -1,4 +1,4 @@
-import { Injectable, Logger, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, ConflictException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SubmitSurveyDto } from './dto/survey.dto';
 import { ContextGroup, UserRole, MembershipStatus } from '@prisma/client';
@@ -10,22 +10,30 @@ export class SurveyService {
   constructor(private readonly prisma: PrismaService) {}
 
   async submitAnswers(orgId: string, userId: string, dto: SubmitSurveyDto) {
-    let targetOrgId: string | undefined = orgId;
+    let targetOrgId: string | undefined = orgId?.trim() || undefined;
 
-    // BẢO VỆ ĐA DOANH NGHIỆP: Xác minh userId có thực sự thuộc về targetOrgId hay không
+    // BẢO VỆ ĐA DOANH NGHIỆP: Nếu truyền x-organization-id của một doanh nghiệp đang tồn tại mà không có tư cách thành viên active -> chặn ngay!
     if (targetOrgId && userId) {
       const membership = await this.prisma.membership.findFirst({
-        where: { organizationId: targetOrgId, userId },
+        where: { organizationId: targetOrgId, userId, status: MembershipStatus.active },
       });
       if (!membership) {
-        this.logger.warn(`User ${userId} không phải thành viên của organization ${targetOrgId}. Bỏ qua header x-organization-id để tránh ghi đè dữ liệu chéo.`);
+        const existingTargetOrg = await this.prisma.organization.findUnique({
+          where: { id: targetOrgId },
+          select: { id: true },
+        });
+        if (existingTargetOrg) {
+          throw new ForbiddenException('Bạn không có quyền cập nhật hồ sơ khảo sát của doanh nghiệp khác.');
+        }
+        // Trường hợp ID cũ đã bị xóa sau reset-demo -> cho phép khởi tạo mới sạch sẽ
+        this.logger.warn(`Organization ${targetOrgId} không còn tồn tại. Khởi tạo hồ sơ khảo sát mới cho user ${userId}.`);
         targetOrgId = undefined;
       }
     }
 
     if (!targetOrgId && userId) {
       const userOrg = await this.prisma.membership.findFirst({
-        where: { userId },
+        where: { userId, status: MembershipStatus.active },
       });
       if (userOrg) {
         targetOrgId = userOrg.organizationId;
