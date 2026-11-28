@@ -8,9 +8,12 @@ import {
   UseGuards,
   Headers,
   Req,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader, ApiParam } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader, ApiParam, ApiConsumes } from '@nestjs/swagger';
 import { AIAssistantService } from './ai-assistant.service';
 import { AIChatMessageDto, AcceptProposalDto, UpdateLegalRuleDto } from './dto/ai-chat.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -27,6 +30,27 @@ interface AuthenticatedOrgRequest extends Request {
 @ApiBearerAuth()
 export class AIAssistantController {
   constructor(private readonly aiService: AIAssistantService) {}
+
+  @Post('upload-file')
+  @UseGuards(OrganizationMembershipGuard)
+  @ApiHeader({ name: 'x-organization-id', description: 'ID Doanh nghiệp' })
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Tải lên tệp tài liệu trong khung chat AI để đọc, trích xuất và hỏi đáp' })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 25 * 1024 * 1024 },
+    }),
+  )
+  async uploadChatFile(
+    @Req() req: AuthenticatedOrgRequest,
+    @Headers('x-organization-id') orgId: string,
+    @CurrentUser('sub') userId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('conversationId') conversationId?: string,
+  ) {
+    const targetOrgId = req.validatedOrgId || orgId;
+    return this.aiService.uploadChatFile(targetOrgId, userId, file, conversationId);
+  }
 
   @Post('chat')
   @UseGuards(OrganizationMembershipGuard)
